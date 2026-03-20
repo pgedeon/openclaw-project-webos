@@ -14,19 +14,7 @@ A Windows 11-style desktop environment for managing your OpenClaw agent fleet. W
 |:---:|:---:|
 | ![Kanban Board](screenshots/kanban-board.png) | ![Widget Panel](screenshots/widget-panel.png) |
 
-## Screenshots
 
-### Dashboard
-
-<p align="center">
-  <img src="docs/screenshots/dashboard-overview-dark-full.png" alt="Dark-mode full-page desktop overview of the OpenClaw Project Dashboard" width="100%" />
-</p>
-
-### Agents
-
-<p align="center">
-  <img src="docs/screenshots/agents-overview-dark-full.png" alt="Dark-mode full-page desktop overview of the OpenClaw agents workspace" width="100%" />
-</p>
 
 ## What's in RC1
 
