@@ -879,7 +879,7 @@ class WorkflowRunsAPI {
     this.pool = pool || new Pool({
       host: process.env.POSTGRES_HOST || 'localhost',
       port: process.env.POSTGRES_PORT || 5432,
-      database: process.env.POSTGRES_DB || 'openclaw_webos',
+      database: process.env.POSTGRES_DB || 'openclaw_dashboard',
       user: process.env.POSTGRES_USER || 'openclaw',
       password: process.env.POSTGRES_PASSWORD || 'openclaw_password'
     });

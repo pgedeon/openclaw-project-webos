@@ -1,12 +1,56 @@
 node_modules/
-.env
+dist/
+playwright-report/
+test-results/
+coverage/
+server.log
+test-output.log
+task-server.pid
 *.pid
 *.log
-state.json
+.env
+.env.local
+.DS_Store
+
+# Runtime data
 gateway-status.json
-models-catalog.json
+memory/
+tasks.md
+tasks.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+
+# Legacy archive
 _legacy-archive/
-backup*/
-*.backup
-*.bak
-*.tmp
+
+# Internal project docs (not for public release)
+BATCH_A_SPRINT_BACKLOG.md
+BUILD-INSTRUCTIONS*.md
+DASHBOARD_BUSINESS_PLAN.md
+DASHBOARD_OVERHAUL_PLAN.md
+DASHBOARD_PROGRESS.md
+DEVELOPER_GUIDE.md
+DIAGNOSTICS_PLAN.md
+MEMORY.md
+WORKFLOW_*.md
+CHANGELOG.md
+capture-screenshot.cjs
+integrate-workflow-api.sh
+archive/
+.openclaw/
+state.json
+start-server*.sh
+test-session-binding.sh
+workflow-runs-api.js.broken

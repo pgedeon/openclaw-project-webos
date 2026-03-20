@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Widget Panel Tests</title>
+  <link rel="stylesheet" href="../src/styles/win11-theme.css">
+  <link rel="stylesheet" href="../src/styles/win11-widget-card.css">
+  <link rel="stylesheet" href="../src/styles/win11-widget-panel.css">
+  <style>
+    body { font-family: Inter, system-ui, sans-serif; margin: 24px; background: #0f172a; color: #e2e8f0; }
+    #desktop { position: relative; width: 420px; height: 620px; margin-bottom: 16px; border-radius: 18px; overflow: hidden; background: linear-gradient(135deg, #1e293b, #0f172a); }
+    .result { padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; }
+    .pass { background: rgba(34, 197, 94, 0.15); color: #bbf7d0; }
+    .fail { background: rgba(248, 113, 113, 0.15); color: #fecaca; }
+  </style>
+</head>
+<body data-theme="dark">
+  <h1>Widget Panel Tests</h1>
+  <div id="desktop"></div>
+  <div id="summary"></div>
+  <div id="results"></div>
+
+  <script type="module">
+    import {
+      WidgetPanel,
+      PANEL_STORAGE_KEY,
+      DESKTOP_LAYOUT_STORAGE_KEY,
+    } from '../src/shell/widgets/widget-panel.mjs';
+
+    const summary = document.getElementById('summary');
+    const resultsEl = document.getElementById('results');
+    const results = [];
+
+    const waitFrames = async (count = 2) => {
+      for (let index = 0; index < count; index += 1) {
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+      }
+    };
+
+    const test = (condition, message) => results.push({ pass: Boolean(condition), message });
+    const renderResults = () => {
+      const passed = results.filter((item) => item.pass).length;
+      const failed = results.length - passed;
+      summary.textContent = `${passed}/${results.length} passed${failed ? ` · ${failed} failed` : ''}`;
+      resultsEl.innerHTML = results.map((item) => `
+        <div class="result ${item.pass ? 'pass' : 'fail'}">${item.pass ? '✓' : '✗'} ${item.message}</div>
+      `).join('');
+      window.__widgetPanelTest = { passed, failed, total: results.length };
+      document.body.dataset.testStatus = failed ? 'failed' : 'passed';
+    };
+
+    const createWidgetDef = (id, size) => ({
+      manifest: {
+        id,
+        label: id,
+        description: `${id} description`,
+        icon: '<path d="M5 5h14v14H5z"></path>',
+        size,
+        dataKeys: [],
+        defaults: {},
+      },
+      render(ctx) {
+        ctx.mountNode.innerHTML = `<div class="widget-card"><div class="widget-card__body">${id}</div></div>`;
+        return () => {
+          ctx.mountNode.innerHTML = '';
+        };
+      },
+    });
+
+    const widgetDefs = new Map([
+      ['alpha', createWidgetDef('alpha', 'small')],
+      ['beta', createWidgetDef('beta', 'medium')],
+      ['gamma', createWidgetDef('gamma', 'small')],
+    ]);
+
+    const registry = {
+      loaded: true,
+      list: () => [...widgetDefs.values()].map((entry) => entry.manifest),
+      get: (id) => widgetDefs.get(id) || null,
+    };
+
+    const taskbarState = [];
+    const taskbar = {
+      setWidgetsOpen(value) {
+        taskbarState.push(Boolean(value));
+      },
+    };
+
+    const shellAPI = {
+      sync: {
+        getData: () => ({}),
+        subscribe: () => () => {},
+      },
+      api: {},
+      navigate: () => {},
+      showNotice: () => {},
+      getTheme: () => 'dark',
+      onThemeChange: () => () => {},
+      helpers: {
+        escapeHtml: (value) => String(value ?? ''),
+      },
+    };
+
+    const desktop = document.getElementById('desktop');
+
+    const run = async () => {
+      localStorage.removeItem(PANEL_STORAGE_KEY);
+      localStorage.removeItem(DESKTOP_LAYOUT_STORAGE_KEY);
+
+      const panel = new WidgetPanel({ desktop, registry, shellAPI, taskbar, mode: 'panel' });
+      await panel.init();
+
+      test(panel.enabledWidgets.length === 0, 'Unknown stored defaults are sanitized for custom registries');
+
+      panel.open();
+      await waitFrames();
+      test(panel.isOpen === true, 'open() marks the panel as open');
+      test(panel.panelEl.classList.contains('is-open'), 'open() applies the open class');
+      test(taskbarState.at(-1) === true, 'open() syncs active state to the taskbar');
+
+      await panel.addWidget('alpha');
+      await waitFrames(3);
+      test(panel.enabledWidgets.includes('alpha'), 'addWidget() enables a widget');
+      test(Boolean(panel.gridEl.querySelector('[data-widget-id="alpha"]')), 'addWidget() creates a widget slot');
+      test(panel.hosts.size >= 1, 'Visible widgets are mounted lazily when the panel is open');
+      test(localStorage.getItem(PANEL_STORAGE_KEY) === JSON.stringify(['alpha']), 'Enabled widgets persist to localStorage');
+
+      panel.updateWidgetConfig('alpha', { compact: true });
+      test(localStorage.getItem(DESKTOP_LAYOUT_STORAGE_KEY) === JSON.stringify({ alpha: { compact: true } }), 'Per-widget config persists to localStorage');
+
+      panel.panelEl.querySelector('[data-action="toggle-picker"]').click();
+      test(panel.pickerEl.hidden === false, 'Picker toggle opens the widget picker');
+      test(panel.pickerEl.querySelectorAll('[data-action="toggle-widget"]').length === 3, 'Picker lists all registry widgets');
+
+      panel.pickerEl.querySelector('[data-widget-id="beta"]').click();
+      await waitFrames(3);
+      test(panel.enabledWidgets.includes('beta'), 'Picker toggles widgets on');
+
+      panel.removeWidget('alpha');
+      test(!panel.enabledWidgets.includes('alpha'), 'removeWidget() disables a widget');
+      test(!panel.gridEl.querySelector('[data-widget-id="alpha"]'), 'removeWidget() removes the slot');
+
+      panel.close();
+      await waitFrames(2);
+      test(panel.isOpen === false, 'close() marks the panel as closed');
+      test(panel.hosts.size === 0, 'close() unmounts visible widgets');
+      test(taskbarState.at(-1) === false, 'close() clears taskbar active state');
+
+      panel.destroy();
+      test(!desktop.contains(panel.panelEl), 'destroy() removes panel DOM from the desktop');
+
+      renderResults();
+    };
+
+    run().catch((error) => {
+      test(false, `Unexpected test failure: ${error.message}`);
+      renderResults();
+    });
+  </script>
+</body>
+</html>

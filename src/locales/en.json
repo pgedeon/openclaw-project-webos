@@ -1,0 +1,102 @@
+{
+  "en": {
+    "title": "Project Dashboard",
+    "tagline": "Track deliverables, keep momentum, and celebrate progress.",
+    "theme": {
+      "dark": "Dark mode",
+      "light": "Light mode"
+    },
+    "stats": {
+      "totalTasks": "Total Tasks",
+      "completed": "Completed",
+      "pending": "Pending",
+      "archived": "Archived"
+    },
+    "task": {
+      "add": "Add New Task",
+      "descriptionLabel": "Task description",
+      "categoryLabel": "Task category",
+      "placeholder": "Enter a new task...",
+      "categoryPlaceholder": "Category",
+      "addBtn": "Add Task",
+      "hint": "Press Enter to add. Categories help you filter later.",
+      "empty": "No tasks yet. Add one above!"
+    },
+    "filters": {
+      "all": "All",
+      "pending": "Pending",
+      "completed": "Completed",
+      "archived": "Archived",
+      "myTasks": "My tasks",
+      "overdue": "Overdue",
+      "blocked": "Blocked",
+      "noDueDate": "No due date"
+    },
+    "toolbar": {
+      "searchPlaceholder": "Search tasks or categories",
+      "sortLabel": "Sort tasks",
+      "sortOptions": {
+        "newest": "Newest first",
+        "oldest": "Oldest first",
+        "updated": "Recently updated",
+        "alpha": "Alphabetical"
+      },
+      "categoryFilter": "All categories",
+      "exportJson": "Export JSON",
+      "exportCsv": "Export CSV",
+      "import": "Import",
+      "archiveCompleted": "Archive completed",
+      "saveView": "Save view",
+      "loadView": "Load view...",
+      "deleteView": "Delete selected view"
+    },
+    "views": {
+      "list": "List view",
+      "board": "Board view",
+      "timeline": "Timeline view",
+      "agent": "Agent view",
+      "audit": "Audit view",
+      "cron": "Cron view"
+    },
+    "error": {
+      "sync": "Sync Error",
+      "retry": "Retry All",
+      "dismiss": "Dismiss"
+    },
+    "help": {
+      "title": "Keyboard Shortcuts",
+      "close": "Close help",
+      "shortcuts": {
+        "showHelp": "Show/hide this help",
+        "closeModal": "Close modal / panels",
+        "view1": "Switch to List view",
+        "view2": "Switch to Board view",
+        "view3": "Switch to Timeline view",
+        "view4": "Switch to Agent view",
+        "view5": "Switch to Audit view",
+        "view6": "Switch to Cron view",
+        "filterAll": "Filter: All",
+        "filterPending": "Filter: Pending",
+        "filterCompleted": "Filter: Completed",
+        "filterMyTasks": "Filter: My tasks",
+        "filterOverdue": "Filter: Overdue",
+        "filterBlocked": "Filter: Blocked",
+        "filterNoDueDate": "Filter: No due date",
+        "perfPanel": "Show performance panel",
+        "addTask": "Add task (when input focused)"
+      }
+    },
+    "performance": {
+      "title": "Performance",
+      "close": "Close performance panel",
+      "noMetrics": "No metrics yet."
+    },
+    "snackbar": {
+      "undo": "Undo"
+    },
+    "project": {
+      "label": "Project:",
+      "loading": "Loading projects..."
+    }
+  }
+}

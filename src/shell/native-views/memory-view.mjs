@@ -14,6 +14,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
   let memoryFiles = [];
   let searchResults = [];
   let facts = [];
+  let factsRecords = [];
   let stats = null;
   let systemStatus = null;
   let selectedFile = null;
@@ -129,8 +130,13 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
       memoryFiles = (await filesResp.json()).files || [];
       stats = await statsResp.json();
       systemStatus = await statusResp.json();
-      facts = (await factsResp.json()).facts || [];
+      facts = (await factsResp.json()).namespaces || [];
       searchResults = [];
+      // Fetch actual fact records
+      const factsListResp = await fetch(`${MEMORY_API_BASE}/facts/list`);
+      if (factsListResp.ok) {
+        factsRecords = (await factsListResp.json()).facts || [];
+      }
     } catch (err) {
       console.error('[Memory View] Error loading data:', err);
       content.innerHTML = `<div class="mem-empty">Error loading memory data: ${escapeHtml(err.message)}</div>`;
@@ -306,26 +312,219 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
     }
   });
 
-  function renderFactsTab() {
-    if (!facts || facts.length === 0) {
-      content.innerHTML = '<div class="mem-empty">No structured facts available</div>';
+  async function renderFactsTab() {
+    content.innerHTML = '<div class="mem-loading">Loading facts...</div>';
+
+    // Refresh facts from API
+    try {
+      const resp = await fetch(`${MEMORY_API_BASE}/facts/list`);
+      if (resp.ok) {
+        factsRecords = (await resp.json()).facts || [];
+      }
+    } catch (e) { /* use cached */ }
+
+    content.innerHTML = '';
+
+    // Stats header
+    const statsRow = document.createElement('div');
+    statsRow.style.cssText = 'padding:0 0 12px;border-bottom:1px solid var(--win11-border);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;';
+    statsRow.innerHTML = `
+      <div>
+        <strong>${escapeHtml(facts.length ? facts.map(n => n.namespace).join(', ') : 'facts')}</strong>
+        — ${factsRecords.length} fact${factsRecords.length !== 1 ? 's' : ''}
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button id="mem-facts-add-btn" class="mem-file-close" style="background:var(--win11-accent);color:#fff;border-color:var(--win11-accent);">+ Add Fact</button>
+        <button id="mem-facts-refresh-btn" class="mem-file-close">↻ Refresh</button>
+      </div>
+    `;
+    content.appendChild(statsRow);
+
+    // Search box
+    const searchBox = document.createElement('div');
+    searchBox.className = 'mem-search-box';
+    searchBox.innerHTML = `
+      <input id="mem-facts-search" class="mem-search-input" placeholder="Search facts..." style="flex:1;">
+      <button id="mem-facts-search-btn" class="mem-search-btn">Search</button>
+    `;
+    content.appendChild(searchBox);
+
+    // Fact list
+    const listContainer = document.createElement('div');
+    listContainer.id = 'mem-facts-list';
+    listContainer.style.cssText = 'display:grid;gap:8px;margin-top:12px;';
+    renderFactList(listContainer, factsRecords);
+    content.appendChild(listContainer);
+
+    // Add form (hidden by default)
+    const addForm = document.createElement('div');
+    addForm.id = 'mem-facts-add-form';
+    addForm.hidden = true;
+    addForm.style.cssText = 'padding:16px;border-radius:10px;border:1px solid var(--win11-accent);background:var(--win11-surface-solid);margin-top:12px;display:grid;gap:10px;';
+    addForm.innerHTML = `
+      <div style="font-weight:700;font-size:0.95rem;color:var(--win11-text);">Add New Fact</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <input id="mf-namespace" class="mem-fact-input" placeholder="Namespace" value="openclaw" style="padding:6px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.85rem;outline:none;">
+        <input id="mf-subject" class="mem-fact-input" placeholder="Subject *" required style="padding:6px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.85rem;outline:none;">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <input id="mf-predicate" class="mem-fact-input" placeholder="Predicate *" required style="padding:6px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.85rem;outline:none;">
+        <input id="mf-value" class="mem-fact-input" placeholder="Value" style="padding:6px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.85rem;outline:none;">
+      </div>
+      <input id="mf-source" class="mem-fact-input" placeholder="Source (optional)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.85rem;outline:none;">
+      <input id="mf-note" class="mem-fact-input" placeholder="Note (optional)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.85rem;outline:none;">
+      <input id="mf-tags" class="mem-fact-input" placeholder="Tags (comma-separated, optional)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.85rem;outline:none;">
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button id="mf-cancel" class="mem-file-close">Cancel</button>
+        <button id="mf-save" class="mem-file-close" style="background:var(--win11-accent);color:#fff;border-color:var(--win11-accent);">Save Fact</button>
+      </div>
+      <div id="mf-status" style="font-size:0.8rem;min-height:1.2em;"></div>
+    `;
+    content.appendChild(addForm);
+
+    // Event handlers
+    const toggleForm = () => { addForm.hidden = !addForm.hidden; };
+    const refreshFacts = async () => {
+      listContainer.innerHTML = '<div class="mem-loading">Refreshing...</div>';
+      try {
+        const resp = await fetch(`${MEMORY_API_BASE}/facts/list`);
+        if (resp.ok) {
+          factsRecords = (await resp.json()).facts || [];
+          renderFactList(listContainer, factsRecords);
+          statsRow.querySelector('strong').parentElement.innerHTML = `<strong>${escapeHtml(facts.length ? facts.map(n => n.namespace).join(', ') : 'facts')}</strong> — ${factsRecords.length} fact${factsRecords.length !== 1 ? 's' : ''}`;
+        }
+      } catch (e) {
+        listContainer.innerHTML = '<div class="mem-empty">Failed to refresh</div>';
+      }
+    };
+
+    statsRow.querySelector('#mem-facts-add-btn').addEventListener('click', toggleForm);
+    statsRow.querySelector('#mem-facts-refresh-btn').addEventListener('click', refreshFacts);
+
+    const doSearch = async () => {
+      const q = searchBox.querySelector('#mem-facts-search').value.trim();
+      if (!q) { renderFactList(listContainer, factsRecords); return; }
+      listContainer.innerHTML = '<div class="mem-loading">Searching...</div>';
+      try {
+        const resp = await fetch(`${MEMORY_API_BASE}/facts/search?query=${encodeURIComponent(q)}`);
+        if (resp.ok) {
+          const results = (await resp.json()).facts || [];
+          renderFactList(listContainer, results, true);
+        }
+      } catch (e) {
+        listContainer.innerHTML = '<div class="mem-empty">Search failed</div>';
+      }
+    };
+
+    searchBox.querySelector('#mem-facts-search-btn').addEventListener('click', doSearch);
+    searchBox.querySelector('#mem-facts-search').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doSearch();
+      if (e.key === 'Escape') { e.target.value = ''; renderFactList(listContainer, factsRecords); }
+    });
+
+    addForm.querySelector('#mf-cancel').addEventListener('click', toggleForm);
+    addForm.querySelector('#mf-save').addEventListener('click', async () => {
+      const subject = addForm.querySelector('#mf-subject').value.trim();
+      const predicate = addForm.querySelector('#mf-predicate').value.trim();
+      if (!subject || !predicate) {
+        addForm.querySelector('#mf-status').innerHTML = '<span style="color:#ef4444;">Subject and predicate are required.</span>';
+        return;
+      }
+      const statusEl = addForm.querySelector('#mf-status');
+      statusEl.innerHTML = '<span style="color:var(--win11-text-secondary);">Saving...</span>';
+      try {
+        const tagsRaw = addForm.querySelector('#mf-tags').value.trim();
+        const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+        const resp = await fetch(`${MEMORY_API_BASE}/facts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            namespace: addForm.querySelector('#mf-namespace').value.trim() || 'openclaw',
+            subject,
+            predicate,
+            value: addForm.querySelector('#mf-value').value.trim(),
+            source: addForm.querySelector('#mf-source').value.trim(),
+            note: addForm.querySelector('#mf-note').value.trim(),
+            tags,
+          }),
+        });
+        if (!resp.ok) throw new Error('Save failed');
+        statusEl.innerHTML = '<span style="color:#22c55e;">✓ Saved</span>';
+        // Clear form
+        addForm.querySelector('#mf-subject').value = '';
+        addForm.querySelector('#mf-predicate').value = '';
+        addForm.querySelector('#mf-value').value = '';
+        addForm.querySelector('#mf-source').value = '';
+        addForm.querySelector('#mf-note').value = '';
+        addForm.querySelector('#mf-tags').value = '';
+        // Refresh list
+        await refreshFacts();
+        setTimeout(() => { addForm.hidden = true; }, 800);
+      } catch (e) {
+        statusEl.innerHTML = `<span style="color:#ef4444;">✗ ${escapeHtml(e.message)}</span>`;
+      }
+    });
+  }
+
+  function renderFactList(container, records, isSearch = false) {
+    if (!records || records.length === 0) {
+      container.innerHTML = isSearch
+        ? '<div class="mem-empty">No matching facts found.</div>'
+        : '<div class="mem-empty">No structured facts available. Click "+ Add Fact" to create one.</div>';
       return;
     }
 
-    const namespace = facts[0]?.namespace || 'unknown';
-    const header = document.createElement('div');
-    header.style.cssText = 'padding:0 0 12px;border-bottom:1px solid var(--win11-border);margin-bottom:12px;';
-    header.innerHTML = `<strong>${escapeHtml(namespace)}</strong> namespace — ${facts.length} facts`;
-    content.appendChild(header);
-
-    facts.forEach(f => {
+    container.innerHTML = '';
+    records.forEach(f => {
       const row = document.createElement('div');
       row.className = 'mem-fact-row';
+      row.style.cssText = 'padding:10px 12px;border-radius:8px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);transition:border-color 0.15s;';
+      row.onmouseenter = () => row.style.borderColor = 'var(--win11-accent)';
+      row.onmouseleave = () => row.style.borderColor = 'var(--win11-border)';
       row.innerHTML = `
-        <div><span class="mem-fact-predicate">${escapeHtml(f.subject)} → ${escapeHtml(f.predicate)}</span><span class="mem-fact-value">${escapeHtml(String(f.value))}</span></div>
-        ${f.tags?.length ? `<div style="font-size:0.75rem;color:var(--win11-text-secondary);margin-top:4px;">Tags: ${escapeHtml(f.tags.join(', '))}</div>` : ''}
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-size:0.7rem;padding:2px 6px;border-radius:3px;background:var(--win11-surface-active);color:var(--win11-text-secondary);">${escapeHtml(f.namespace || 'unknown')}</span>
+              <span style="font-weight:600;font-size:0.85rem;color:var(--win11-text);">${escapeHtml(f.subject || '')}</span>
+              <span style="color:var(--win11-accent);">→</span>
+              <span style="font-weight:600;font-size:0.85rem;color:var(--win11-accent);">${escapeHtml(f.predicate || '')}</span>
+            </div>
+            <div style="margin-top:4px;font-size:0.82rem;color:var(--win11-text);word-break:break-word;">${escapeHtml(String(f.value || f.value_text || ''))}</div>
+            ${f.note ? `<div style="margin-top:4px;font-size:0.75rem;color:var(--win11-text-secondary);font-style:italic;">${escapeHtml(f.note)}</div>` : ''}
+            ${f.tags?.length ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">${f.tags.map(t => `<span style="font-size:0.68rem;padding:1px 6px;border-radius:3px;background:rgba(96,205,255,0.1);color:var(--win11-accent);border:1px solid rgba(96,205,255,0.2);">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+          </div>
+          <button class="mem-fact-delete" data-ns="${escapeHtml(f.namespace)}" data-subject="${escapeHtml(f.subject)}" data-predicate="${escapeHtml(f.predicate)}" style="flex-shrink:0;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--win11-border);background:transparent;color:var(--win11-text-tertiary);cursor:pointer;font-size:0.9rem;opacity:0;transition:opacity 0.15s,background 0.15s;" title="Delete fact">✕</button>
+        </div>
+        <div style="margin-top:4px;font-size:0.68rem;color:var(--win11-text-tertiary);">${f.updated_at ? new Date(f.updated_at).toLocaleString() : ''}${f.source ? ' · ' + escapeHtml(f.source) : ''}</div>
       `;
-      content.appendChild(row);
+      // Show delete button on hover
+      const delBtn = row.querySelector('.mem-fact-delete');
+      row.addEventListener('mouseenter', () => delBtn.style.opacity = '1');
+      row.addEventListener('mouseleave', () => delBtn.style.opacity = '0');
+      delBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm(`Delete fact: ${f.subject} → ${f.predicate}?`)) return;
+        delBtn.textContent = '…';
+        delBtn.disabled = true;
+        try {
+          const resp = await fetch(`${MEMORY_API_BASE}/facts`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ namespace: f.namespace, subject: f.subject, predicate: f.predicate }),
+          });
+          if (!resp.ok) throw new Error('Delete failed');
+          row.style.opacity = '0';
+          row.style.transform = 'translateX(20px)';
+          row.style.transition = 'opacity 0.2s, transform 0.2s';
+          setTimeout(() => row.remove(), 200);
+        } catch (err) {
+          delBtn.textContent = '✕';
+          delBtn.disabled = false;
+          alert('Failed to delete: ' + err.message);
+        }
+      });
+      container.appendChild(row);
     });
   }
 

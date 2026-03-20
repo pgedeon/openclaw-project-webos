@@ -420,7 +420,7 @@ const AGENT_PROFILES = [
     capabilities: ['dashboard', 'frontend', 'operations']
   },
   {
-    agentId: 'default-agent',
+    agentId: 'serial-automator',
     departmentSlug: 'automation',
     displayName: 'Serial Automator',
     role: 'specialist',

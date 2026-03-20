@@ -103,7 +103,7 @@ export async function renderDepartmentsView({ mountNode, api, adapter, stateStor
 
     detail.innerHTML = '<div style="padding:24px;text-align:center;color:var(--win11-text-tertiary);">Loading department view...</div>';
     try {
-      deptView = await api.departments.operatingView(selectedId);
+      deptView = await api.org.departments.operatingView(selectedId);
       renderDeptView(dept, deptView);
     } catch (e) {
       detail.innerHTML = `<div style="padding:24px;color:#ef4444;">Failed: ${escapeHtml(e.message)}</div>`;
@@ -168,7 +168,7 @@ export async function renderDepartmentsView({ mountNode, api, adapter, stateStor
 
   async function loadDepartments() {
     try {
-      const res = await api.departments.list();
+      const res = await api.org.departments.list();
       departments = Array.isArray(res) ? res : [];
       if (!selectedId && departments.length) selectedId = departments[0].id;
       renderList();

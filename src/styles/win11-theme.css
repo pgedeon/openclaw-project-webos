@@ -6,15 +6,22 @@
 :root {
   --win11-surface: rgba(255, 255, 255, 0.82);
   --win11-surface-solid: #f3f3f3;
+  --win11-surface-card: rgba(255, 255, 255, 0.74);
   --win11-surface-hover: rgba(255, 255, 255, 0.92);
   --win11-surface-active: rgba(0, 0, 0, 0.03);
   --win11-border: rgba(0, 0, 0, 0.0578);
+  --win11-border-subtle: rgba(0, 0, 0, 0.08);
   --win11-border-strong: rgba(0, 0, 0, 0.1);
   --win11-shadow: 0 2px 22px rgba(0, 0, 0, 0.06), 0 0 1px rgba(0, 0, 0, 0.1);
   --win11-shadow-active: 0 4px 28px rgba(0, 0, 0, 0.1), 0 0 1px rgba(0, 0, 0, 0.14);
   --win11-accent: #0067c0;
   --win11-accent-hover: #1975c5;
   --win11-accent-light: rgba(0, 103, 192, 0.08);
+  --win11-success: #16a34a;
+  --win11-warning: #d97706;
+  --win11-danger: #dc2626;
+  --win11-on-accent: #ffffff;
+  --win11-on-danger: #ffffff;
   --win11-text: #1a1a1a;
   --win11-text-secondary: #606060;
   --win11-text-tertiary: #8a8a8a;
@@ -24,6 +31,25 @@
   --win11-wallpaper-3: #134e4a;
   --win11-wallpaper-4: #4c1d95;
   --win11-wallpaper-5: #1e3a5f;
+  --win11-widget-bg: var(--win11-surface-card);
+  --win11-widget-bg-hover: var(--win11-surface-hover);
+  --win11-widget-border: var(--win11-border-subtle);
+  --win11-widget-radius: 12px;
+  --win11-widget-padding: 12px;
+  --win11-widget-gap: 8px;
+  --win11-widget-panel-width: 348px;
+  --win11-widget-grid-cols: 3;
+  --win11-widget-cell-small: 100px;
+  --win11-widget-cell-medium: 212px;
+  --win11-widget-cell-large: 212px;
+  --win11-widget-cell-wide: 324px;
+  --win11-widget-cell-tall: 100px;
+  --win11-widget-panel-bg: rgba(255, 255, 255, 0.72);
+  --win11-widget-panel-border: var(--win11-border-strong);
+  --win11-widget-picker-bg: rgba(255, 255, 255, 0.88);
+  --win11-widget-picker-backdrop: rgba(15, 23, 42, 0.2);
+  --win11-widget-ring-track: rgba(0, 0, 0, 0.08);
+  --win11-widget-ring-fill: rgba(255, 255, 255, 0.92);
   color-scheme: light;
 }
 
@@ -31,15 +57,22 @@
 [data-theme="dark"] {
   --win11-surface: rgba(44, 44, 44, 0.82);
   --win11-surface-solid: #2d2d2d;
+  --win11-surface-card: rgba(32, 32, 32, 0.86);
   --win11-surface-hover: rgba(255, 255, 255, 0.06);
   --win11-surface-active: rgba(255, 255, 255, 0.04);
   --win11-border: rgba(255, 255, 255, 0.065);
+  --win11-border-subtle: rgba(255, 255, 255, 0.09);
   --win11-border-strong: rgba(255, 255, 255, 0.1);
   --win11-shadow: 0 2px 22px rgba(0, 0, 0, 0.2), 0 0 1px rgba(255, 255, 255, 0.05);
   --win11-shadow-active: 0 4px 28px rgba(0, 0, 0, 0.3), 0 0 1px rgba(255, 255, 255, 0.07);
   --win11-accent: #60cdff;
   --win11-accent-hover: #7dd6ff;
   --win11-accent-light: rgba(96, 205, 255, 0.12);
+  --win11-success: #4ade80;
+  --win11-warning: #facc15;
+  --win11-danger: #f87171;
+  --win11-on-accent: #02131c;
+  --win11-on-danger: #2a0909;
   --win11-text: #ffffff;
   --win11-text-secondary: #9e9e9e;
   --win11-text-tertiary: #6a6a6a;
@@ -49,6 +82,15 @@
   --win11-wallpaper-3: #0a2e2a;
   --win11-wallpaper-4: #2a0a5e;
   --win11-wallpaper-5: #0e1e3f;
+  --win11-widget-bg: var(--win11-surface-card);
+  --win11-widget-bg-hover: rgba(255, 255, 255, 0.08);
+  --win11-widget-border: var(--win11-border-subtle);
+  --win11-widget-panel-bg: rgba(24, 24, 24, 0.8);
+  --win11-widget-panel-border: rgba(255, 255, 255, 0.12);
+  --win11-widget-picker-bg: rgba(24, 24, 24, 0.94);
+  --win11-widget-picker-backdrop: rgba(0, 0, 0, 0.4);
+  --win11-widget-ring-track: rgba(255, 255, 255, 0.08);
+  --win11-widget-ring-fill: rgba(26, 26, 26, 0.94);
   color-scheme: dark;
 }
 

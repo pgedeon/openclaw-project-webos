@@ -70,6 +70,136 @@ const parseBody = async (response) => {
   return response.text();
 };
 
+const normalizeCronFieldValue = (value, isDayOfWeek = false) => {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return null;
+  }
+
+  if (isDayOfWeek && parsed === 7) {
+    return 0;
+  }
+
+  return parsed;
+};
+
+const parseCronField = (field, min, max, { isDayOfWeek = false } = {}) => {
+  const raw = String(field || '').trim();
+  if (!raw || raw === '*') {
+    return null;
+  }
+
+  const values = new Set();
+  raw.split(',').forEach((segment) => {
+    const trimmedSegment = segment.trim();
+    if (!trimmedSegment) {
+      return;
+    }
+
+    const [rangeSegment, stepSegment] = trimmedSegment.split('/');
+    const step = Math.max(1, Number.parseInt(stepSegment || '1', 10) || 1);
+
+    let start = min;
+    let end = max;
+    if (rangeSegment && rangeSegment !== '*') {
+      if (rangeSegment.includes('-')) {
+        const [rawStart, rawEnd] = rangeSegment.split('-');
+        start = normalizeCronFieldValue(rawStart, isDayOfWeek);
+        end = normalizeCronFieldValue(rawEnd, isDayOfWeek);
+      } else {
+        start = normalizeCronFieldValue(rangeSegment, isDayOfWeek);
+        end = start;
+      }
+    }
+
+    if (!Number.isInteger(start) || !Number.isInteger(end)) {
+      return;
+    }
+
+    for (let value = start; value <= end; value += step) {
+      const normalizedValue = normalizeCronFieldValue(value, isDayOfWeek);
+      if (normalizedValue == null || normalizedValue < min || normalizedValue > max) {
+        continue;
+      }
+      values.add(normalizedValue);
+    }
+  });
+
+  return values.size > 0 ? values : null;
+};
+
+const cronFieldMatches = (allowedValues, value) => allowedValues === null || allowedValues.has(value);
+
+const estimateNextCronRun = (schedule, fromDate = new Date(), maxMinutesAhead = 60 * 24 * 31) => {
+  const parts = String(schedule || '').trim().split(/\s+/);
+  if (parts.length !== 5) {
+    return null;
+  }
+
+  const minuteValues = parseCronField(parts[0], 0, 59);
+  const hourValues = parseCronField(parts[1], 0, 23);
+  const dayOfMonthValues = parseCronField(parts[2], 1, 31);
+  const monthValues = parseCronField(parts[3], 1, 12);
+  const dayOfWeekValues = parseCronField(parts[4], 0, 6, { isDayOfWeek: true });
+  const cursor = new Date(fromDate);
+  cursor.setSeconds(0, 0);
+  cursor.setMinutes(cursor.getMinutes() + 1);
+
+  for (let offset = 0; offset < maxMinutesAhead; offset += 1) {
+    if (
+      cronFieldMatches(minuteValues, cursor.getMinutes())
+      && cronFieldMatches(hourValues, cursor.getHours())
+      && cronFieldMatches(dayOfMonthValues, cursor.getDate())
+      && cronFieldMatches(monthValues, cursor.getMonth() + 1)
+      && cronFieldMatches(dayOfWeekValues, cursor.getDay())
+    ) {
+      return new Date(cursor);
+    }
+    cursor.setMinutes(cursor.getMinutes() + 1);
+  }
+
+  return null;
+};
+
+const summarizeCronJobs = (payload) => {
+  const jobs = Array.isArray(payload?.jobs) ? payload.jobs : Array.isArray(payload) ? payload : [];
+  const now = Date.now();
+
+  const normalizedJobs = jobs.map((job) => {
+    const explicitNextRun = job?.nextRun || job?.next_run || null;
+    const nextRunDate = explicitNextRun ? new Date(explicitNextRun) : estimateNextCronRun(job?.schedule);
+    const nextRunAt = nextRunDate instanceof Date && !Number.isNaN(nextRunDate.getTime())
+      ? nextRunDate.toISOString()
+      : null;
+
+    return {
+      ...job,
+      nextRunAt,
+      next_run: nextRunAt,
+      nextRunInMs: nextRunAt ? Math.max(0, new Date(nextRunAt).getTime() - now) : null,
+    };
+  });
+
+  const runningCount = normalizedJobs.filter((job) => {
+    const status = String(job?.status || '').toLowerCase();
+    return job?.running === true || status === 'running';
+  }).length;
+
+  const nextRunAt = normalizedJobs
+    .map((job) => job.nextRunAt)
+    .filter(Boolean)
+    .sort()[0] || null;
+
+  return {
+    jobs: normalizedJobs,
+    runningCount,
+    totalJobs: normalizedJobs.length,
+    total: normalizedJobs.length,
+    nextRunAt,
+    nextRunInMs: nextRunAt ? Math.max(0, new Date(nextRunAt).getTime() - now) : null,
+  };
+};
+
 export class APIClientError extends Error {
   constructor(message, { status = 500, url = '', payload = null } = {}) {
     super(message);
@@ -235,6 +365,10 @@ export function createAPIClient(baseURL = '/api', options = {}) {
     cron: {
       jobs() {
         return request('/cron/jobs');
+      },
+      async status() {
+        const payload = await request('/cron/jobs');
+        return summarizeCronJobs(payload);
       },
       runJob(id) {
         return jsonRequest(`/cron/jobs/${encodeURIComponent(id)}/run`, { method: 'POST', body: {} });

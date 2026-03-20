@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Win11 Shell — Component Tests</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/styles/win11-theme.css">
+    <link rel="stylesheet" href="/src/styles/win11-shell.css">
+    <link rel="stylesheet" href="/src/styles/win11-windows.css">
+    <link rel="stylesheet" href="/src/styles/win11-taskbar.css">
+    <link rel="stylesheet" href="/src/styles/win11-start.css">
+    <style>
+        body { overflow: auto; font-family: 'Inter', sans-serif; }
+        #desktop { position: relative; min-height: calc(100vh - 48px); }
+        .test-result { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; }
+        .test-pass { background: #dcfce7; color: #166534; }
+        .test-fail { background: #fee2e2; color: #991b1b; }
+        .test-section { margin-bottom: 24px; }
+        .test-section h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 12px; color: #1a1a1a; }
+        [data-theme="dark"] .test-pass { background: rgba(34,197,94,0.15); color: #86efac; }
+        [data-theme="dark"] .test-fail { background: rgba(239,68,68,0.15); color: #fca5a5; }
+        [data-theme="dark"] .test-section h2 { color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="p-6 max-w-4xl mx-auto">
+        <h1 class="text-2xl font-bold mb-2">Win11 Shell — Test Suite</h1>
+        <p class="text-gray-500 mb-6">Automated verification of all shell components.</p>
+        <div class="flex gap-2 mb-8">
+            <button id="runAllBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition">Run All Tests</button>
+            <button id="themeToggleBtn" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg font-semibold hover:bg-gray-300 transition">Toggle Theme</button>
+        </div>
+        <div id="results"></div>
+    </div>
+    <div id="desktop" style="display:none;"></div>
+    <div id="taskbar-root" style="display:none;"></div>
+
+    <script type="module">
+        import { APP_REGISTRY, PINNED_APP_IDS, APP_MAP, getAppById, getAppsByCategory, APP_CATEGORY_ORDER } from '/src/shell/app-registry.mjs';
+
+        const results = document.getElementById('results');
+
+        function assert(condition, message) {
+            return { pass: condition, message };
+        }
+
+        function renderResults(tests) {
+            const passed = tests.filter(t => t.pass).length;
+            const failed = tests.filter(t => !t.pass).length;
+            const total = tests.length;
+            let html = `<div class="mb-6 p-4 rounded-lg ${failed === 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}">
+                <span class="text-lg font-bold">${passed}/${total} passed</span>
+                ${failed > 0 ? `<span class="text-red-600 font-bold ml-2">${failed} failed</span>` : '<span class="text-green-600 font-bold ml-2">All passing ✓</span>'}
+            </div>`;
+            html += tests.map(t => `<div class="test-result ${t.pass ? 'test-pass' : 'test-fail'}">${t.pass ? '✓' : '✗'} ${t.message}</div>`).join('');
+            results.innerHTML = html;
+        }
+
+        function testAppRegistry() {
+            const tests = [];
+            tests.push(assert(APP_REGISTRY.length === 20, `App registry has 20 apps (got ${APP_REGISTRY.length})`));
+            tests.push(assert(APP_MAP.size === 20, `APP_MAP has 20 entries (got ${APP_MAP.size})`));
+            tests.push(assert(PINNED_APP_IDS.length === 10, `PINNED_APP_IDS has 10 entries (got ${PINNED_APP_IDS.length})`));
+            tests.push(assert(APP_CATEGORY_ORDER.length === 3, `APP_CATEGORY_ORDER has 3 categories (got ${APP_CATEGORY_ORDER.length})`));
+
+            const workApps = getAppsByCategory('Work');
+            const opsApps = getAppsByCategory('Operations');
+            const adminApps = getAppsByCategory('Admin');
+            tests.push(assert(workApps.length === 8, `Work category has 8 apps (got ${workApps.length})`));
+            tests.push(assert(opsApps.length === 8, `Operations category has 8 apps (got ${opsApps.length})`));
+            tests.push(assert(adminApps.length === 4, `Admin category has 4 apps (got ${adminApps.length})`));
+
+            const ids = APP_REGISTRY.map(a => a.id);
+            tests.push(assert(ids.includes('tasks'), 'Tasks app exists'));
+            tests.push(assert(ids.includes('board'), 'Board app exists'));
+            tests.push(assert(ids.includes('agents'), 'Agents app exists'));
+            tests.push(assert(ids.includes('health'), 'Health app exists'));
+            tests.push(assert(ids.includes('workflows'), 'Workflows app exists'));
+            tests.push(assert(ids.includes('operations'), 'Operations app exists'));
+
+            for (const app of APP_REGISTRY) {
+                tests.push(assert(app.id, `App ${app.id} has id`));
+                tests.push(assert(app.label, `App ${app.id} has label`));
+                tests.push(assert(app.icon && app.icon.includes('<svg'), `App ${app.id} has SVG icon`));
+                tests.push(assert(app.url, `App ${app.id} has URL`));
+                tests.push(assert(app.category, `App ${app.id} has category`));
+                tests.push(assert(app.defaultWidth >= 360, `App ${app.id} defaultWidth >= 360`));
+                tests.push(assert(app.defaultHeight >= 240, `App ${app.id} defaultHeight >= 240`));
+            }
+
+            for (const id of PINNED_APP_IDS) {
+                tests.push(assert(getAppById(id), `Pinned app "${id}" resolves`));
+            }
+
+            return tests;
+        }
+
+        function testModuleLoading() {
+            const tests = [];
+            tests.push(assert(typeof APP_REGISTRY === 'object', 'APP_REGISTRY exported as array'));
+            tests.push(assert(APP_REGISTRY.every(a => typeof a === 'object'), 'All apps are objects'));
+            return tests;
+        }
+
+        const allTests = [
+            { name: 'Module Loading', fn: testModuleLoading },
+            { name: 'App Registry', fn: testAppRegistry },
+        ];
+
+        async function runTests() {
+            let all = [];
+            for (const suite of allTests) {
+                const results_ = suite.fn();
+                all = all.concat(results_);
+            }
+            renderResults(all);
+        }
+
+        document.getElementById('runAllBtn').addEventListener('click', runTests);
+        document.getElementById('themeToggleBtn').addEventListener('click', () => {
+            const current = document.documentElement.dataset.theme;
+            document.documentElement.dataset.theme = current === 'dark' ? 'light' : 'dark';
+        });
+
+        // Auto-run on load
+        runTests();
+    </script>
+</body>
+</html>

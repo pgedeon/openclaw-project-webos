@@ -48,6 +48,10 @@
   background: var(--win11-surface-active);
 }
 
+.win11-taskbar__widgets-button.is-active {
+  background: var(--win11-surface-active);
+}
+
 /* App buttons */
 .win11-taskbar__app {
   position: relative;

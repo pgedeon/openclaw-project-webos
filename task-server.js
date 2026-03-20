@@ -59,7 +59,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const PORT = process.env.PORT || 3876;
-const WORKSPACE = process.env.OPENCLAW_WORKSPACE || '/opt/openclaw/workspace';
+const WORKSPACE = '~/.openclaw/workspace';
 const TASKS_FILE = path.join(WORKSPACE, 'tasks.md');
 
 const MIME_TYPES = {
@@ -88,7 +88,7 @@ async function initAsanaStorage() {
       asanaStorage = new AsanaStorage({
         host: process.env.POSTGRES_HOST || 'localhost',
         port: parseInt(process.env.POSTGRES_PORT) || 5432,
-        database: process.env.POSTGRES_DB || 'openclaw_webos',
+        database: process.env.POSTGRES_DB || 'openclaw_dashboard',
         user: process.env.POSTGRES_USER || 'openclaw',
         password: process.env.POSTGRES_PASSWORD || 'openclaw_password',
       });
@@ -438,7 +438,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const { execSync } = require('child_process');
         const result = execSync(
-          '',
+          'python3 ~/.openclaw/workspace/affiliate-editorial/scripts/citation_queue.py --action status 2>/dev/null',
           { encoding: 'utf-8', timeout: 5000 }
         );
         const data = JSON.parse(result);
@@ -1317,7 +1317,7 @@ const server = http.createServer(async (req, res) => {
       listSkills: null, // Will use execFile to call openclaw skills list --json
       readOpenClawConfig: () => {
         try {
-          const configPath = process.env.OPENCLAW_CONFIG_FILE || '/etc/openclaw/openclaw.json';
+          const configPath = process.env.OPENCLAW_CONFIG_FILE || path.join(os.homedir(), ".openclaw", "openclaw.json");
           if (fs.existsSync(configPath)) {
             return JSON.parse(fs.readFileSync(configPath, 'utf8'));
           }

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Widget Registry Tests</title>
+  <style>
+    body { font-family: Inter, system-ui, sans-serif; margin: 24px; background: #0f172a; color: #e2e8f0; }
+    .result { padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; }
+    .pass { background: rgba(34, 197, 94, 0.15); color: #bbf7d0; }
+    .fail { background: rgba(248, 113, 113, 0.15); color: #fecaca; }
+    .summary { margin-bottom: 16px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Widget Registry Tests</h1>
+  <div id="summary" class="summary">Running…</div>
+  <div id="results"></div>
+
+  <script type="module">
+    import { WidgetRegistry, WIDGET_INDEX } from '../src/shell/widgets/widget-registry.mjs';
+
+    const summary = document.getElementById('summary');
+    const resultsEl = document.getElementById('results');
+    const results = [];
+
+    const test = (condition, message) => {
+      results.push({ pass: Boolean(condition), message });
+    };
+
+    const render = () => {
+      const passed = results.filter((item) => item.pass).length;
+      const failed = results.length - passed;
+      summary.textContent = `${passed}/${results.length} passed${failed ? ` · ${failed} failed` : ''}`;
+      resultsEl.innerHTML = results.map((item) => `
+        <div class="result ${item.pass ? 'pass' : 'fail'}">${item.pass ? '✓' : '✗'} ${item.message}</div>
+      `).join('');
+      window.__widgetRegistryTest = { passed, failed, total: results.length };
+      document.body.dataset.testStatus = failed ? 'failed' : 'passed';
+    };
+
+    const run = async () => {
+      const registry = new WidgetRegistry();
+      await registry.loadAll();
+
+      test(Array.isArray(WIDGET_INDEX) && WIDGET_INDEX.length === 3, 'WIDGET_INDEX lists the 3 production widgets');
+      test(registry.list().length === 3, `Registry loads production widgets (got ${registry.list().length})`);
+      test(registry.get('system-health')?.manifest?.id === 'system-health', 'Registry resolves widgets by id');
+      test(registry.list().map((manifest) => manifest.id).join(',') === 'system-health,task-pulse,clock-widget', 'list() preserves widget order');
+
+      const fixtureBadIdUrl = new URL('./fixtures/widget-bad-id.mjs', import.meta.url).href;
+      const fixtureBadMissingUrl = new URL('./fixtures/widget-bad-missing.mjs', import.meta.url).href;
+      const systemHealthUrl = new URL('../src/shell/widgets/widgets/system-health.mjs', import.meta.url).href;
+      const missingFixtureUrl = new URL('./fixtures/does-not-exist.mjs', import.meta.url).href;
+
+      const badRegistry = new WidgetRegistry({
+        index: [
+          { id: 'system-health', module: systemHealthUrl },
+          { id: 'bad-id', module: fixtureBadIdUrl },
+          { id: 'bad-missing', module: fixtureBadMissingUrl },
+          { id: 'missing-file', module: missingFixtureUrl },
+          { id: 'system-health', module: systemHealthUrl },
+        ],
+      });
+
+      await badRegistry.loadAll();
+
+      test(badRegistry.list().length === 1, `Bad modules are skipped without breaking loadAll() (got ${badRegistry.list().length})`);
+      test(badRegistry.get('bad-id') === null, 'Mismatched manifest ids are rejected');
+      test(badRegistry.get('bad-missing') === null, 'Modules missing render() are rejected');
+      test(badRegistry.get('missing-file') === null, 'Missing module imports fail gracefully');
+
+      render();
+    };
+
+    run().catch((error) => {
+      test(false, `Unexpected test failure: ${error.message}`);
+      render();
+    });
+  </script>
+</body>
+</html>

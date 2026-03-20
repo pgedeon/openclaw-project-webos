@@ -313,7 +313,7 @@ class AsanaStorage {
     this.pool = new Pool({
       host: config.host || 'localhost',
       port: config.port || 5432,
-      database: config.database || 'openclaw_webos',
+      database: config.database || 'openclaw_dashboard',
       user: config.user || 'openclaw',
       password: config.password || 'openclaw_password',
       max: config.max || 10,

@@ -2,10 +2,17 @@ import APP_REGISTRY, { PINNED_APP_IDS } from './app-registry.mjs';
 import { WindowManager, setShellContext } from './window-manager.mjs';
 import { Taskbar } from './taskbar.mjs';
 import { StartMenu } from './start-menu.mjs';
-import { createViewAdapter } from './view-adapter.mjs';
+import {
+  createViewAdapter,
+  formatRelativeTime,
+  formatTimestamp,
+  formatTokenLabel,
+} from './view-adapter.mjs';
 import { createAPIClient } from './api-client.mjs';
 import { createViewState } from './view-state.mjs';
 import { createRealtimeSync } from './realtime-sync.mjs';
+import { WidgetRegistry } from './widgets/widget-registry.mjs';
+import { WidgetPanel } from './widgets/widget-panel.mjs';
 
 const DEFAULT_THEME_STORAGE_KEY = 'openclaw.win11.theme.v1';
 const DEFAULT_WINDOW_STORAGE_KEY = 'openclaw.win11.windows.v1';
@@ -189,6 +196,11 @@ export function bootstrapShell({
 
   ensureDesktopScaffold(desktop);
 
+  let widgetPanel = null;
+  let widgetRegistry = null;
+  let shellDestroyed = false;
+  const themeSubscribers = new Set();
+
   let currentTheme = 'dark';
   try {
     const stored = localStorage.getItem(themeStorageKey);
@@ -206,6 +218,23 @@ export function bootstrapShell({
       console.warn('Unable to persist shell theme preference:', error);
     }
     taskbar?.setTheme(theme);
+
+    themeSubscribers.forEach((callback) => {
+      try {
+        callback(theme);
+      } catch (error) {
+        console.warn('[Shell] Theme subscriber error:', error);
+      }
+    });
+  };
+
+  const onThemeChange = (callback) => {
+    if (typeof callback !== 'function') {
+      return () => {};
+    }
+
+    themeSubscribers.add(callback);
+    return () => themeSubscribers.delete(callback);
   };
 
   const sharedStateStore = createViewState({ project_id: '' });
@@ -238,6 +267,19 @@ export function bootstrapShell({
     windowManager.openWindow(appId);
   };
 
+  let widgetsReady = Promise.resolve(null);
+
+  const toggleWidgetsPanel = () => {
+    if (widgetPanel) {
+      widgetPanel.toggle();
+      return;
+    }
+
+    void widgetsReady.then((panel) => panel?.toggle()).catch((error) => {
+      console.warn('[Shell] Unable to toggle widget panel:', error);
+    });
+  };
+
   // Create welcome widget with sync
   const welcomeWidget = createWelcomeWidget(desktop, sync);
 
@@ -248,6 +290,7 @@ export function bootstrapShell({
     initialTheme: currentTheme,
     sync, // Pass sync to taskbar
     onStartToggle: () => startMenu?.toggle(),
+    onWidgetsToggle: () => toggleWidgetsPanel(),
     onAppActivate: (appId) => {
       const windowEntry = windowManager.getWindowEntry(appId);
       if (!windowEntry) {
@@ -323,6 +366,59 @@ export function bootstrapShell({
   // Start the realtime sync
   sync.start();
 
+  widgetsReady = (async () => {
+    try {
+      widgetRegistry = new WidgetRegistry({
+        sync,
+        api: apiClient,
+        navigate: shellNavigateTo,
+        showNotice: shellShowNotice,
+        getTheme: () => currentTheme,
+      });
+
+      await widgetRegistry.loadAll();
+      if (shellDestroyed) {
+        return null;
+      }
+
+      widgetPanel = new WidgetPanel({
+        desktop,
+        registry: widgetRegistry,
+        shellAPI: {
+          sync,
+          api: apiClient,
+          navigate: shellNavigateTo,
+          showNotice: shellShowNotice,
+          getTheme: () => currentTheme,
+          onThemeChange,
+          helpers: {
+            escapeHtml,
+            formatRelativeTime,
+            formatTimestamp,
+            formatTokenLabel,
+          },
+        },
+        taskbar,
+        mode: 'panel',
+      });
+
+      await widgetPanel.init();
+
+      if (shellDestroyed) {
+        widgetPanel.destroy();
+        widgetPanel = null;
+        return null;
+      }
+
+      return widgetPanel;
+    } catch (error) {
+      console.warn('[Shell] Widget system init failed:', error);
+      widgetRegistry = null;
+      widgetPanel = null;
+      return null;
+    }
+  })();
+
   let metaPending = false;
   let metaUsedForShortcut = false;
 
@@ -342,6 +438,14 @@ export function bootstrapShell({
       metaUsedForShortcut = true;
       windowManager.minimizeAll();
       startMenu.close();
+      return;
+    }
+
+    if (event.metaKey && event.key.toLowerCase() === 'w') {
+      event.preventDefault();
+      metaUsedForShortcut = true;
+      startMenu.close();
+      toggleWidgetsPanel();
       return;
     }
 
@@ -382,8 +486,16 @@ export function bootstrapShell({
     startMenu,
     welcomeWidget,
     sync,
+    get widgetRegistry() {
+      return widgetRegistry;
+    },
+    get widgetPanel() {
+      return widgetPanel;
+    },
+    widgetsReady,
     applyTheme,
     destroy() {
+      shellDestroyed = true;
       welcomeWidget.removeEventListener('click', handleWelcomeClick);
       if (welcomeWidget._cleanupWelcome) {
         welcomeWidget._cleanupWelcome();
@@ -391,6 +503,9 @@ export function bootstrapShell({
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onWindowBlur);
+      themeSubscribers.clear();
+      widgetPanel?.destroy();
+      widgetPanel = null;
       sync.stop();
       startMenu.destroy();
       taskbar.destroy();

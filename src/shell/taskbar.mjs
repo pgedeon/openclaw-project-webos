@@ -16,6 +16,15 @@ const bellIcon = `
   </svg>
 `;
 
+const widgetsIcon = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="4" y="4" width="6.5" height="6.5" rx="1.5"></rect>
+    <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"></rect>
+    <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"></rect>
+    <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"></rect>
+  </svg>
+`;
+
 const moonIcon = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="M19 14.6A7 7 0 0 1 9.4 5a7.5 7.5 0 1 0 9.6 9.6Z"></path>
@@ -49,6 +58,7 @@ export class Taskbar extends EventTarget {
     pinnedAppIds = PINNED_APP_IDS,
     sync = null,
     onStartToggle = () => {},
+    onWidgetsToggle = () => {},
     onAppActivate = () => {},
     onThemeToggle = () => {},
     initialTheme = 'light',
@@ -64,9 +74,11 @@ export class Taskbar extends EventTarget {
     this.pinnedApps = pinnedAppIds.map((appId) => getAppById(appId)).filter(Boolean);
     this.sync = sync;
     this.onStartToggle = onStartToggle;
+    this.onWidgetsToggle = onWidgetsToggle;
     this.onAppActivate = onAppActivate;
     this.onThemeToggle = onThemeToggle;
     this.theme = initialTheme;
+    this.widgetsOpen = false;
     this.snapshot = { activeAppId: null, windows: [] };
     this.clockInterval = null;
     this.syncUnsubscribe = null;
@@ -167,6 +179,10 @@ export class Taskbar extends EventTarget {
             <span class="win11-taskbar__glyph">${startIcon}</span>
             <span class="win11-taskbar__tooltip">Start</span>
           </button>
+          <button type="button" class="win11-taskbar__button win11-taskbar__widgets-button" data-action="widgets" aria-label="Toggle widgets" aria-pressed="false">
+            <span class="win11-taskbar__glyph">${widgetsIcon}</span>
+            <span class="win11-taskbar__tooltip">Widgets</span>
+          </button>
           <div class="win11-taskbar__status-indicators" style="display:flex;align-items:center;gap:4px;margin-left:8px;">
             <div data-role="workflows-pulse" class="win11-taskbar__pulse" title="Active workflows" style="
               width:8px;height:8px;border-radius:50%;background:var(--win11-accent);opacity:0.3;
@@ -216,6 +232,7 @@ export class Taskbar extends EventTarget {
     `;
 
     this.startButton = this.root.querySelector('[data-action="start"]');
+    this.widgetsButton = this.root.querySelector('[data-action="widgets"]');
     this.themeButton = this.root.querySelector('[data-action="theme"]');
     this.themeIcon = this.root.querySelector('[data-role="theme-icon"]');
     this.themeTooltip = this.root.querySelector('[data-role="theme-tooltip"]');
@@ -225,6 +242,12 @@ export class Taskbar extends EventTarget {
       const startButton = event.target.closest('[data-action="start"]');
       if (startButton) {
         this.onStartToggle();
+        return;
+      }
+
+      const widgetsButton = event.target.closest('[data-action="widgets"]');
+      if (widgetsButton) {
+        this.onWidgetsToggle();
         return;
       }
 
@@ -243,6 +266,7 @@ export class Taskbar extends EventTarget {
 
     this.setTheme(this.theme);
     this.setWindowState(this.snapshot);
+    this.setWidgetsOpen(this.widgetsOpen);
     this.updateClock();
     this.renderNotificationBadges();
   }
@@ -289,6 +313,12 @@ export class Taskbar extends EventTarget {
 
   setStartMenuOpen(isOpen) {
     this.startButton?.classList.toggle('is-active', Boolean(isOpen));
+  }
+
+  setWidgetsOpen(isOpen) {
+    this.widgetsOpen = Boolean(isOpen);
+    this.widgetsButton?.classList.toggle('is-active', this.widgetsOpen);
+    this.widgetsButton?.setAttribute('aria-pressed', this.widgetsOpen ? 'true' : 'false');
   }
 
   setWindowState(snapshot = { activeAppId: null, windows: [] }) {

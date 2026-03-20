@@ -59,7 +59,7 @@ async function main() {
   const storage = new AsanaStorage({
     host: process.env.POSTGRES_HOST || 'localhost',
     port: Number.parseInt(process.env.POSTGRES_PORT || '5432', 10),
-    database: process.env.POSTGRES_DB || 'openclaw_webos',
+    database: process.env.POSTGRES_DB || 'openclaw_dashboard',
     user: process.env.POSTGRES_USER || 'openclaw',
     password: process.env.POSTGRES_PASSWORD || 'openclaw_password'
   });
