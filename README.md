@@ -6,13 +6,21 @@ A Windows 11-style desktop environment for managing your OpenClaw agent fleet. W
 
 ## Screenshots
 
-| WebOS Desktop | Multi-Window View |
-|:---:|:---:|
-| ![WebOS Desktop](screenshots/desktop-clean.png) | ![Multi-Window](screenshots/desktop-multiwindow.png) |
+### Desktop & Windows
 
-| Kanban Board | Widget Panel |
-|:---:|:---:|
-| ![Kanban Board](screenshots/kanban-board.png) | ![Widget Panel](screenshots/widget-panel.png) |
+| Desktop | Multi-Window | Start Menu |
+|:---:|:---:|:---:|
+| ![Desktop](screenshots/desktop.png) | ![Multi-Window](screenshots/multi-window.png) | ![Start Menu](screenshots/start-menu.png) |
+
+### Views
+
+| Tasks | Kanban Board | Agents |
+|:---:|:---:|:---:|
+| ![Tasks](screenshots/tasks.png) | ![Kanban Board](screenshots/kanban-board.png) | ![Agents](screenshots/agents.png) |
+
+| Operations | Memory | Workflows | Widget Panel |
+|:---:|:---:|:---:|:---:|
+| ![Operations](screenshots/operations.png) | ![Memory](screenshots/memory.png) | ![Workflows](screenshots/workflows.png) | ![Widget Panel](screenshots/widget-panel.png) |
 
 
 
