@@ -55,3 +55,4 @@ start-server*.sh
 test-session-binding.sh
 workflow-runs-api.js.broken
 .openclaw/
+src/offline/state-manager.mjs.backup

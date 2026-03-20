@@ -6,6 +6,16 @@ A Windows 11-style desktop environment for managing your OpenClaw agent fleet. W
 
 ## Screenshots
 
+| WebOS Desktop | Multi-Window View |
+|:---:|:---:|
+| ![WebOS Desktop](screenshots/desktop-clean.png) | ![Multi-Window](screenshots/desktop-multiwindow.png) |
+
+| Kanban Board | Widget Panel |
+|:---:|:---:|
+| ![Kanban Board](screenshots/kanban-board.png) | ![Widget Panel](screenshots/widget-panel.png) |
+
+## Screenshots
+
 ### Dashboard
 
 <p align="center">
