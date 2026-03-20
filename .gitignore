@@ -54,3 +54,4 @@ state.json
 start-server*.sh
 test-session-binding.sh
 workflow-runs-api.js.broken
+.openclaw/
