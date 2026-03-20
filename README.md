@@ -2,7 +2,16 @@
 
 A WebOS-style project management dashboard — desktop environment for managing tasks, workflows, and team activity.
 
-![WebOS Desktop](docs/screenshot.png)
+![Desktop Overview](docs/desktop-overview.png)
+
+## Screenshots
+
+| | | |
+|:---:|:---:|:---:|
+| ![Start Menu](docs/start-menu.png) | ![Kanban Board](docs/kanban-board.png) | ![Gantt Timeline](docs/gantt-timeline.png) |
+| **Start Menu** | **Kanban Board** | **Gantt Timeline** |
+| ![Activity Feed](docs/activity-feed.png) | ![Runbooks](docs/runbooks.png) | ![Multi-Window](docs/multi-window.png) |
+| **Activity Feed** | **Runbooks** | **Multi-Window** |
 
 ## Features
 
