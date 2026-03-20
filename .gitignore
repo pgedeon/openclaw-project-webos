@@ -1,0 +1,12 @@
+node_modules/
+.env
+*.pid
+*.log
+state.json
+gateway-status.json
+models-catalog.json
+_legacy-archive/
+backup*/
+*.backup
+*.bak
+*.tmp
