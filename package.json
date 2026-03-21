@@ -1,6 +1,6 @@
 {
   "name": "openclaw-project-dashboard",
-  "version": "2.0.0-rc.3",
+  "version": "2.0.1-rc.3",
   "description": "Operations-first project dashboard for OpenClaw with hierarchical boards, agent-aware task routing, OpenClaw model selection, and audit-friendly task execution.",
   "main": "task-server.js",
   "directories": {
