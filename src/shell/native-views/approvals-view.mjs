@@ -12,6 +12,8 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
   let cleanupFns = [];
   let noticeTimer = null;
   let syncUnsubscribe = null;
+  const openPanels = new Set();
+  const panelCache = {};
 
   const style = document.createElement('style');
   style.textContent = `
@@ -19,89 +21,90 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
     .apv-card:hover { border-color:var(--win11-accent); }
     .apv-btn { font-size:0.78rem;padding:5px 12px;border-radius:5px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);cursor:pointer;white-space:nowrap; }
     .apv-btn:hover { background:var(--win11-surface-active); }
-    .apv-btn.approve { background:#22c55e;color:#fff;border-color:transparent; }
-    .apv-btn.approve:hover { background:#16a34a; }
-    .apv-btn.reject { background:#ef4444;color:#fff;border-color:transparent; }
-    .apv-btn.reject:hover { background:#dc2626; }
-    .apv-input,.apv-textarea,.apv-select {
-      width:100%;padding:5px 8px;border-radius:5px;border:1px solid var(--win11-border);
-      background:var(--win11-surface);color:var(--win11-text);font-size:0.82rem;outline:none;box-sizing:border-box;
-    }
-    .apv-input:focus,.apv-select:focus,.apv-textarea:focus { border-color:var(--win11-accent); }
-    .apv-textarea { resize:vertical;font-family:inherit; }
-    .apv-notice { padding:6px 12px;border-radius:6px;font-size:0.82rem;text-align:center;background:rgba(96,205,255,0.1);color:var(--win11-accent);border:1px solid rgba(96,205,255,0.2);display:none;margin-top:8px; }
+    .apv-btn:disabled { opacity:0.5;cursor:default; }
+    .apv-btn.primary { background:var(--win11-accent);color:#fff;border-color:transparent; }
+    .apv-btn.primary:hover { filter:brightness(1.1); }
+    .apv-btn.danger { background:#ef4444;color:#fff;border-color:transparent; }
+    .apv-btn.danger:hover { background:#dc2626; }
+    .apv-btn.success { background:#22c55e;color:#fff;border-color:transparent; }
+    .apv-btn.success:hover { background:#16a34a; }
+    .apv-btn.ghost { background:transparent;color:var(--win11-text-tertiary);border-color:transparent;font-size:0.75rem;padding:3px 8px; }
+    .apv-btn.ghost:hover { color:#ef4444;background:rgba(239,68,68,0.1); }
+    .apv-select { padding:5px 8px;border-radius:5px;border:1px solid var(--win11-border);background:var(--win11-surface);color:var(--win11-text);font-size:0.82rem;outline:none; }
+    .apv-select:focus { border-color:var(--win11-accent); }
+    .apv-textarea { width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface);color:var(--win11-text);font-size:0.82rem;outline:none;resize:vertical;font-family:inherit;box-sizing:border-box; }
+    .apv-textarea:focus { border-color:var(--win11-accent); }
+    .apv-notice { padding:6px 12px;border-radius:6px;font-size:0.82rem;text-align:center;display:none;margin-top:8px; }
     .apv-notice.is-visible { display:block; }
-    .apv-notice.is-error { background:rgba(239,68,68,0.1);color:#ef4444;border-color:rgba(239,68,68,0.2); }
-    .apv-notice.is-success { background:rgba(34,197,94,0.1);color:#22c55e;border-color:rgba(34,197,94,0.2); }
-    .apv-badge { display:inline-block;font-size:0.68rem;padding:1px 6px;border-radius:3px;font-weight:600; }
-    .apv-badge--overdue { background:rgba(239,68,68,0.15);color:#ef4444; }
-    .apv-badge--escalated { background:rgba(234,179,8,0.15);color:#eab308; }
-    .apv-badge--pending { background:rgba(96,205,255,0.1);color:var(--win11-accent); }
-    .apv-badge--approved { background:rgba(34,197,94,0.15);color:#22c55e; }
-    .apv-badge--rejected { background:rgba(239,68,68,0.15);color:#ef4444; }
-    .apv-sub { background:var(--win11-surface);border:1px solid var(--win11-border);border-radius:8px;padding:10px; }
+    .apv-notice.is-error { background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.2); }
+    .apv-notice.is-success { background:rgba(34,197,94,0.1);color:#22c55e;border:1px solid rgba(34,197,94,0.2); }
+    .apv-badge { display:inline-flex;align-items:center;gap:3px;font-size:0.68rem;padding:2px 7px;border-radius:4px;font-weight:600;line-height:1; }
+    .apv-priority--high { background:rgba(239,68,68,0.15);color:#ef4444; }
+    .apv-priority--medium { background:rgba(234,179,8,0.15);color:#eab308; }
+    .apv-priority--low { background:rgba(96,205,255,0.1);color:var(--win11-accent); }
+    .apv-status { font-size:0.75rem;color:var(--win11-text-tertiary);display:flex;align-items:center;gap:5px; }
+    .apv-divider { border:none;border-top:1px solid var(--win11-border);margin:10px 0; }
+    .apv-details { margin-top:10px;background:var(--win11-surface);border:1px solid var(--win11-border);border-radius:8px;padding:12px;max-height:350px;overflow-y:auto; }
+    .apv-followup { margin-top:10px;display:flex;gap:6px;align-items:flex-end; }
+    .apv-followup textarea { flex:1; }
+    .apv-result { margin-top:6px;font-size:0.8rem;white-space:pre-wrap;padding:8px;border-radius:6px;display:none; }
+    .apv-result.is-error { background:rgba(239,68,68,0.08);color:#ef4444; }
+    .apv-result.is-info { background:rgba(96,205,255,0.08);color:var(--win11-text); }
+    .apv-confirm-bar { display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(239,68,68,0.08);border-radius:6px;margin-top:6px;font-size:0.8rem;color:#ef4444; }
+    .apv-confirm-bar button { font-size:0.78rem;padding:3px 10px;border-radius:4px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);cursor:pointer; }
+    .apv-confirm-bar button.confirm-yes { background:#ef4444;color:#fff;border-color:transparent; }
   `;
   root.appendChild(style);
 
-  root.innerHTML += `
-    <div style="padding:14px 16px;border-bottom:1px solid var(--win11-border);flex-shrink:0;">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
-        <div>
-          <h2 style="margin:0 0 4px;color:var(--win11-text);font-size:1.2rem;font-weight:700;">✅ Approvals</h2><span style="font-size:0.7rem;color:var(--win11-accent);opacity:0.7;margin-left:4px;" title="Live data">●</span>
-          <p style="margin:0;color:var(--win11-text-secondary);font-size:0.85rem;">Review pending approvals, approve, reject, or escalate with notes.</p>
-        </div>
-        <button id="apvRefresh" class="apv-btn">↻ Refresh</button>
-      </div>
-      <div id="apvStats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;"></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <select id="apvFilterApprover" class="apv-select" style="width:auto;min-width:130px;"><option value="">All approvers</option></select>
-        <select id="apvFilterWorkflow" class="apv-select" style="width:auto;min-width:130px;"><option value="">All workflows</option></select>
-        <select id="apvFilterType" class="apv-select" style="width:auto;min-width:130px;"><option value="">All types</option></select>
-        <select id="apvFilterDue" class="apv-select" style="width:auto;min-width:130px;">
-          <option value="">All</option>
-          <option value="overdue">Overdue</option>
-          <option value="due_today">Due today</option>
-          <option value="unscheduled">No due date</option>
-        </select>
-      </div>
-    </div>
-    <div id="apvGrid" style="flex:1;overflow-y:auto;padding:12px 16px;">
-      <div style="padding:32px;text-align:center;color:var(--win11-text-tertiary);">Loading approvals...</div>
-    </div>
-    <div id="apvNotice" class="apv-notice"></div>
-  `;
-  mountNode.appendChild(root);
-
-  function showNotice(msg, type = '') {
+  function showNotice(msg, type) {
     const el = root.querySelector('#apvNotice');
     if (!el) return;
     el.textContent = msg;
-    el.className = `apv-notice is-visible${type === 'error' ? ' is-error' : ''}${type === 'success' ? ' is-success' : ''}`;
+    el.className = 'apv-notice is-visible' + (type === 'error' ? ' is-error' : type === 'success' ? ' is-success' : '');
     clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(() => { el.className = 'apv-notice'; }, 4000);
+    noticeTimer = setTimeout(() => el.className = 'apv-notice', 4000);
   }
 
-  function fmtDate(d) { if (!d) return '—'; try { return new Date(d).toLocaleDateString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }); } catch { return d; } }
+  function fmtDate(d) {
+    if (!d) return '';
+    try { return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+    catch { return d; }
+  }
 
-  function renderOptions(select, values, allLabel) {
-    const items = [{ value:'', label:allLabel }].concat(
-      [...new Set(values.filter(Boolean))].sort().map(v => ({ value:v, label:v }))
-    );
-    select.innerHTML = items.map(i => `<option value="${escapeHtml(i.value)}">${escapeHtml(i.label)}</option>`).join('');
+  function esc(s) { return escapeHtml(s || ''); }
+
+  function getAgentStatus(a) {
+    if (a.runFinishedAt) return { icon: '\u2705', label: 'Completed', cls: '' };
+    if (a.runSessionActive && a.runLastHeartbeat) {
+      const m = Math.round((Date.now() - new Date(a.runLastHeartbeat).getTime()) / 60000);
+      if (m < 5) return { icon: '\ud83d\udfe2', label: 'Working now', cls: '' };
+      if (m < 30) return { icon: '\ud83d\udfe1', label: m + 'm ago', cls: '' };
+      return { icon: '\ud83d\udd34', label: m + 'm ago', cls: 'is-error' };
+    }
+    if (a.runSessionActive) return { icon: '\ud83d\udfe1', label: 'Session started', cls: '' };
+    if (a.runStatus === 'failed') return { icon: '\u274c', label: 'Failed', cls: 'is-error' };
+    if (a.status === 'approved') return { icon: '\u23f3', label: 'Waiting for agent', cls: '' };
+    if (a.status === 'rejected') return { icon: '\ud83d\udeab', label: 'Rejected', cls: '' };
+    return { icon: '\u23f8', label: 'Pending review', cls: '' };
+  }
+
+  function priorityBadge(p) {
+    if (!p) return '';
+    return '<span class="apv-badge apv-priority--' + p + '">' + esc(p) + '</span>';
+  }
+
+  function categoryBadge(c) {
+    if (!c) return '';
+    return '<span class="apv-badge" style="background:var(--win11-surface);color:var(--win11-text-tertiary);border:1px solid var(--win11-border);">' + esc(c.replace(/_/g, ' ')) + '</span>';
   }
 
   function getFiltered() {
-    const dueVal = root.querySelector('#apvFilterDue')?.value || '';
+    const statusFilter = root.querySelector('#apvFilter')?.value || 'active';
     return approvals.filter(a => {
-      if (root.querySelector('#apvFilterApprover')?.value && a.approverId !== root.querySelector('#apvFilterApprover').value) return false;
-      if (root.querySelector('#apvFilterWorkflow')?.value && a.workflowType !== root.querySelector('#apvFilterWorkflow').value) return false;
-      if (root.querySelector('#apvFilterType')?.value && a.approvalType !== root.querySelector('#apvFilterType').value) return false;
-      if (dueVal === 'overdue' && !a.overdue) return false;
-      if (dueVal === 'unscheduled' && a.dueAt) return false;
-      if (dueVal === 'due_today') {
-        if (!a.dueAt) return false;
-        const due = new Date(a.dueAt);
-        if (due.toDateString() !== new Date().toDateString()) return false;
+      if (statusFilter === 'active') {
+        if (a.status === 'pending') return true;
+        if (a.status === 'approved' && !a.runFinishedAt && a.runStatus !== 'completed') return true;
+        return false;
       }
       return true;
     });
@@ -109,12 +112,15 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
 
   function renderStats() {
     const items = getFiltered();
-    const overdue = items.filter(a => a.overdue).length;
-    const escalated = items.filter(a => a.escalatedAt || a.escalatedTo).length;
+    const pending = items.filter(a => a.status === 'pending').length;
+    const inProgress = items.filter(a => a.status === 'approved' && !a.runFinishedAt && a.runStatus !== 'completed').length;
+    const completed = items.filter(a => a.runStatus === 'completed').length;
+    const rejected = items.filter(a => a.status === 'rejected').length;
     root.querySelector('#apvStats').innerHTML = [
-      createStatCard({ label:'Pending', value:formatCount(items.length), tone: items.length > 0 ? 'info' : 'default' }),
-      createStatCard({ label:'Overdue', value:formatCount(overdue), tone: overdue > 0 ? 'danger' : 'default' }),
-      createStatCard({ label:'Escalated', value:formatCount(escalated), tone: escalated > 0 ? 'warning' : 'default' }),
+      createStatCard({ label: 'Needs Action', value: formatCount(pending), tone: pending > 0 ? 'info' : 'default' }),
+      createStatCard({ label: 'In Progress', value: formatCount(inProgress), tone: inProgress > 0 ? 'info' : 'default' }),
+      createStatCard({ label: 'Completed', value: formatCount(completed), tone: 'default' }),
+      createStatCard({ label: 'Rejected', value: formatCount(rejected), tone: rejected > 0 ? 'danger' : 'default' }),
     ].map(c => c.outerHTML).join('');
   }
 
@@ -124,127 +130,323 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
     renderStats();
 
     if (!items.length) {
-      grid.innerHTML = '<div style="padding:32px;text-align:center;color:var(--win11-text-tertiary);">No pending approvals match filters.</div>';
+      const filter = root.querySelector('#apvFilter')?.value || 'active';
+      grid.innerHTML = '<div style="padding:40px;text-align:center;color:var(--win11-text-tertiary);">' +
+        (filter === 'active' ? 'All clear. No pending approvals.' : 'No approvals match your filter.') + '</div>';
       return;
     }
 
-    grid.innerHTML = `<div style="display:grid;gap:10px;">
-      ${items.map(a => {
-        const badges = [];
-        if (a.overdue) badges.push('<span class="apv-badge apv-badge--overdue">Overdue</span>');
-        if (a.escalatedAt || a.escalatedTo) badges.push('<span class="apv-badge apv-badge--escalated">Escalated</span>');
-        badges.push(`<span class="apv-badge apv-badge--pending">${escapeHtml(a.statusInfo?.label || 'Pending')}</span>`);
-        return `<div class="apv-card">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;">
-            <div>
-              <div style="font-weight:600;font-size:0.9rem;color:var(--win11-text);">${escapeHtml(a.stepName || a.approvalType || 'Approval')}</div>
-              <div style="font-size:0.8rem;color:var(--win11-text-secondary);margin-top:2px;">${escapeHtml(a.workflowType || 'Unknown workflow')} · by ${escapeHtml(a.ownerAgentId || a.requestedBy || 'system')}</div>
-            </div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap;">${badges.join('')}</div>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
-            <div class="apv-sub">
-              <div style="font-size:0.7rem;color:var(--win11-text-tertiary);text-transform:uppercase;letter-spacing:0.06em;">Run</div>
-              <div style="font-weight:600;font-size:0.82rem;margin-top:3px;">${escapeHtml(a.workflowRunId || '—')}</div>
-              <div style="font-size:0.75rem;color:var(--win11-text-secondary);">Task: ${escapeHtml(a.taskTitle || a.taskId || '—')}</div>
-            </div>
-            <div class="apv-sub">
-              <div style="font-size:0.7rem;color:var(--win11-text-tertiary);text-transform:uppercase;letter-spacing:0.06em;">Ownership</div>
-              <div style="font-weight:600;font-size:0.82rem;margin-top:3px;">${escapeHtml(a.approverId || 'unassigned')}</div>
-              <div style="font-size:0.75rem;color:var(--win11-text-secondary);">Type: ${escapeHtml((a.approvalType || '').replace(/_/g,' '))}</div>
-            </div>
-            <div class="apv-sub">
-              <div style="font-size:0.7rem;color:var(--win11-text-tertiary);text-transform:uppercase;letter-spacing:0.06em;">Due</div>
-              <div style="font-weight:600;font-size:0.82rem;margin-top:3px;">${escapeHtml(a.dueAt ? fmtDate(a.dueAt) : 'No due date')}</div>
-              ${a.artifact ? `<div style="font-size:0.75rem;color:var(--win11-text-secondary);margin-top:3px;word-break:break-all;"><a href="${escapeHtml(a.artifact.uri || '#')}" target="_blank" style="color:var(--win11-accent);">${escapeHtml(a.artifact.label || 'Open artifact')}</a></div>` : ''}
-            </div>
-          </div>
-          <div style="margin-bottom:10px;">
-            <textarea class="apv-textarea apv-note" data-id="${escapeHtml(a.id)}" rows="2" placeholder="Decision note (required)..." style="font-size:0.8rem;"></textarea>
-          </div>
-          <div style="display:flex;gap:6px;justify-content:flex-end;">
-            <button class="apv-btn apv-escalate" data-id="${escapeHtml(a.id)}">Escalate</button>
-            <button class="apv-btn apv-reject" data-id="${escapeHtml(a.id)}">Reject</button>
-            <button class="apv-btn approve" data-id="${escapeHtml(a.id)}">Approve</button>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>`;
+    grid.innerHTML = items.map(a => renderCard(a)).join('');
 
-    grid.querySelectorAll('.approve').forEach(btn => {
-      const h = async () => {
+    openPanels.forEach(runId => {
+      const panel = grid.querySelector('[data-panel="' + runId + '"]');
+      if (panel) {
+        panel.style.display = 'block';
+        if (panelCache[runId]) panel.innerHTML = panelCache[runId];
+      }
+    });
+
+    attachListeners(grid);
+  }
+
+  function renderCard(a) {
+    const isPending = a.status === 'pending';
+    const isApproved = a.status === 'approved' && !a.runFinishedAt && a.runStatus !== 'completed';
+    const isCompleted = a.runStatus === 'completed';
+    const isRejected = a.status === 'rejected';
+    const st = getAgentStatus(a);
+    const prompt = a.metadata?.action_prompt || a.metadata?.description || '';
+    const source = a.ownerAgentId || a.requestedBy || 'system';
+    const time = fmtDate(a.created_at);
+    const runId = a.workflowRunId;
+
+    let h = '<div class="apv-card" data-run-id="' + esc(runId) + '">';
+
+    // Header
+    h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">';
+    h += '<div style="flex:1;min-width:0;">';
+    h += '<div style="font-weight:600;font-size:0.9rem;color:var(--win11-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(a.stepName || a.approvalType || 'Approval') + '</div>';
+    h += '<div style="font-size:0.75rem;color:var(--win11-text-tertiary);margin-top:2px;">by ' + esc(source) + (time ? ' \u00b7 ' + time : '') + '</div>';
+    h += '</div>';
+    h += '<div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">';
+    h += priorityBadge(a.metadata?.priority);
+    h += categoryBadge(a.metadata?.category || a.approvalType);
+    h += '</div></div>';
+
+    // Description
+    if (prompt) {
+      h += '<div style="margin-top:8px;font-size:0.82rem;color:var(--win11-text);line-height:1.45;white-space:pre-wrap;max-height:4.5em;overflow:hidden;">' + esc(prompt) + '</div>';
+    }
+
+    // Agent status
+    h += '<div style="margin-top:8px;" class="apv-status">' + st.icon + ' ' + esc(st.label) + '</div>';
+
+    // ── Pending: note + Dismiss / Reject / Approve ──
+    if (isPending) {
+      h += '<hr class="apv-divider">';
+      h += '<textarea class="apv-textarea apv-note" data-id="' + esc(a.id) + '" rows="1" placeholder="Add a note (optional)..."></textarea>';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">';
+      h += '<button class="apv-btn ghost apv-delete-trigger" data-run-id="' + esc(runId) + '">Dismiss</button>';
+      h += '<div style="display:flex;gap:6px;">';
+      h += '<button class="apv-btn apv-reject" data-id="' + esc(a.id) + '">Reject</button>';
+      h += '<button class="apv-btn success apv-approve" data-id="' + esc(a.id) + '">Approve</button>';
+      h += '</div></div>';
+    }
+
+    // ── Approved: Cancel / Execute ──
+    if (isApproved && !a.runSessionActive) {
+      h += '<hr class="apv-divider">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+      h += '<button class="apv-btn ghost apv-delete-trigger" data-run-id="' + esc(runId) + '">Cancel</button>';
+      h += '<button class="apv-btn primary apv-execute" data-run-id="' + esc(runId) + '">\u25b6 Execute</button>';
+      h += '</div>';
+    }
+
+    // ── Completed: Delete / Details / Follow-up ──
+    if (isCompleted) {
+      h += '<hr class="apv-divider">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+      h += '<button class="apv-btn ghost apv-delete-trigger" data-run-id="' + esc(runId) + '">Delete</button>';
+      h += '<button class="apv-btn apv-details-toggle" data-run-id="' + esc(runId) + '">\u25b6 Details</button>';
+      h += '</div>';
+      h += '<div class="apv-details" data-panel="' + esc(runId) + '" style="display:none;"><div style="font-size:0.75rem;color:var(--win11-text-tertiary);">Loading...</div></div>';
+      h += '<div class="apv-followup" data-run-id="' + esc(runId) + '">';
+      h += '<textarea class="apv-textarea apv-followup-input" rows="1" placeholder="Follow-up..."></textarea>';
+      h += '<button class="apv-btn primary apv-followup-send" style="align-self:flex-end;">Send</button>';
+      h += '</div>';
+      h += '<div class="apv-result" data-result="' + esc(runId) + '"></div>';
+    }
+
+    // ── Rejected: note + Delete ──
+    if (isRejected) {
+      h += '<hr class="apv-divider">';
+      if (a.decision || a.notes) {
+        h += '<div style="font-size:0.8rem;color:var(--win11-text-tertiary);font-style:italic;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(a.decision || a.notes) + '</div>';
+      }
+      h += '<button class="apv-btn ghost apv-delete-trigger" data-run-id="' + esc(runId) + '">Delete</button>';
+    }
+
+    h += '</div>';
+    return h;
+  }
+
+  async function loadDetails(panel, runId) {
+    if (panelCache[runId]) { panel.innerHTML = panelCache[runId]; return; }
+    panel.innerHTML = '<div style="font-size:0.75rem;color:var(--win11-text-tertiary);">Loading...</div>';
+    try {
+      const resp = await fetch('/api/workflow-runs/' + runId);
+      const run = await resp.json();
+      const output = run.outputSummary || run.output_summary || {};
+      const finished = run.finished_at || run.finishedAt || '';
+      const duration = run.started_at ? Math.round((new Date(finished) - new Date(run.started_at)) / 60000) : '?';
+      let html = '<div style="display:flex;gap:16px;margin-bottom:10px;font-size:0.8rem;color:var(--win11-text-tertiary);">';
+      html += '<span>Finished: ' + (finished ? new Date(finished).toLocaleString() : '--') + '</span>';
+      html += '<span>Duration: ~' + duration + ' min</span></div>';
+      const entries = Object.entries(output).filter(([k, v]) => v && k !== 'status');
+      if (entries.length) {
+        for (const [key, val] of entries) {
+          const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          html += '<div style="margin-bottom:8px;"><div style="font-weight:600;font-size:0.82rem;color:var(--win11-text);">' + esc(label) + '</div>';
+          html += '<div style="font-size:0.8rem;color:var(--win11-text-secondary);white-space:pre-wrap;margin-top:2px;">' + esc(typeof val === 'string' ? val : JSON.stringify(val, null, 2)) + '</div></div>';
+        }
+      } else {
+        html += '<div style="font-size:0.8rem;color:var(--win11-text-tertiary);">No output recorded</div>';
+      }
+      panelCache[runId] = html;
+      panel.innerHTML = html;
+    } catch (err) {
+      panel.innerHTML = '<div style="font-size:0.8rem;color:#ef4444;">Failed: ' + esc(err.message) + '</div>';
+    }
+  }
+
+  function attachListeners(grid) {
+    grid.querySelectorAll('.apv-approve').forEach(btn => {
+      const handler = async () => {
         const id = btn.dataset.id;
-        const note = grid.querySelector(`.apv-note[data-id="${id}"]`)?.value?.trim();
-        if (!note) { showNotice('Decision note is required.', 'error'); return; }
+        const note = grid.querySelector('.apv-note[data-id="' + id + '"]')?.value?.trim() || 'Approved';
         btn.disabled = true;
         try {
-          await api.approvals.decide(id, 'approved', { notes: note, decided_by: 'dashboard-operator' });
+          await api.approvals.act(id, '', { decision: 'approved', notes: note, decided_by: 'dashboard-operator' });
           showNotice('Approved.', 'success');
           await loadApprovals();
-        } catch (e) { showNotice(e.message || 'Failed to approve.', 'error'); }
-        finally { btn.disabled = false; }
+        } catch (e) { showNotice(e.message || 'Failed.', 'error'); btn.disabled = false; }
       };
-      btn.addEventListener('click', h);
-      cleanupFns.push(() => btn.removeEventListener('click', h));
+      btn.addEventListener('click', handler);
+      cleanupFns.push(() => btn.removeEventListener('click', handler));
     });
 
     grid.querySelectorAll('.apv-reject').forEach(btn => {
-      const h = async () => {
+      const handler = async () => {
         const id = btn.dataset.id;
-        const note = grid.querySelector(`.apv-note[data-id="${id}"]`)?.value?.trim();
-        if (!note) { showNotice('Decision note is required.', 'error'); return; }
+        const note = grid.querySelector('.apv-note[data-id="' + id + '"]')?.value?.trim() || 'Rejected';
         btn.disabled = true;
         try {
-          await api.approvals.decide(id, 'rejected', { notes: note, decided_by: 'dashboard-operator' });
+          await api.approvals.act(id, '', { decision: 'rejected', notes: note, decided_by: 'dashboard-operator' });
           showNotice('Rejected.', 'success');
           await loadApprovals();
-        } catch (e) { showNotice(e.message || 'Failed to reject.', 'error'); }
-        finally { btn.disabled = false; }
+        } catch (e) { showNotice(e.message || 'Failed.', 'error'); btn.disabled = false; }
       };
-      btn.addEventListener('click', h);
-      cleanupFns.push(() => btn.removeEventListener('click', h));
+      btn.addEventListener('click', handler);
+      cleanupFns.push(() => btn.removeEventListener('click', handler));
     });
+  }
 
-    grid.querySelectorAll('.apv-escalate').forEach(btn => {
-      const h = async () => {
-        const id = btn.dataset.id;
-        const note = grid.querySelector(`.apv-note[data-id="${id}"]`)?.value?.trim();
-        if (!note) { showNotice('Escalation note required.', 'error'); return; }
-        btn.disabled = true;
-        try {
-          await api.approvals.decide(id, 'escalate', { notes: note, actor: 'dashboard-operator' });
-          showNotice('Escalated.', 'success');
+  root.querySelector('#apvGrid')?.addEventListener('click', async (e) => {
+    // Delete trigger — show confirmation bar
+    const delBtn = e.target.closest('.apv-delete-trigger');
+    if (delBtn) {
+      const card = delBtn.closest('.apv-card');
+      const runId = delBtn.dataset.runId;
+      // Remove any existing confirm bars
+      card?.querySelectorAll('.apv-confirm-bar').forEach(el => el.remove());
+      // Insert confirm bar after the button
+      const confirmBar = document.createElement('div');
+      confirmBar.className = 'apv-confirm-bar';
+      confirmBar.innerHTML = '<span>Delete this run?</span><button class="confirm-no">No</button><button class="confirm-yes" data-run-id="' + esc(runId) + '">Yes, delete</button>';
+      delBtn.parentNode?.insertBefore(confirmBar, delBtn.nextSibling);
+      delBtn.style.display = 'none';
+      return;
+    }
+
+    // Confirm yes — delete
+    const confirmYes = e.target.closest('.confirm-yes');
+    if (confirmYes) {
+      const runId = confirmYes.dataset.runId;
+      confirmYes.disabled = true;
+      confirmYes.textContent = 'Deleting...';
+      try {
+        const resp = await fetch('/api/workflow-runs/' + runId, { method: 'DELETE' });
+        if (resp.ok) {
+          showNotice('Deleted.', 'success');
           await loadApprovals();
-        } catch (e) { showNotice(e.message || 'Escalation failed.', 'error'); }
-        finally { btn.disabled = false; }
-      };
-      btn.addEventListener('click', h);
-      cleanupFns.push(() => btn.removeEventListener('click', h));
-    });
+        } else {
+          showNotice('Failed to delete.', 'error');
+        }
+      } catch (err) {
+        showNotice('Failed: ' + err.message, 'error');
+      }
+      return;
+    }
+
+    // Confirm no — restore
+    const confirmNo = e.target.closest('.confirm-no');
+    if (confirmNo) {
+      const card = confirmNo.closest('.apv-card');
+      card?.querySelectorAll('.apv-confirm-bar').forEach(el => el.remove());
+      card?.querySelectorAll('.apv-delete-trigger').forEach(el => el.style.display = '');
+      return;
+    }
+
+    // Details toggle
+    const detailsBtn = e.target.closest('.apv-details-toggle');
+    if (detailsBtn) {
+      const runId = detailsBtn.dataset.runId;
+      const panel = root.querySelector('[data-panel="' + runId + '"]');
+      if (!panel) return;
+      const isOpen = panel.style.display !== 'none';
+      if (isOpen) { panel.style.display = 'none'; openPanels.delete(runId); }
+      else { panel.style.display = 'block'; openPanels.add(runId); loadDetails(panel, runId); }
+      detailsBtn.textContent = isOpen ? '\u25b6 Details' : '\u25bc Details';
+      return;
+    }
+
+    // Follow-up send
+    const followupBtn = e.target.closest('.apv-followup-send');
+    if (followupBtn) {
+      const runId = followupBtn.dataset.runId;
+      const container = followupBtn.closest('.apv-followup');
+      const input = container?.querySelector('.apv-followup-input');
+      const resultEl = root.querySelector('[data-result="' + runId + '"]');
+      const prompt = (input?.value || '').trim();
+      if (!prompt) return;
+      followupBtn.disabled = true;
+      followupBtn.textContent = '\u23f3';
+      if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = 'Sending...'; resultEl.className = 'apv-result is-info'; }
+      try {
+        const resp = await fetch('/api/system-scan/followup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ runId, prompt })
+        });
+        const data = await resp.json();
+        if (resultEl) {
+          if (data.error) { resultEl.textContent = data.error; resultEl.className = 'apv-result is-error'; }
+          else { resultEl.textContent = data.message || 'Follow-up sent.'; resultEl.className = 'apv-result is-info'; if (input) input.value = ''; }
+        }
+      } catch (err) { if (resultEl) { resultEl.textContent = 'Failed: ' + err.message; resultEl.className = 'apv-result is-error'; } }
+      followupBtn.disabled = false;
+      followupBtn.textContent = 'Send';
+      return;
+    }
+
+    // Execute
+    const execBtn = e.target.closest('.apv-execute');
+    if (execBtn) {
+      const runId = execBtn.dataset.runId;
+      if (!runId) return;
+      execBtn.disabled = true;
+      execBtn.textContent = '\u23f3 Starting...';
+      try {
+        await fetch('/api/workflow-runs/' + runId + '/start', { method: 'POST' });
+        showNotice('Run started.', 'success');
+        setTimeout(() => loadApprovals(), 2000);
+      } catch (err) { showNotice('Failed: ' + err.message, 'error'); execBtn.disabled = false; execBtn.textContent = '\u25b6 Execute'; }
+      return;
+    }
+  });
+
+  function saveNotes() {
+    const notes = {};
+    root.querySelectorAll('.apv-note').forEach(ta => { if (ta.value.trim()) notes[ta.dataset.id] = ta.value; });
+    return notes;
+  }
+  function restoreNotes(notes) {
+    for (const [id, val] of Object.entries(notes)) {
+      const ta = root.querySelector('.apv-note[data-id="' + id + '"]');
+      if (ta) ta.value = val;
+    }
   }
 
   async function loadApprovals() {
     try {
-      const res = await api.approvals.pending();
+      const savedNotes = saveNotes();
+      const res = await api.approvals.list({ limit: 100 });
       approvals = Array.isArray(res?.approvals) ? res.approvals : [];
-      renderOptions(root.querySelector('#apvFilterApprover'), approvals.map(a => a.approverId), 'All approvers');
-      renderOptions(root.querySelector('#apvFilterWorkflow'), approvals.map(a => a.workflowType), 'All workflows');
-      renderOptions(root.querySelector('#apvFilterType'), approvals.map(a => a.approvalType), 'All types');
       renderGrid();
+      restoreNotes(savedNotes);
     } catch (e) {
-      root.querySelector('#apvGrid').innerHTML = `<div style="padding:24px;color:#ef4444;">Failed: ${escapeHtml(e.message)}</div>`;
+      root.querySelector('#apvGrid').innerHTML = '<div style="padding:24px;color:#ef4444;">Failed: ' + esc(e.message) + '</div>';
     }
   }
 
-  root.querySelector('#apvFilterApprover')?.addEventListener('change', renderGrid);
-  root.querySelector('#apvFilterWorkflow')?.addEventListener('change', renderGrid);
-  root.querySelector('#apvFilterType')?.addEventListener('change', renderGrid);
-  root.querySelector('#apvFilterDue')?.addEventListener('change', renderGrid);
+  root.innerHTML += `
+    <div style="padding:14px 16px;border-bottom:1px solid var(--win11-border);flex-shrink:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;">
+        <div>
+          <h2 style="margin:0 0 2px;color:var(--win11-text);font-size:1.15rem;font-weight:700;">Approvals</h2>
+          <p style="margin:0;color:var(--win11-text-secondary);font-size:0.82rem;">Review and act on pending items.</p>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select id="apvFilter" class="apv-select" style="width:auto;">
+            <option value="active">Active</option>
+            <option value="all">All</option>
+          </select>
+          <button id="apvRefresh" class="apv-btn">\u21bb</button>
+        </div>
+      </div>
+      <div id="apvStats" style="display:flex;gap:10px;flex-wrap:wrap;"></div>
+    </div>
+    <div id="apvGrid" style="flex:1;overflow-y:auto;padding:12px 16px;">
+      <div style="padding:40px;text-align:center;color:var(--win11-text-tertiary);">Loading...</div>
+    </div>
+    <div id="apvNotice" class="apv-notice"></div>
+  `;
+  mountNode.appendChild(root);
+
+  root.querySelector('#apvFilter')?.addEventListener('change', renderGrid);
   root.querySelector('#apvRefresh')?.addEventListener('click', () => loadApprovals().then(() => showNotice('Refreshed.', 'success')));
 
-  if (sync) {
-    syncUnsubscribe = sync.subscribe(() => loadApprovals());
-  }
+  if (sync) syncUnsubscribe = sync.subscribe(() => loadApprovals());
 
   await loadApprovals();
 

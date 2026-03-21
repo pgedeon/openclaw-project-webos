@@ -468,8 +468,17 @@ export function createAPIClient(baseURL = '/api', options = {}) {
       list(params = {}) {
         return request(pathWithQuery('/artifacts', params));
       },
+      update(id, data = {}) {
+        return jsonRequest(`/artifacts/${encodeURIComponent(id)}`, { method: 'PATCH', body: data });
+      },
+      delete(id) {
+        return jsonRequest(`/artifacts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      },
     },
     approvals: {
+      list(params = {}) {
+        return request(pathWithQuery('/approvals', params));
+      },
       pending(params = {}) {
         return request(pathWithQuery('/approvals/pending', params));
       },

@@ -32,8 +32,8 @@ cp .env.example .env
 4. Set these values explicitly:
 
 ```bash
-OPENCLAW_WORKSPACE=~/.openclaw/workspace
-OPENCLAW_CONFIG_FILE=~/.openclaw/openclaw.json
+OPENCLAW_WORKSPACE=$OPENCLAW_WORKSPACE
+OPENCLAW_CONFIG_FILE=$OPENCLAW_CONFIG_FILE
 POSTGRES_PASSWORD=change-me
 ```
 

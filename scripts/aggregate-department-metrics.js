@@ -15,7 +15,7 @@ const AsanaStorage = require('../storage/asana');
 const { persistDepartmentDailyMetrics } = require('../metrics-api.js');
 
 const OPENCLAW_ROOT = path.resolve(__dirname, '..', '..', '..');
-const OPENCLAW_CONFIG_FILE = path.join(OPENCLAW_ROOT, 'openclaw.json');
+const OPENCLAW_CONFIG_FILE = process.env.OPENCLAW_CONFIG_FILE || 'openclaw.json';
 
 function normalizeModelRef(modelConfig) {
   if (typeof modelConfig === 'string' && modelConfig.trim()) {

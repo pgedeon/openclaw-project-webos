@@ -10,7 +10,7 @@ const {
 } = require('../org-bootstrap.js');
 
 function run() {
-  const openclawPath = path.resolve(__dirname, '../../../openclaw.json');
+  const openclawPath = process.env.OPENCLAW_CONFIG_FILE || 'openclaw.json';
   const config = JSON.parse(fs.readFileSync(openclawPath, 'utf8'));
   const configuredAgents = (config.agents?.list || [])
     .map((agent) => agent?.id)

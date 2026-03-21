@@ -27,7 +27,7 @@ This module provides secure handling of credentials for FTP and WordPress operat
 ```bash
 WP_SITE_URL=https://3dput.com
 WP_USERNAME=admin
-WP_APP_PASS=V2W3 GbQC Sbgj eeX7 9klH GHLS
+WP_APP_PASS=your-app-password-here
 ```
 
 ### FTP (FTPS)

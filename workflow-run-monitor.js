@@ -23,7 +23,12 @@ const WORKFLOW_AGENT_MAP = {
   'image-generation': 'comfyui-image-agent',
   'qa-review': 'qa-review',
   'incident-investigation': 'incident-investigation',
+  'system-improvement-scan': 'main',
+  'improvement-suggestion': 'coder',
 };
+
+// Agents with strong models for complex work (not free-tier)
+const STRONG_MODEL_AGENTS = ['main', 'coder', 'dashboard-manager'];
 
 class WorkflowRunMonitor {
   constructor(pool, log = console) {
@@ -173,7 +178,37 @@ class WorkflowRunMonitor {
     const title = inputPayload.title || `${workflowType} run`;
     const articleUrl = inputPayload.article_url || inputPayload.url || '';
     
-    const task = `Work on the ${workflowType} workflow run ${runId.substring(0, 8)}.
+    let task;
+    if (workflowType === 'system-improvement-scan') {
+      const scanAreas = (inputPayload.scan_areas || []).join(', ');
+      task = `Execute a system improvement scan for workflow run ${runId.substring(0, 8)}.
+
+Scan areas: ${scanAreas}
+Max suggestions: ${inputPayload.max_suggestions || 10}
+
+## Your Task
+
+Run the improvement scan engine to analyze the current system state:
+1. Run the system improvement scan script
+2. Review the output - it will automatically create approval-gated workflow runs
+3. If suggestions were created, report the summary
+4. If no suggestions were found, report that the system is healthy
+
+## CRITICAL: You MUST mark the run complete when done
+
+After the scan finishes, call this API:
+
+curl -X POST "http://localhost:3876/api/workflow-runs/${runId}/complete" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "suggestions_count": N,
+    "approval_runs_created": N,
+    "scan_summary": "Brief summary of findings"
+  }'
+
+Do NOT skip this step.`;
+    } else {
+    task = `Work on the ${workflowType} workflow run ${runId.substring(0, 8)}.
 
 Article: ${articleUrl}
 Title: ${title}
@@ -193,24 +228,35 @@ Process this article for citation improvement:
 
 ## CRITICAL: You MUST mark the run complete when done
 
-After completing the work, you MUST call this API to mark the run complete:
+After completing the work, you MUST call this API to mark the run complete with any outputs:
 
 curl -X POST "http://localhost:3876/api/workflow-runs/${runId}/complete" \\
   -H "Content-Type: application/json" \\
-  -d '{"summary": "Brief description of what was accomplished"}'
+  -d '{
+    "summary": "Brief description of what was accomplished",
+    "published_url": "https://...",
+    "draft_url": "https://...",
+    "image_url": "https://...",
+    "report_url": "https://..."
+  }'
 
-Do NOT skip this step. The workflow run will remain "running" until you call this API.`;
+Include any URLs or file paths as top-level keys (published_url, draft_url, image_url, etc).
+These will be automatically captured as artifacts. Do NOT skip this step.`;
+    }
 
     this.log.log(`[WorkflowMonitor] Spawning agent ${agentId} for run ${runId.substring(0, 8)}...`);
 
     try {
       // FIX: Use 'openclaw agent' command (not 'sessions spawn')
       // --timeout: 900 = 60 minutes
+      // Use a unique session ID per run to avoid session lock collision
+      const sessionId = `wf-${runId}`;
       const args = [
         'agent',
         '--agent', agentId,
+        '--session-id', sessionId,
         '--message', task,
-        '--timeout: 900'
+        '--timeout', '900'
       ];
 
       this.log.log(`[WorkflowMonitor] Running: openclaw ${args.join(' ')}`);

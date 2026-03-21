@@ -92,6 +92,19 @@ function downloadFile(content, filename, mimeType) {
   URL.revokeObjectURL(url);
 }
 
+export function buildTaskListParams(projectId) {
+  const params = {
+    include_child_projects: 'true',
+    include_archived: 'true',
+  };
+
+  if (projectId && projectId !== 'all') {
+    params.project_id = projectId;
+  }
+
+  return params;
+}
+
 export async function renderTasksView({ mountNode, api, adapter, stateStore, sync }) {
   ensureNativeRoot(mountNode, 'tasks-view');
   mountNode.innerHTML = '';
@@ -389,11 +402,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
     isLoading = true;
     renderList();
     try {
-      const params = {
-        project_id: currentProjectId || 'all',
-        include_child_projects: 'true',
-        include_archived: 'true',
-      };
+      const params = buildTaskListParams(currentProjectId);
       const res = await api.tasks.list(params);
       tasks = Array.isArray(res) ? res : [];
     } catch (e) {

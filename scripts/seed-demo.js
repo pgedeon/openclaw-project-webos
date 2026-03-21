@@ -16,7 +16,7 @@ const DEFAULTS = {
   port: parseInt(process.env.POSTGRES_PORT, 10) || 5432,
   database: process.env.POSTGRES_DB || 'openclaw_webos',
   user: process.env.POSTGRES_USER || 'openclaw',
-  password: process.env.POSTGRES_PASSWORD || 'openclaw_password',
+  password: process.env.POSTGRES_PASSWORD ,
 };
 
 async function seed() {

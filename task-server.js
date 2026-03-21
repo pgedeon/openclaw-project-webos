@@ -41,7 +41,7 @@ const path = require('path');
 const { URL } = require('url');
 const { spawn } = require('child_process');
 const { createWorkflowRunsHandler } = require('./workflow-runs-api.js');
-const { WorkflowRunMonitor } = require('./workflow-run-monitor.js');
+const { GatewayWorkflowDispatcher } = require('./gateway-workflow-dispatcher.js');
 const { catalogAPI } = require('./catalog-api.js');
 const { metricsAPI } = require('./metrics-api.js');
 const { serviceRequestsAPI } = require('./service-requests-api.js');
@@ -59,7 +59,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const PORT = process.env.PORT || 3876;
-const WORKSPACE = '~/.openclaw/workspace';
+const WORKSPACE = process.env.OPENCLAW_WORKSPACE || '.';
 const TASKS_FILE = path.join(WORKSPACE, 'tasks.md');
 
 const MIME_TYPES = {
@@ -90,7 +90,7 @@ async function initAsanaStorage() {
         port: parseInt(process.env.POSTGRES_PORT) || 5432,
         database: process.env.POSTGRES_DB || 'openclaw_dashboard',
         user: process.env.POSTGRES_USER || 'openclaw',
-        password: process.env.POSTGRES_PASSWORD || 'openclaw_password',
+        password: process.env.POSTGRES_PASSWORD,
       });
       await asanaStorage.init();
       console.log('✅ Asana PostgreSQL storage initialized');
@@ -101,8 +101,8 @@ async function initAsanaStorage() {
           console.log('✅ Workflow runs API handler initialized');
           
           // Start workflow run monitor (spawns agents for pending runs)
-          const workflowMonitor = new WorkflowRunMonitor(asanaStorage.pool, console);
-          workflowMonitor.start();
+          const workflowDispatcher = new GatewayWorkflowDispatcher(asanaStorage.pool, console);
+          workflowDispatcher.start();
           console.log('✅ Workflow run monitor started (30s poll interval)');
         } catch (err) {
           console.error('⚠️  Failed to initialize workflow runs handler:', err.message);
@@ -438,7 +438,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const { execSync } = require('child_process');
         const result = execSync(
-          'python3 ~/.openclaw/workspace/affiliate-editorial/scripts/citation_queue.py --action status 2>/dev/null',
+          'echo 'citation_queue: not configured'',
           { encoding: 'utf-8', timeout: 5000 }
         );
         const data = JSON.parse(result);
@@ -1317,7 +1317,7 @@ const server = http.createServer(async (req, res) => {
       listSkills: null, // Will use execFile to call openclaw skills list --json
       readOpenClawConfig: () => {
         try {
-          const configPath = process.env.OPENCLAW_CONFIG_FILE || path.join(os.homedir(), ".openclaw", "openclaw.json");
+          const configPath = process.env.OPENCLAW_CONFIG_FILE || 'openclaw.json';
           if (fs.existsSync(configPath)) {
             return JSON.parse(fs.readFileSync(configPath, 'utf8'));
           }

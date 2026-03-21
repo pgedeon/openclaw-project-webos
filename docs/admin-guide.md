@@ -49,8 +49,8 @@ POSTGRES_PORT=5432
 POSTGRES_DB=openclaw_dashboard
 POSTGRES_USER=openclaw
 POSTGRES_PASSWORD=yourpassword
-OPENCLAW_WORKSPACE=~/.openclaw/workspace
-OPENCLAW_CONFIG_FILE=~/.openclaw/openclaw.json
+OPENCLAW_WORKSPACE=$OPENCLAW_WORKSPACE
+OPENCLAW_CONFIG_FILE=$OPENCLAW_CONFIG_FILE
 ```
 
 4. Start the server:
@@ -104,10 +104,10 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
-WorkingDirectory=~/.openclaw/workspace/dashboard
+WorkingDirectory=$OPENCLAW_WORKSPACE/dashboard
 ExecStart=/usr/bin/node task-server.js
 Restart=on-failure
-EnvironmentFile=~/.openclaw/workspace/dashboard/.env
+EnvironmentFile=$OPENCLAW_WORKSPACE/dashboard/.env
 # Or set Environment= lines explicitly
 
 [Install]

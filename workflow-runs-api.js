@@ -841,7 +841,13 @@ function normalizeApprovalRow(row = {}) {
     serviceRequestId: row.service_request_id || row.serviceRequestId || null,
     service_request_id: row.service_request_id || row.serviceRequestId || null,
     overdue: Boolean((row.status || 'pending') === 'pending' && dueTs && dueTs < now),
-    expired: Boolean((row.status || 'pending') === 'pending' && expiresTs && expiresTs < now)
+    expired: Boolean((row.status || 'pending') === 'pending' && expiresTs && expiresTs < now),
+    runStatus: row.run_status || null,
+    runSessionId: row.run_session_id || null,
+    runSessionActive: Boolean(row.run_session_active),
+    runLastHeartbeat: row.run_last_heartbeat || null,
+    runStartedAt: row.run_started_at || null,
+    runFinishedAt: row.run_finished_at || null
   };
 }
 
@@ -873,6 +879,34 @@ function summarizeApprovals(approvals = []) {
 
   return summary;
 }
+
+
+/**
+ * Infer artifact type from key name and value.
+ */
+function inferArtifactType(key, value) {
+  const k = key.toLowerCase();
+  if (k.includes('image') || k.includes('thumbnail') || k.includes('screenshot') || k.includes('featured')) return 'image';
+  if (k.includes('draft') || k.includes('review_url') || k.includes('preview')) return 'draft';
+  if (k.includes('published') || k.includes('live') || k.includes('post_url') || k.includes('article_url')) return 'published_url';
+  if (k.includes('repo') || k.includes('pr') || k.includes('pull_request') || k.includes('branch')) return 'code';
+  if (k.includes('report') || k.includes('audit')) return 'report';
+  if (k.includes('file') || k.includes('path') || k.includes('document')) return 'file';
+  if (k.includes('video') || k.includes('clip')) return 'video';
+  return 'output';
+}
+
+/**
+ * Generate a human-readable label from an output key.
+ */
+function inferArtifactLabel(key) {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/\w/g, c => c.toUpperCase())
+    .trim();
+}
+
 
 class WorkflowRunsAPI {
   constructor(pool) {
@@ -1216,9 +1250,9 @@ class WorkflowRunsAPI {
       UPDATE workflow_runs
       SET approval_state = $2,
           status = CASE
-            WHEN $3 IS NULL THEN status
+            WHEN $3::text IS NULL THEN status
             WHEN status IN ('completed', 'failed', 'cancelled') THEN status
-            ELSE $3
+            ELSE $3::text
           END
       WHERE id = $1
       RETURNING *
@@ -1439,6 +1473,38 @@ class WorkflowRunsAPI {
       customer_scope = null
     } = data;
 
+    // FIX: Input validation - reject empty input_payload for workflows that need inputs
+    // This prevents runs with missing inputs that would fail later
+    const hasInputPayload = input_payload && 
+      typeof input_payload === 'object' && 
+      Object.keys(input_payload).length > 0;
+    
+    // List of workflow types that require input_payload
+    const workflowsRequiringInput = [
+      'code-change',
+      'content-generation', 
+      'article-generation',
+      'sailboats-article',
+      '3dput-content',
+      'feature-development',
+      'bug-fix',
+      'refactor',
+      'data-analysis',
+      'research'
+    ];
+    
+    // For workflows that need inputs, require at least one field
+    if (workflowsRequiringInput.includes(workflow_type) && !hasInputPayload) {
+      throw new Error(`input_payload is required and cannot be empty for workflow type '${workflow_type}'. ` +
+        `Provide at least: prompt, instructions, or task description.`);
+    }
+
+    // Warn for other workflows with empty payload
+    if (!hasInputPayload && workflow_type) {
+      console.warn(`[workflow-runs-api] Warning: Creating run for '${workflow_type}' with empty input_payload. ` +
+        `Consider providing task details.`);
+    }
+
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -1460,6 +1526,19 @@ class WorkflowRunsAPI {
         WHERE name = $1
       `, [workflow_type]);
       const template = templateResult.rows[0] || null;
+
+      // Enforce artifact_contract requirement on templates
+      if (template && !template.artifact_contract) {
+        const contract = {
+          expected_outputs: {
+            summary: { type: 'text', required: true, description: 'Description of what was accomplished' }
+          }
+        };
+        // Auto-backfill: set a minimal contract on the template so future runs benefit
+        await client.query(`
+          UPDATE workflow_templates
+        `, [workflow_type, JSON.stringify(contract)]);
+      }
 
       let resolvedBoardId = board_id;
       let resolvedTaskId = task_id;
@@ -1689,6 +1768,93 @@ class WorkflowRunsAPI {
   /**
    * Complete a workflow run
    */
+  /**
+   * Auto-extract artifacts from a completed run's output_summary.
+   * Matches output keys against the template's artifact_contract.expected_outputs,
+   * and also scans for any URL-like values in the output summary.
+   * Uses the existing client transaction for atomicity.
+   */
+  async autoExtractArtifacts(runId, outputSummary, client) {
+    if (!outputSummary || typeof outputSummary !== 'object' || !Object.keys(outputSummary).length) {
+      return 0;
+    }
+    if (!(await this.tableExists('workflow_artifacts', client))) {
+      return 0;
+    }
+
+    // Get the run's template artifact contract
+    const runRow = await client.query(
+      'SELECT workflow_type, owner_agent_id, task_id FROM workflow_runs WHERE id = $1',
+      [runId]
+    );
+    const run = runRow.rows[0];
+    if (!run) return 0;
+
+    // Get artifact contract from template
+    const contract = await client.query(
+      `SELECT artifact_contract FROM workflow_templates WHERE name = $1 LIMIT 1`,
+      [run.workflow_type]
+    );
+    const contractData = contract.rows[0]?.artifact_contract;
+    const expectedOutputs = contractData?.expected_outputs || {};
+
+    // Check for existing artifacts (avoid duplicates)
+    const existing = await client.query(
+      'SELECT uri FROM workflow_artifacts WHERE workflow_run_id = $1',
+      [runId]
+    );
+    const existingUris = new Set(existing.rows.map(r => r.uri));
+
+    let created = 0;
+    const urlPattern = /^https?:\/\//i;
+
+    // Pass 1: Match expected_outputs keys against output_summary values
+    for (const [key, spec] of Object.entries(expectedOutputs)) {
+      const value = outputSummary[key];
+      if (!value || typeof value !== 'string' || !urlPattern.test(value)) continue;
+      if (existingUris.has(value)) continue;
+
+      const artifactType = inferArtifactType(key, value);
+      const label = inferArtifactLabel(key);
+
+      await client.query(
+        `INSERT INTO workflow_artifacts (workflow_run_id, task_id, artifact_type, label, uri, status, metadata, created_by)
+         VALUES ($1, $2, $3, $4, $5, 'generated', $6, $7)`,
+        [runId, run.task_id, artifactType, label, value,
+         JSON.stringify({ auto_extracted: true, source_key: key, contract_key: key }),
+         run.owner_agent_id]
+      );
+      existingUris.add(value);
+      created++;
+    }
+
+    // Pass 2: Scan all output_summary keys for URL-like values not yet captured
+    for (const [key, value] of Object.entries(outputSummary)) {
+      if (typeof value !== 'string' || !urlPattern.test(value)) continue;
+      if (existingUris.has(value)) continue;
+
+      const artifactType = inferArtifactType(key, value);
+      const label = inferArtifactLabel(key);
+
+      await client.query(
+        `INSERT INTO workflow_artifacts (workflow_run_id, task_id, artifact_type, label, uri, status, metadata, created_by)
+         VALUES ($1, $2, $3, $4, $5, 'generated', $6, $7)`,
+        [runId, run.task_id, artifactType, label, value,
+         JSON.stringify({ auto_extracted: true, source_key: key }),
+         run.owner_agent_id]
+      );
+      existingUris.add(value);
+      created++;
+    }
+
+    // Update the run's artifact count
+    if (created > 0) {
+      await this.refreshArtifactCount(runId, client);
+    }
+
+    return created;
+  }
+
   async completeRun(id, outputSummary = {}) {
     const client = await this.pool.connect();
     try {
@@ -1730,8 +1896,20 @@ class WorkflowRunsAPI {
         client
       );
 
+      // Auto-extract artifacts from output_summary
+      const extractedCount = await this.autoExtractArtifacts(id, outputSummary, client);
+      if (extractedCount > 0) {
+        this.log && this.log.info(`[workflow-runs] Auto-extracted ${extractedCount} artifact(s) from run ${id}`);
+      }
+
       await client.query('COMMIT');
-      return runResult.rows[0];
+
+      // Re-fetch to get updated artifact count after auto-extraction
+      const finalRun = await this.pool.query(
+        'SELECT * FROM workflow_runs WHERE id = $1', [id]
+      );
+
+      return finalRun.rows[0];
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -1776,6 +1954,142 @@ class WorkflowRunsAPI {
 
       await client.query('COMMIT');
       return run;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+
+  /**
+   * Mark a workflow run as timed out and clean up session binding
+   * FIX: Session cleanup on timeout to prevent zombie sessions
+   */
+  async timeoutRun(id, timeoutMessage = 'Run timed out - no heartbeat received') {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Get current run details for audit
+      const existingResult = await client.query(`
+        SELECT id, task_id, gateway_session_id, gateway_session_active, owner_agent_id, status
+        FROM workflow_runs
+        WHERE id = $1
+        LIMIT 1
+      `, [id]);
+
+      const existing = existingResult.rows[0] || null;
+      if (!existing) {
+        throw new Error('Workflow run not found');
+      }
+
+      // Update run: mark as failed, clear session binding, record timeout
+      const query = `
+        UPDATE workflow_runs
+        SET status = 'failed',
+            finished_at = NOW(),
+            last_error = $2,
+            last_error_at = NOW(),
+            gateway_session_active = false,
+            blocker_type = 'no_heartbeat',
+            blocker_description = $2,
+            blocker_detected_at = NOW(),
+            blocker_source = 'timeout_detector'
+        WHERE id = $1
+        RETURNING *
+      `;
+      const result = await client.query(query, [id, timeoutMessage]);
+      const run = result.rows[0];
+
+      // Clear task's active workflow run reference if present
+      if (run?.task_id) {
+        await client.query(`
+          UPDATE tasks
+          SET active_workflow_run_id = NULL,
+              status = CASE 
+                WHEN status IN ('completed', 'archived') THEN status 
+                ELSE 'blocked' 
+              END,
+              updated_at = NOW()
+          WHERE id = $1
+        `, [run.task_id]);
+      }
+
+      // Write audit log for timeout
+      await this.writeTaskAudit(
+        run?.task_id || null,
+        'system',
+        'run_timed_out',
+        {
+          workflow_run_id: id,
+          gateway_session_id: existing.gateway_session_id,
+          gateway_session_active: existing.gateway_session_active,
+          status: existing.status
+        },
+        {
+          workflow_run_id: id,
+          error: timeoutMessage,
+          session_cleaned_up: Boolean(existing.gateway_session_id)
+        },
+        client
+      );
+
+      await client.query('COMMIT');
+      return run;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Find and clean up timed-out runs (stale heartbeat cleanup)
+   * Call this periodically to prevent zombie sessions
+   */
+  async cleanupTimedOutRuns(heartbeatTimeoutSeconds = 600) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Find runs with stale heartbeats that are still marked as active
+      const staleRunsQuery = `
+        SELECT id, gateway_session_id, owner_agent_id, workflow_type, task_id
+        FROM workflow_runs
+        WHERE status IN ('running', 'queued', 'retrying')
+          AND gateway_session_active = true
+          AND last_heartbeat_at < NOW() - INTERVAL '1 second' * $1
+        LIMIT 100
+      `;
+      const staleRuns = await client.query(staleRunsQuery, [heartbeatTimeoutSeconds]);
+
+      const cleanedUp = [];
+      for (const run of staleRuns.rows) {
+        try {
+          const result = await this.timeoutRun(
+            run.id, 
+            `Run timed out after ${heartbeatTimeoutSeconds}s without heartbeat`
+          );
+          cleanedUp.push({
+            id: run.id,
+            workflow_type: run.workflow_type,
+            gateway_session_id: run.gateway_session_id
+          });
+        } catch (err) {
+          console.error(`[workflow-runs-api] Failed to cleanup timed-out run ${run.id}:`, err.message);
+        }
+      }
+
+      await client.query('COMMIT');
+      return {
+        cleaned_count: cleanedUp.length,
+        timeout_seconds: heartbeatTimeoutSeconds,
+        runs: cleanedUp
+      };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -1989,6 +2303,65 @@ class WorkflowRunsAPI {
 
     await this.refreshArtifactCount(runId);
     return normalizeWorkflowArtifactRow(result.rows[0]);
+  }
+
+  /**
+   * Update a workflow artifact (label, uri, status, metadata).
+   */
+  async updateWorkflowArtifact(artifactId, data = {}) {
+    if (!(await this.tableExists('workflow_artifacts'))) {
+      throw new Error('Workflow artifacts table is not available yet');
+    }
+
+    const existing = await this.pool.query(
+      'SELECT id, workflow_run_id FROM workflow_artifacts WHERE id = $1', [artifactId]
+    );
+    if (!existing.rows.length) throw new Error('Artifact not found');
+
+    const fields = [];
+    const params = [];
+    let paramIdx = 1;
+
+    const allowed = ['artifact_type', 'label', 'uri', 'mime_type', 'status', 'metadata'];
+    for (const key of allowed) {
+      if (data[key] === undefined) continue;
+      if (key === 'metadata') {
+        fields.push(`metadata = $${paramIdx++}`);
+        params.push(JSON.stringify(parseJsonObject(data.metadata)));
+      } else {
+        fields.push(`${key} = $${paramIdx++}`);
+        params.push(data[key]);
+      }
+    }
+
+    if (!fields.length) throw new Error('No fields to update');
+
+    params.push(artifactId);
+    const result = await this.pool.query(
+      `UPDATE workflow_artifacts SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${paramIdx} RETURNING *`,
+      params
+    );
+
+    await this.refreshArtifactCount(existing.rows[0].workflow_run_id);
+    return normalizeWorkflowArtifactRow(result.rows[0]);
+  }
+
+  /**
+   * Delete a workflow artifact.
+   */
+  async deleteWorkflowArtifact(artifactId) {
+    if (!(await this.tableExists('workflow_artifacts'))) {
+      throw new Error('Workflow artifacts table is not available yet');
+    }
+
+    const existing = await this.pool.query(
+      'SELECT id, workflow_run_id FROM workflow_artifacts WHERE id = $1', [artifactId]
+    );
+    if (!existing.rows.length) throw new Error('Artifact not found');
+
+    await this.pool.query('DELETE FROM workflow_artifacts WHERE id = $1', [artifactId]);
+    await this.refreshArtifactCount(existing.rows[0].workflow_run_id);
+    return { deleted: true };
   }
 
   /**
@@ -2230,6 +2603,45 @@ class WorkflowRunsAPI {
     }
 
     query += ' ORDER BY COALESCE(a.due_at, a.requested_at) ASC, a.created_at DESC';
+    const result = await this.pool.query(query, params);
+    return result.rows.map((row) => normalizeApprovalRow(row));
+  }
+
+  async getAllApprovals(approverId = null, limit = 100) {
+    const params = [];
+    let paramIndex = 1;
+    let query = `
+      SELECT
+        a.*,
+        wr.workflow_type,
+        wr.task_id,
+        wr.owner_agent_id,
+        wr.service_request_id,
+        wr.status AS run_status,
+        wr.gateway_session_id AS run_session_id,
+        wr.gateway_session_active AS run_session_active,
+        wr.last_heartbeat_at AS run_last_heartbeat,
+        wr.started_at AS run_started_at,
+        wr.finished_at AS run_finished_at,
+        t.title as task_title,
+        wa.label AS artifact_label,
+        wa.uri AS artifact_uri,
+        wa.artifact_type,
+        wa.status AS artifact_status
+      FROM workflow_approvals a
+      JOIN workflow_runs wr ON a.workflow_run_id = wr.id
+      LEFT JOIN tasks t ON wr.task_id = t.id
+      LEFT JOIN workflow_artifacts wa ON a.artifact_id = wa.id
+      WHERE 1 = 1
+    `;
+
+    if (approverId) {
+      query += ` AND a.approver_id = $${paramIndex++}`;
+      params.push(approverId);
+    }
+
+    query += ` ORDER BY a.created_at DESC LIMIT $${paramIndex++}`;
+    params.push(limit);
     const result = await this.pool.query(query, params);
     return result.rows.map((row) => normalizeApprovalRow(row));
   }
@@ -2801,6 +3213,66 @@ class WorkflowRunsAPI {
     const result = await this.pool.query(query, [name]);
     return result.rows[0] ? normalizeTemplateRow(result.rows[0]) : null;
   }
+
+  /**
+   * Update workflow template by name
+   */
+  async createTemplate(data) {
+    const { name, display_name, description, default_owner_agent, steps, required_approvals, success_criteria, category, is_active, artifact_contract, ui_category } = data;
+    if (!name) throw new Error('Template name is required');
+    const contract = artifact_contract || { expected_outputs: { summary: { type: 'text', required: true, description: 'Description of what was accomplished' } } };
+    const result = await this.pool.query(`INSERT INTO workflow_templates (name, display_name, description, default_owner_agent, steps, required_approvals, success_criteria, category, is_active, artifact_contract, ui_category) VALUES ($1, COALESCE($2, $1), COALESCE($3, ''), COALESCE($4, 'main'), $5::jsonb, $6::jsonb, $7::jsonb, COALESCE($8, 'general'), $9, $10::jsonb, COALESCE($11, 'General')) RETURNING *`, [name, display_name, description, default_owner_agent, JSON.stringify(steps || []), JSON.stringify(required_approvals || []), JSON.stringify(success_criteria || {}), category, is_active !== false, JSON.stringify(contract), ui_category]);
+    return result.rows[0];
+  }
+
+
+  async updateTemplate(name, updates) {
+    const allowedFields = [
+      'display_name', 'description', 'category', 'ui_category',
+      'default_owner_agent', 'steps', 'required_approvals', 
+      'success_criteria', 'input_schema', 'artifact_contract',
+      'blocker_policy', 'escalation_policy', 'runbook_ref',
+      'department_id', 'service_id', 'is_active'
+    ];
+    
+    const setClauses = [];
+    const values = [name];
+    let paramIndex = 2;
+    
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedFields.includes(key)) {
+        const dbKey = key === 'display_name' ? 'display_name' : key;
+        if (value !== undefined) {
+          setClauses.push(`${dbKey} = $${paramIndex}`);
+          if (typeof value === 'object') {
+            values.push(JSON.stringify(value));
+          } else {
+            values.push(value);
+          }
+          paramIndex++;
+        }
+      }
+    }
+    
+    if (setClauses.length === 0) {
+      return this.getTemplate(name);
+    }
+    
+    setClauses.push(`updated_at = NOW()`);
+    
+    const query = `
+      UPDATE workflow_templates
+      SET ${setClauses.join(', ')}
+      WHERE name = $1
+      RETURNING *
+    `;
+    
+    const result = await this.pool.query(query, values);
+    if (result.rows[0]) {
+      return this.getTemplate(name);
+    }
+    return null;
+  }
 }
 
 /**
@@ -2862,6 +3334,22 @@ function createWorkflowRunsHandler(pool) {
       return true;
     }
 
+    // /api/workflow-runs/cleanup-timeouts (cleanup zombie sessions)
+    if (pathname === '/api/workflow-runs/cleanup-timeouts' && method === 'POST') {
+      try {
+        const url = new URL(req.url, `http://${req.headers.host}`);
+        const timeoutSeconds = parseInt(url.searchParams.get('timeout_seconds') || '600', 10);
+        const result = await api.cleanupTimedOutRuns(timeoutSeconds);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+      }
+      return true;
+    }
+
+
     if (pathname === '/api/blockers' && method === 'GET') {
       const url = new URL(req.url, `http://${req.headers.host}`);
       const blockers = await api.listBlockers({
@@ -2905,6 +3393,36 @@ function createWorkflowRunsHandler(pool) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ artifacts }));
       return true;
+    }
+
+    // Per-artifact routes: /api/artifacts/:id
+    const artifactIdMatch = pathname.match(new RegExp('^/api/artifacts/([a-f0-9-]+)$'));
+    if (artifactIdMatch) {
+      const aid = artifactIdMatch[1];
+
+      if (method === 'PATCH') {
+        try {
+          const artifact = await api.updateWorkflowArtifact(aid, body);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(artifact));
+        } catch (err) {
+          res.writeHead(err.message.includes('not found') ? 404 : 400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return true;
+      }
+
+      if (method === 'DELETE') {
+        try {
+          await api.deleteWorkflowArtifact(aid);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ deleted: true }));
+        } catch (err) {
+          res.writeHead(err.message.includes('not found') ? 404 : 400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return true;
+      }
     }
 
     // /api/workflow-runs/:id endpoints
@@ -2963,7 +3481,19 @@ function createWorkflowRunsHandler(pool) {
     const completeMatch = pathname.match(new RegExp('^/api/workflow-runs/([a-f0-9-]+)/complete$'));
     if (completeMatch && method === 'POST') {
       const id = completeMatch[1];
-      const run = await api.completeRun(id, body.output_summary || {});
+      // Accept both structured output_summary and legacy summary
+      let outputSummary = body.output_summary || {};
+      if (Object.keys(outputSummary).length === 0 && body.summary) {
+        outputSummary = { summary: body.summary };
+      }
+      // Also merge any top-level URL-like fields as named outputs
+      for (const [key, value] of Object.entries(body)) {
+        if (['output_summary', 'summary'].includes(key)) continue;
+        if (typeof value === 'string' && /^https?:\/\//i.test(value) && !outputSummary[key]) {
+          outputSummary[key] = value;
+        }
+      }
+      const run = await api.completeRun(id, outputSummary);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(run));
       return true;
@@ -2978,6 +3508,22 @@ function createWorkflowRunsHandler(pool) {
       res.end(JSON.stringify(run));
       return true;
     }
+
+    // /api/workflow-runs/:id/timeout
+    const timeoutMatch = pathname.match(new RegExp('^/api/workflow-runs/([a-f0-9-]+)/timeout$'));
+    if (timeoutMatch && method === 'POST') {
+      const id = timeoutMatch[1];
+      try {
+        const run = await api.timeoutRun(id, body.error || body.message || 'Run timed out - no heartbeat received');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(run));
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+      }
+      return true;
+    }
+
 
     // /api/workflow-runs/:id/step
     const stepMatch = pathname.match(new RegExp('^/api/workflow-runs/([a-f0-9-]+)/step$'));
@@ -3248,6 +3794,131 @@ function createWorkflowRunsHandler(pool) {
       return true;
     }
 
+    // /api/system-scan/run (queue an agent-driven improvement scan)
+    if (pathname === '/api/system-scan/run' && method === 'POST') {
+      try {
+        const fs = require('fs');
+        const PICKUP_FILE = '/tmp/dashboard-workflow-pickup.json';
+        const scanItem = {
+          run_id: 'scan-' + Date.now(),
+          workflow_type: 'system-improvement-scan',
+          agent_id: 'coder',
+          task: `SYSTEM IMPROVEMENT SCAN
+
+You are an auditor. Thoroughly examine the system and find real, actionable improvement opportunities.
+
+## Areas to Audit
+
+1. **Dashboard & API Health** - Check http://127.0.0.1:3876/api/health, /api/stats, /api/workflow-runs?limit=50. Look for failed runs, stale data, missing features.
+
+2. **Website Health** - Use curl to check https://3dput.com and https://sailboats.fr. Are they up? Response time? Any obvious errors?
+
+3. **Workflow Templates** - Check /api/workflow-templates. Are all 29 templates well-configured? Any with empty steps, missing descriptions, or questionable settings?
+
+4. **Workflow Run History** - Look at recent runs. Any patterns of failure? Types that never complete?
+
+5. **Approval Queue** - Check /api/approvals?limit=50. Are approvals being processed or piling up?
+
+6. **Code Quality** - Check key files: workflow-runs-api.js, gateway-workflow-dispatcher.js, task-server.js. Any obvious bugs, dead code, or missing error handling?
+
+7. **OpenClaw Config** - Read your openclaw.json. Are all agents configured properly? Any using deprecated models or missing fallbacks?
+
+8. **Cron Jobs** - Check your crontab for job definitions. for job definitions. Any broken paths or missing scripts?
+
+## Output Format
+
+For each finding, create a workflow run via the API:
+curl -X POST http://127.0.0.1:3876/api/workflow-runs -H "Content-Type: application/json" -d '{...}'
+
+Then add an approval gate:
+curl -s http://127.0.0.1:3876/api/approvals/pending?limit=5 | python3 -c "import sys,json; [print(a["workflowRunId"]) for a in json.load(sys.stdin)["approvals"]]"
+
+Get the run ID from the create response, then:
+curl -X POST "http://127.0.0.1:3876/api/workflow-runs/{run_id}/approvals" -H "Content-Type: application/json" -d '{"step_name":"operator_review","approver_id":"dashboard-operator","requested_by":"system-improvement-scan","approval_type":"improvement_suggestion","metadata":{"category":"...","priority":"medium|low|high","action_prompt":"...detailed description of what to fix and how..."},"required_note":false}'
+
+IMPORTANT: Only create suggestions for REAL issues. Do NOT suggest things that are already working well. Be specific — include file paths, API endpoints, exact configs. Quality over quantity.
+
+Maximum 10 suggestions. Prioritize by impact.
+
+IMPORTANT: When you finish this scan run, mark it complete with DETAILED output. Always include all findings, not just a summary. Example complete payload: {"summary":"...", "findings":"...", "root_cause":"...", "affected_items":"...", "recommendation":"..."}`,
+          title: 'System Improvement Scan',
+          dispatched_at: new Date().toISOString(),
+          input_payload: { source: 'run-scan-button' }
+        };
+        let existing = [];
+        try { existing = JSON.parse(fs.readFileSync(PICKUP_FILE, 'utf8')); } catch (_) {}
+        if (!existing.some(e => e.workflow_type === 'system-improvement-scan' && Date.now() - new Date(e.dispatched_at).getTime() < 300000)) {
+          existing.push(scanItem);
+          fs.writeFileSync(PICKUP_FILE, JSON.stringify(existing, null, 2));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'queued', message: 'Scan queued — an agent will audit the system and add suggestions to Approvals.' }));
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+      }
+      return true;
+    }
+
+    // /api/system-scan/followup (inject follow-up directly into run's agent session)
+    if (pathname === '/api/system-scan/followup' && method === 'POST') {
+      try {
+        const { Pool } = require('pg');
+        const fb = body || {};
+        const { runId, prompt } = fb;
+        if (!runId || !prompt) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'runId and prompt required' }));
+          return true;
+        }
+        const pool = new Pool({ host: 'localhost', port: 5432, database: 'mission_control', user: process.env.POSTGRES_USER || 'openclaw', password: process.env.POSTGRES_PASSWORD || '' });
+        const runResult = await pool.query('SELECT workflow_type, output_summary, input_payload, status, gateway_session_id FROM workflow_runs WHERE id = $1', [runId]);
+        const run = runResult.rows[0];
+        await pool.end();
+        if (!run) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Run not found' }));
+          return true;
+        }
+        const sessionKey = run.gateway_session_id;
+        // Write pickup with session_id for direct injection
+        const fs = require('fs');
+        const PICKUP_FILE = '/tmp/dashboard-workflow-pickup.json';
+        const followupItem = {
+          run_id: runId,
+          workflow_type: run.workflow_type,
+          agent_id: 'coder',
+          session_id: sessionKey || null,
+          prompt: prompt,
+          title: 'Follow-up: ' + prompt.substring(0, 80),
+          dispatched_at: new Date().toISOString(),
+          input_payload: { source: 'follow-up', parent_run_id: runId }
+        };
+        let existing = [];
+        try { existing = JSON.parse(fs.readFileSync(PICKUP_FILE, 'utf8')); } catch (_) {}
+        existing.push(followupItem);
+        fs.writeFileSync(PICKUP_FILE, JSON.stringify(existing, null, 2));
+        const mode = sessionKey ? 'injected into existing session ' + sessionKey.substring(0, 16) + '...' : 'queued (no existing session, new agent will be spawned)';
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'queued', message: 'Follow-up ' + mode + '.' }));
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+      }
+      return true;
+    }
+
+    // /api/approvals (list all approvals)
+    if (pathname === '/api/approvals' && method === 'GET') {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const approverId = url.searchParams.get('approver_id');
+      const limit = parseInt(url.searchParams.get('limit') || '100');
+      const approvals = await api.getAllApprovals(approverId, limit);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ approvals }));
+      return true;
+    }
+
     // /api/approvals/pending (list pending for approver)
     if (pathname === '/api/approvals/pending' && method === 'GET') {
       const url = new URL(req.url, `http://${req.headers.host}`);
@@ -3268,6 +3939,17 @@ function createWorkflowRunsHandler(pool) {
         res.end(JSON.stringify({ templates }));
         return true;
       }
+      if (method === 'POST') {
+        try {
+          const template = await api.createTemplate(body);
+          res.writeHead(201, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(template));
+        } catch (error) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: error.message }));
+        }
+        return true;
+      }
     }
 
     // /api/workflow-templates/:name
@@ -3281,6 +3963,25 @@ function createWorkflowRunsHandler(pool) {
       } else {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(template));
+      }
+      return true;
+    }
+
+    // /api/workflow-templates/:name PATCH
+    if (templateMatch && method === 'PATCH') {
+      const name = templateMatch[1];
+      try {
+        const updated = await api.updateTemplate(name, body);
+        if (!updated) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Template not found' }));
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(updated));
+        }
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
       }
       return true;
     }
