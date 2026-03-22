@@ -1,6 +1,6 @@
 # OpenClaw Project Dashboard
 
-`2.0.0-rc.3`
+`2.0.0-rc.2`
 
 Operations-first project dashboard for OpenClaw. Win11-style desktop shell with hierarchical Kanban boards, agent-aware task routing, workflow engine, widget system, cron monitoring, and audit trails — all wired into the OpenClaw runtime.
 
