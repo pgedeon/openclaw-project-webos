@@ -2,19 +2,74 @@
 
 ## Overview
 
-The v2 dispatcher exposes a REST API at `http://127.0.0.1:3876` that agents poll to discover, claim, and complete workflow runs. No file I/O needed — the database IS the queue.
+The v2 dispatcher is a database-first workflow queue. No file I/O — the PostgreSQL database IS the queue. Agents discover work via the dashboard bridge heartbeat output or the REST API.
 
-## How Agents Discover Work
+## Architecture
 
-The OpenClaw main agent's heartbeat loop is the primary consumer. During each heartbeat, the agent:
+```
+Dashboard creates workflow_run (queued)
+  ↓
+Dispatcher tick (every 30s): marks "dispatched" + calls wakeAgent()
+  ↓
+wakeAgent(): execSync('openclaw system event --mode now --text "Workflow run..."')
+  ↓
+Gateway delivers system event → wakes agent on next heartbeat
+  ↓
+Agent runs dashboard_agent_bridge.py heartbeat → sees state: "workflow_ready"
+  ↓
+Agent claims via POST /api/workflow-runs/{id}/claim (atomic SQL)
+  ↓
+Agent spawns sub-agent via sessions_spawn(agentId, task, mode: "session")
+  ↓
+Sub-agent heartbeats every 2-5 min → completes via POST /api/workflow-runs/{id}/complete
+```
 
-1. **Polls** `GET /api/workflow-runs/pending` for dispatched workflow runs
-2. **Claims** a run via `POST /api/workflow-runs/{id}/claim`
-3. **Spawns** a sub-agent via `sessions_spawn` to execute the workflow
-4. The sub-agent sends **heartbeats** while working
-5. The sub-agent **completes** the run when done
+## System Event Bridge
+
+After each successful dispatch, the v2 dispatcher calls `openclaw system event --mode now` with the run details. This wakes the agent immediately via the gateway's WebSocket protocol. The agent doesn't need to poll — the gateway delivers the event.
+
+The event text includes: run ID, workflow type, target agent, claim URL, and input payload (truncated to 200 chars).
+
+If the wake fails (gateway down, auth issue), the dispatch still succeeds. The agent picks it up on the next scheduled heartbeat (default 2h).
+
+## Heartbeat Integration
+
+The `dashboard_agent_bridge.py heartbeat --json` command now includes dispatched workflow runs in its output:
+
+```json
+{
+  "state": "workflow_ready",
+  "agent": "openclaw-control-ui",
+  "ready_count": 0,
+  "active_count": 0,
+  "pending_workflow_runs": [
+    {
+      "id": "uuid",
+      "workflow_type": "citation-improvement",
+      "target_agent_id": "affiliate-editorial",
+      "input_payload": { "task": "Process articles" },
+      "dispatch_attempts": 0
+    }
+  ],
+  "workflow_run_count": 1
+}
+```
+
+When `state: "workflow_ready"`, the agent MUST claim and spawn — it should not return HEARTBEAT_OK.
+
+### HEARTBEAT.md Instructions
+
+The main agent's `HEARTBEAT.md` must:
+1. Be under 1772 characters (gateway truncation limit)
+2. Check for `state: "workflow_ready"` in the bridge output FIRST
+3. Provide the exact claim + spawn curl commands
+4. Specify that workflow claim is the ONLY trigger that may spawn sub-agents
+
+See the current `~/.openclaw/workspace/main/HEARTBEAT.md` for the production version (1411 bytes).
 
 ## API Endpoints
+
+All endpoints are on the dashboard task server at `http://127.0.0.1:3876`.
 
 ### List Pending Runs
 
@@ -22,59 +77,39 @@ The OpenClaw main agent's heartbeat loop is the primary consumer. During each he
 GET /api/workflow-runs/pending?limit=5
 ```
 
-Response:
-```json
-{
-  "runs": [
-    {
-      "id": "uuid",
-      "workflowType": "citation-improvement",
-      "targetAgentId": "affiliate-editorial",
-      "ownerAgentId": "main",
-      "inputPayload": { "task": "Process articles from citation queue" },
-      "dispatchAttempts": 0,
-      "dispatchedAt": "2026-03-22T10:00:00Z",
-      "timeoutMinutes": 60
-    }
-  ]
-}
-```
+Returns dispatched runs awaiting claim.
 
 ### Claim a Run
 
 ```
 POST /api/workflow-runs/{id}/claim
 Content-Type: application/json
-{ "session_id": "agent-session-id" }
+{ "agent_id": "<target_agent_id>", "session_id": "<agent_session_key>" }
 ```
 
 - Returns 200 with the claimed run on success
 - Returns 409 if already claimed by another agent
 - Returns 400 if `session_id` is missing
-- **Atomic**: the `UPDATE WHERE status = 'dispatched'` query prevents double-claiming
+- **Atomic**: `UPDATE ... WHERE status = 'dispatched' RETURNING *` prevents double-claiming
+- The `session_id` is the agent's OpenClaw session key (e.g., `agent:main:main`)
 
 ### Send Heartbeat
 
 ```
 POST /api/workflow-runs/{id}/heartbeat
 Content-Type: application/json
-{ "session_id": "agent-session-id" }
+{ "session_id": "<agent_session_key>" }
 ```
 
-- Returns 200 on success, null if session mismatch
-- Agents should heartbeat every 2-5 minutes while executing
-- Missed heartbeats trigger stale run recovery
+Sub-agents should heartbeat every 2-5 minutes while working. Missed heartbeats trigger stale run recovery.
 
 ### Complete a Run
 
 ```
 POST /api/workflow-runs/{id}/complete
 Content-Type: application/json
-{ "session_id": "agent-session-id", "output_summary": { "result": "ok" } }
+{ "session_id": "<agent_session_key>", "output_summary": { "result": "ok" } }
 ```
-
-- Returns 200 on success
-- Sets `finished_at` timestamp
 
 ### Dispatcher Stats
 
@@ -84,97 +119,82 @@ GET /api/workflow-runs/dispatcher/stats
 
 Returns queue counts, failure rate, route count, last tick info.
 
-## Agent Workflow — Example
+## Agent Workflow — Full Example
 
 ```
-# During heartbeat, the main agent does this:
+# 1. Dashboard bridge reports workflow_ready state
+python3 scripts/dashboard_agent_bridge.py heartbeat --json
+→ {"state": "workflow_ready", "pending_workflow_runs": [...]}
 
-1. curl http://127.0.0.1:3876/api/workflow-runs/pending
-   → Returns list of dispatched runs
+# 2. Claim the run (atomic)
+curl -s -X POST "http://127.0.0.1:3876/api/workflow-runs/{id}/claim" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"<target>","session_id":"agent:main:main"}'
 
-2. For each run:
-   a. POST /api/workflow-runs/{id}/claim { session_id: "main" }
-   b. If claim succeeds:
-      - Extract workflowType and targetAgentId from the run
-      - Extract the task description from inputPayload
-      - sessions_spawn(agentId, task)
-      - Store child session key for follow-up
+# 3. Spawn sub-agent
+sessions_spawn(agentId: target_agent_id, mode: "session", task: input_payload)
 
-3. Spawned sub-agent executes the task:
-   - Sends heartbeat every 2-5 min
-   - POST /api/workflow-runs/{id}/complete on success
-   - If fails, the dispatcher's timeout system handles cleanup
+# 4. Store child session key back to the run
+curl -s -X PATCH "http://127.0.0.1:3876/api/workflow-runs/{id}" \
+  -H "Content-Type: application/json" \
+  -d '{"gateway_session_id":"CHILD_KEY","gateway_session_active":true}'
+```
+
+## CLI Tool
+
+The `agent-workflow-client.js` provides a CLI for manual testing:
+
+```bash
+node agent-workflow-client.js poll
+node agent-workflow-client.js claim <id> --session <session-id> --agent <agent-id>
+node agent-workflow-client.js heartbeat <id> --session <session-id>
+node agent-workflow-client.js complete <id> --session <session-id> --output '{"result":"ok"}'
+node agent-workflow-client.js stats
 ```
 
 ## Agent Routing Table
 
-Workflow types are mapped to agent IDs via the `workflow_agent_routing` table:
-
-```sql
-SELECT * FROM workflow_agent_routing ORDER BY priority DESC;
-```
-
-To add a new workflow type:
+Workflow types are mapped to agents via the `workflow_agent_routing` DB table:
 
 ```sql
 INSERT INTO workflow_agent_routing (workflow_type, agent_id, priority, timeout_minutes)
 VALUES ('my-workflow', 'my-agent', 10, 30);
 ```
 
-No code changes needed — the dispatcher reads routing from the database.
+No code changes needed — the dispatcher reads routing from the database at runtime.
 
-## CLI Tool
+### Production Routing (to be seeded)
 
-The `agent-workflow-client.js` provides a CLI for manual testing and scripting:
-
-```bash
-# List pending runs
-node agent-workflow-client.js poll
-
-# Claim a run
-node agent-workflow-client.js claim <id> --session <session-id>
-
-# Send heartbeat
-node agent-workflow-client.js heartbeat <id> --session <session-id>
-
-# Complete a run
-node agent-workflow-client.js complete <id> --session <session-id> --output '{"result":"ok"}'
-
-# View dispatcher stats
-node agent-workflow-client.js stats
-```
-
-## HEARTBEAT.md Update Required
-
-The main agent's `HEARTBEAT.md` still references the old `/tmp/dashboard-workflow-pickup.json` file-based system. It needs to be updated to:
-
-1. Poll `GET /api/workflow-runs/pending` instead of reading a file
-2. Use `POST /api/workflow-runs/{id}/claim` for atomic claiming
-3. Pass `targetAgentId` from the claimed run to `sessions_spawn`
-
-### New HEARTBEAT.md step (replaces step 5):
-
-```
-5. Check for pending workflow runs: curl -sfS http://127.0.0.1:3876/api/workflow-runs/pending?limit=3
-   If runs are returned, claim the first one via:
-     curl -s -X POST "http://127.0.0.1:3876/api/workflow-runs/{id}/claim" \
-       -H "Content-Type: application/json" \
-       -d '{"session_id":"main"}'
-   If claim succeeds (status 200), spawn a sub-agent:
-     sessions_spawn(agentId: run.targetAgentId, task: run.inputPayload.task, mode: "session")
-   Then update the run with the child session key:
-     curl -s -X PATCH "http://127.0.0.1:3876/api/workflow-runs/{id}" \
-       -H "Content-Type: application/json" \
-       -d '{"gateway_session_id":"CHILD_SESSION_KEY","gateway_session_active":true}'
-   This is the ONLY heartbeat trigger that may spawn sub-agents.
-```
+| workflow_type | agent_id | priority |
+|---|---|---|
+| citation-improvement | affiliate-editorial | 10 |
+| affiliate-article | affiliate-editorial | 10 |
+| code-change | coder | 10 |
+| image-generation | comfyui-image-agent | 10 |
+| qa-review | qa-review | 10 |
+| system-improvement-scan | main | 10 |
+| improvement-suggestion | coder | 10 |
 
 ## Stale Run Recovery
 
-The dispatcher automatically handles stuck runs:
+The dispatcher handles stuck runs automatically:
 
 | Condition | Action | Timing |
 |---|---|---|
 | Dispatched but not claimed | Retry dispatch (up to 3x) | After 5 min |
 | Claimed but no heartbeat | Release back to dispatched | After 10 min |
 | Running too long | Mark as timed_out | After configurable timeout |
+
+## Files Modified
+
+- `gateway-workflow-dispatcher-v2.js` — added `wakeAgent()` method with `openclaw system event --mode now`
+- `docs/AGENT_INTEGRATION.md` — this file (updated)
+- `~/.openclaw/workspace/main/HEARTBEAT.md` — compressed to 1411 bytes, added `workflow_ready` handling
+- `~/.openclaw/workspace/main/scripts/dashboard_agent_bridge.py` — added `pending_workflow_runs` check + `workflow_ready` state
+
+## Configuration
+
+- `agents.defaults.heartbeat.target`: set to `"last"` (routes heartbeat to last contact channel)
+- `agents.defaults.heartbeat.every`: `"2h"` (default interval)
+- HEARTBEAT.md must stay under 1772 characters (gateway bootstrap truncation limit)
+- `.env.secrets` in dashboard dir (chmod 600, gitignored) — never commit credentials
