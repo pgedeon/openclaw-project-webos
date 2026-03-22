@@ -407,7 +407,7 @@ Your role is continuous refinement through disciplined iteration.
 ## Wordpress blog null.pictures/wp
 - Use pinch-to-post skill to interact with the site
 - **username**: pgedeon
-- **application password**: REMOVED_SEE_ENV_VAR
+- **application password**: see WP_APP_PASSWORD env var
 - **On fail to publish**: Please write the article to a file so that the user can publish it, notify the user that you have created a post for them in whatsapp
 
 ## Blogger
