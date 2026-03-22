@@ -25,3 +25,6 @@ _legacy-archive/
 # Archived/legacy files
 archive/
 *.broken
+
+# OpenClaw runtime state
+.openclaw/
