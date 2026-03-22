@@ -42,6 +42,7 @@ const { URL } = require('url');
 const { spawn } = require('child_process');
 const { createWorkflowRunsHandler } = require('./workflow-runs-api.js');
 const { GatewayWorkflowDispatcher } = require('./gateway-workflow-dispatcher.js');
+const { createGatewayWorkflowDispatcherV2Handler } = require('./gateway-workflow-dispatcher-v2.js');
 const { catalogAPI } = require('./catalog-api.js');
 const { metricsAPI } = require('./metrics-api.js');
 const { serviceRequestsAPI } = require('./service-requests-api.js');
@@ -79,6 +80,7 @@ const STORAGE_TYPE = process.env.STORAGE_TYPE || 'postgres'; // 'postgres' or 'j
 
 let asanaStorage = null;
 let workflowRunsHandler = null;
+let v2DispatcherHandler = null;
 const requestBodyCache = new Map();
 
 async function initAsanaStorage() {
@@ -100,10 +102,22 @@ async function initAsanaStorage() {
           workflowRunsHandler = createWorkflowRunsHandler(asanaStorage.pool);
           console.log('✅ Workflow runs API handler initialized');
           
-          // Start workflow run monitor (spawns agents for pending runs)
-          const workflowDispatcher = new GatewayWorkflowDispatcher(asanaStorage.pool, console);
-          workflowDispatcher.start();
-          console.log('✅ Workflow run monitor started (30s poll interval)');
+          // V1 dispatcher disabled — replaced by v2 dispatcher below
+          // const workflowDispatcher = new GatewayWorkflowDispatcher(asanaStorage.pool, console);
+          // workflowDispatcher.start();
+          // console.log('✅ Workflow run monitor started (30s poll interval)');
+          
+          // Start v2 dispatcher (DB-first dispatch queue with atomic claiming)
+          v2DispatcherHandler = null;
+          try {
+            const { GatewayWorkflowDispatcherV2 } = require('./gateway-workflow-dispatcher-v2.js');
+            const v2Dispatcher = new GatewayWorkflowDispatcherV2(asanaStorage.pool, {}, console);
+            v2Dispatcher.start();
+            v2DispatcherHandler = createGatewayWorkflowDispatcherV2Handler(v2Dispatcher);
+            console.log('✅ Workflow dispatcher v2 started (DB-first, atomic claiming)');
+          } catch (err) {
+            console.error('⚠️  Failed to start v2 dispatcher:', err.message);
+          }
         } catch (err) {
           console.error('⚠️  Failed to initialize workflow runs handler:', err.message);
         }
@@ -1332,6 +1346,28 @@ const server = http.createServer(async (req, res) => {
     // ============================================
     // WORKFLOW RUNS API
     // ============================================
+    
+    // V2 DISPATCHER ENDPOINTS (pending, claim, heartbeat, complete, stats)
+    if (url.startsWith('/api/workflow-runs/pending') || 
+        url.match(/^\/api\/workflow-runs\/[^/]+\/(claim|heartbeat|complete)$/) ||
+        url === '/api/workflow-runs/dispatcher/stats') {
+      let requestBody = requestBodyCache.get(req);
+      if (requestBody === undefined && (method === 'POST' || method === 'PATCH' || method === 'PUT')) {
+        try {
+          requestBody = await parseJSONBody(req);
+          requestBodyCache.set(req, requestBody);
+        } catch (e) {
+          sendJSON(res, 400, { error: e.message });
+          return;
+        }
+      }
+      requestBody = requestBody || {};
+      
+      if (v2DispatcherHandler) {
+        const handled = await v2DispatcherHandler(req, res, url, requestBody);
+        if (handled) return;
+      }
+    }
     
     if (workflowRunsHandler) {
       // Parse body for POST/PATCH/PUT requests (needed for workflow endpoints)
