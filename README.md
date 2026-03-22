@@ -6,16 +6,28 @@ Operations-first project dashboard for OpenClaw. Win11-style desktop shell with 
 
 ## Screenshots
 
-### Desktop Shell — Board View
+### Desktop Shell
 
 <p align="center">
-  <img src="docs/screenshots/dashboard-overview-dark-full.png" alt="Win11 desktop shell with Kanban board view" width="100%" />
+  <img src="docs/screenshots/desktop-welcome.png" alt="Win11-style desktop shell with taskbar" width="100%" />
 </p>
 
-### Desktop Shell — Agents
+### Tasks (Kanban Board)
 
 <p align="center">
-  <img src="docs/screenshots/agents-overview-dark-full.png" alt="Agent workspace showing live status and queues" width="100%" />
+  <img src="docs/screenshots/tasks.png" alt="Kanban board with tasks, priorities, and agent assignments" width="100%" />
+</p>
+
+### Operations Center
+
+<p align="center">
+  <img src="docs/screenshots/operations.png" alt="System health, agents, and cron job management" width="100%" />
+</p>
+
+### Workflows
+
+<p align="center">
+  <img src="docs/screenshots/workflows.png" alt="Workflow engine with runs, queues, and approvals" width="100%" />
 </p>
 
 ## Features
