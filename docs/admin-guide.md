@@ -29,7 +29,7 @@ Procedures and reference for operators of the OpenClaw Project Dashboard.
 
 ```sql
 CREATE DATABASE openclaw_dashboard;
-CREATE USER openclaw WITH PASSWORD 'secure_password';
+CREATE USER openclaw WITH PASSWORD 'your-password-here';
 GRANT ALL ON DATABASE openclaw_dashboard TO openclaw;
 ```
 

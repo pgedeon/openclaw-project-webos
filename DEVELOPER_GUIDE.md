@@ -186,7 +186,7 @@ const pool = new Pool({
 
 ```bash
 # Check applied migrations
-PGPASSWORD=openclaw_password psql -h localhost -U openclaw -d openclaw_dashboard \
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U openclaw -d openclaw_dashboard \
   -c "SELECT migration_name, applied_at FROM schema_migrations ORDER BY applied_at DESC;"
 ```
 
@@ -352,18 +352,18 @@ node task-server.js
 systemctl status postgresql
 
 # Test connection
-PGPASSWORD=openclaw_password psql -h localhost -U openclaw -d openclaw_dashboard -c "SELECT 1"
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U openclaw -d openclaw_dashboard -c "SELECT 1"
 ```
 
 ### Migration Failed
 
 ```bash
 # Check what was applied
-PGPASSWORD=openclaw_password psql -h localhost -U openclaw -d openclaw_dashboard \
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U openclaw -d openclaw_dashboard \
   -c "SELECT * FROM schema_migrations"
 
 # Apply manually
-PGPASSWORD=openclaw_password psql -h localhost -U openclaw -d openclaw_dashboard \
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U openclaw -d openclaw_dashboard \
   -f schema/migrations/005_add_migration_tracking.sql
 ```
 
