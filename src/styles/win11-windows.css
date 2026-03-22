@@ -1,0 +1,224 @@
+/* ============================================
+   Win11 Windows — Titlebar, Chrome, Animations
+   ============================================ */
+
+.win11-window {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--win11-surface-solid);
+  border: 1px solid var(--win11-border);
+  box-shadow: var(--win11-shadow);
+  opacity: 0;
+  transform: scale(0.96);
+  transition: box-shadow 0.15s ease, border-radius 0.2s ease;
+  will-change: transform, opacity;
+}
+
+.win11-window.is-open {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.15s ease;
+}
+
+.win11-window.is-active {
+  box-shadow: var(--win11-shadow-active);
+  border-color: var(--win11-border-strong);
+}
+
+.win11-window.is-maximized {
+  border-radius: 0;
+  border: none;
+}
+
+.win11-window.is-closing {
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.win11-window.is-minimized {
+  opacity: 0;
+  transform: scale(0.85) translateY(40px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.win11-window.is-minimizing {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.win11-window.is-restoring {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.win11-window.is-dragging {
+  transition: none;
+  cursor: grabbing;
+}
+
+.win11-window.is-resizing {
+  transition: none;
+}
+
+/* Titlebar */
+.win11-window__titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 4px 0 12px;
+  flex-shrink: 0;
+  cursor: default;
+  background: var(--win11-surface);
+  border-bottom: 1px solid var(--win11-border);
+  -webkit-app-region: drag;
+}
+
+.win11-window__identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.win11-window__icon {
+  width: 16px;
+  height: 16px;
+  color: var(--win11-text);
+  flex-shrink: 0;
+}
+
+.win11-window__title {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--win11-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Window action buttons */
+.win11-window__actions {
+  display: flex;
+  align-items: stretch;
+  -webkit-app-region: no-drag;
+}
+
+.win11-window__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--win11-text);
+  cursor: pointer;
+  font-size: 0.7rem;
+  transition: background 0.1s ease;
+}
+
+.win11-window__action:hover {
+  background: var(--win11-surface-active);
+}
+
+.win11-window__action.is-close:hover {
+  background: var(--win11-close-hover);
+  color: #ffffff;
+}
+
+/* Window content / iframe */
+.win11-window__content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.win11-window__iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  background: #fff;
+  overflow: auto;
+}
+
+.win11-window__native-content {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+/* Resize handles */
+.win11-window__resize-handle {
+  position: absolute;
+  z-index: 1;
+}
+
+.win11-window__resize-handle.is-n {
+  top: -4px;
+  left: 8px;
+  right: 8px;
+  height: 8px;
+  cursor: n-resize;
+}
+
+.win11-window__resize-handle.is-s {
+  bottom: -4px;
+  left: 8px;
+  right: 8px;
+  height: 8px;
+  cursor: s-resize;
+}
+
+.win11-window__resize-handle.is-e {
+  right: -4px;
+  top: 8px;
+  bottom: 8px;
+  width: 8px;
+  cursor: e-resize;
+}
+
+.win11-window__resize-handle.is-w {
+  left: -4px;
+  top: 8px;
+  bottom: 8px;
+  width: 8px;
+  cursor: w-resize;
+}
+
+.win11-window__resize-handle.is-ne {
+  top: -4px;
+  right: -4px;
+  width: 12px;
+  height: 12px;
+  cursor: ne-resize;
+}
+
+.win11-window__resize-handle.is-nw {
+  top: -4px;
+  left: -4px;
+  width: 12px;
+  height: 12px;
+  cursor: nw-resize;
+}
+
+.win11-window__resize-handle.is-se {
+  bottom: -4px;
+  right: -4px;
+  width: 12px;
+  height: 12px;
+  cursor: se-resize;
+}
+
+.win11-window__resize-handle.is-sw {
+  bottom: -4px;
+  left: -4px;
+  width: 12px;
+  height: 12px;
+  cursor: sw-resize;
+}

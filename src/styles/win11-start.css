@@ -1,0 +1,226 @@
+/* ============================================
+   Win11 Start Menu
+   ============================================ */
+
+.win11-start-menu {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 80px);
+  z-index: 9500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.win11-start-menu.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.win11-start-menu__surface {
+  background: var(--win11-surface);
+  backdrop-filter: blur(20px) saturate(125%);
+  -webkit-backdrop-filter: blur(20px) saturate(125%);
+  border: 1px solid var(--win11-border);
+  border-radius: 8px;
+  box-shadow: var(--win11-shadow-active);
+  padding: 24px 28px 20px;
+  overflow-y: auto;
+  max-height: calc(100vh - 80px);
+}
+
+/* Header */
+.win11-start-menu__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.win11-start-menu__eyebrow {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--win11-accent);
+  margin-bottom: 4px;
+}
+
+.win11-start-menu__title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--win11-text);
+  margin: 0;
+}
+
+.win11-start-menu__meta {
+  font-size: 0.75rem;
+  color: var(--win11-text-tertiary);
+  white-space: nowrap;
+  padding-top: 4px;
+}
+
+/* Search */
+.win11-start-menu__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  height: 36px;
+  border-radius: 20px;
+  border: 1px solid var(--win11-border);
+  background: var(--win11-surface-solid);
+  margin-bottom: 20px;
+  cursor: text;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.win11-start-menu__search:focus-within {
+  border-color: var(--win11-accent);
+  box-shadow: 0 0 0 2px var(--win11-accent-light);
+}
+
+.win11-start-menu__search-icon {
+  font-size: 1.1rem;
+  color: var(--win11-text-tertiary);
+  flex-shrink: 0;
+}
+
+.win11-start-menu__search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--win11-text);
+  font-family: inherit;
+  font-size: 0.88rem;
+  height: 100%;
+}
+
+.win11-start-menu__search-input::placeholder {
+  color: var(--win11-text-tertiary);
+}
+
+/* Sections */
+.win11-start-menu__section {
+  margin-bottom: 20px;
+}
+
+.win11-start-menu__section:last-child {
+  margin-bottom: 0;
+}
+
+.win11-start-menu__section-header {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--win11-text-secondary);
+  margin-bottom: 12px;
+}
+
+/* Pinned grid (larger tiles) */
+.win11-start-menu__pinned-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 4px;
+}
+
+/* All apps grid */
+.win11-start-menu__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 4px;
+}
+
+/* Category groups */
+.win11-start-menu__category-group {
+  margin-bottom: 14px;
+}
+
+.win11-start-menu__category-group:last-child {
+  margin-bottom: 0;
+}
+
+.win11-start-menu__category-header {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--win11-text-tertiary);
+  margin-bottom: 8px;
+  padding-left: 2px;
+}
+
+/* App tile */
+.win11-start-menu__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 4px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--win11-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s ease;
+}
+
+.win11-start-menu__tile:hover {
+  background: var(--win11-surface-hover);
+}
+
+.win11-start-menu__tile.is-pinned .win11-start-menu__tile-icon {
+  width: 32px;
+  height: 32px;
+  color: var(--win11-accent);
+}
+
+.win11-start-menu__tile-icon {
+  width: 28px;
+  height: 28px;
+  color: var(--win11-text-secondary);
+}
+
+.win11-start-menu__tile-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.win11-start-menu__tile-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Empty state */
+.win11-start-menu__empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--win11-text-tertiary);
+  font-size: 0.88rem;
+}
+
+@media (max-width: 480px) {
+  .win11-start-menu__surface {
+    padding: 18px 16px 14px;
+  }
+
+  .win11-start-menu__pinned-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .win11-start-menu__grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

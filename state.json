@@ -1,0 +1,198 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2026-03-09T07:13:36.308Z",
+  "agents": {
+    "serial-automator": {
+      "name": "Serial Automator",
+      "status": "initialized",
+      "activeExperiment": "3dput-affiliate-engine",
+      "nextAction": "execute",
+      "lastRun": "2026-03-09T07:13:36.307Z",
+      "metrics": {
+        "day": 0,
+        "signups": 0,
+        "revenue": 0,
+        "created": "2026-03-09T07:13:34.566Z",
+        "lastUpdated": "2026-03-09T07:13:36.261786+00:00",
+        "seo": {
+          "organic_sessions": 169,
+          "organic_users": 165,
+          "organic_sessions_growth_rate": 0,
+          "pageviews": 187,
+          "total_indexed_pages": 525,
+          "indexing_health": "good"
+        },
+        "content": {
+          "pages_with_affiliate_links": 525,
+          "unique_printers": 129,
+          "unique_filament_types": 8,
+          "last_content_update": "2026-03-09T08:13:36.261800"
+        },
+        "top_pages": [
+          {
+            "page_path": "/",
+            "pageviews": 32,
+            "sessions": 32
+          },
+          {
+            "page_path": "/complete-filament-brand-comparison-2026-tolerance-quality-value-ratings/",
+            "pageviews": 7,
+            "sessions": 5
+          },
+          {
+            "page_path": "/3d-printer-comparison/",
+            "pageviews": 6,
+            "sessions": 2
+          },
+          {
+            "page_path": "/best-beginner-3d-printers-of-2026-top-picks-for-getting-started-2/",
+            "pageviews": 6,
+            "sessions": 5
+          },
+          {
+            "page_path": "/qidi-plus4-review-the-heated-chamber-powerhouse-for-engineering-filaments/",
+            "pageviews": 5,
+            "sessions": 5
+          },
+          {
+            "page_path": "/qidi-q2-2025-upgrade-review-enclosed-corexy-powerhouse-for-high-temp-printing/",
+            "pageviews": 5,
+            "sessions": 5
+          },
+          {
+            "page_path": "/creality-ender-5-max-review-2025-large-format-3d-printing-that-actually-works/",
+            "pageviews": 4,
+            "sessions": 4
+          },
+          {
+            "page_path": "/2020/06/19/page/2/",
+            "pageviews": 2,
+            "sessions": 2
+          },
+          {
+            "page_path": "/3d-printer-filament-settings/",
+            "pageviews": 2,
+            "sessions": 2
+          },
+          {
+            "page_path": "/3d-printing-materials-showdown-pla-vs-petg-vs-abs-which-should-you-choose/",
+            "pageviews": 2,
+            "sessions": 2
+          },
+          {
+            "page_path": "/bambu-lab-p1s-review/",
+            "pageviews": 2,
+            "sessions": 3
+          },
+          {
+            "page_path": "/ces-2026-highlights-atomform-palette-300-brings-36-color-multi-material-printing-to-consumers/",
+            "pageviews": 2,
+            "sessions": 2
+          },
+          {
+            "page_path": "/creality-k2-plus-combo-review/",
+            "pageviews": 2,
+            "sessions": 2
+          },
+          {
+            "page_path": "/original-prusa-xl-assembled-5-toolhead-review-2026-the-king-of-multi-material-printing/",
+            "pageviews": 2,
+            "sessions": 2
+          },
+          {
+            "page_path": "/phrozen-sonic-mega-8k-s-resin-3d-printer-review-2026/",
+            "pageviews": 2,
+            "sessions": 1
+          },
+          {
+            "page_path": "/polycarbonate-pc-filament-review-engineering-high-temp-2026/",
+            "pageviews": 2,
+            "sessions": 2
+          },
+          {
+            "page_path": "/raise3d-pro3-plus-hs-review-industrial-grade-high-speed-3d-printing-powerhouse-2/",
+            "pageviews": 2,
+            "sessions": 3
+          },
+          {
+            "page_path": "/tag/hoodies/",
+            "pageviews": 2,
+            "sessions": 2
+          },
+          {
+            "page_path": "/video-3d-printer-not-downloaded-yet/",
+            "pageviews": 2,
+            "sessions": 1
+          },
+          {
+            "page_path": "/2020/06/18/page/2/",
+            "pageviews": 1,
+            "sessions": 1
+          }
+        ],
+        "traffic_sources": [
+          {
+            "source": "(direct)",
+            "sessions": 112,
+            "users": 111
+          },
+          {
+            "source": "bing",
+            "sessions": 17,
+            "users": 15
+          },
+          {
+            "source": "duckduckgo",
+            "sessions": 13,
+            "users": 11
+          },
+          {
+            "source": "chatgpt.com",
+            "sessions": 9,
+            "users": 7
+          },
+          {
+            "source": "yahoo",
+            "sessions": 6,
+            "users": 4
+          },
+          {
+            "source": "(not set)",
+            "sessions": 4,
+            "users": 4
+          },
+          {
+            "source": "copilot.com",
+            "sessions": 2,
+            "users": 2
+          },
+          {
+            "source": "qwant.com",
+            "sessions": 2,
+            "users": 1
+          },
+          {
+            "source": "au.search.yahoo.com",
+            "sessions": 1,
+            "users": 1
+          },
+          {
+            "source": "claude.ai",
+            "sessions": 1,
+            "users": 1
+          },
+          {
+            "source": "ecosia.org",
+            "sessions": 1,
+            "users": 1
+          },
+          {
+            "source": "yandex",
+            "sessions": 1,
+            "users": 1
+          }
+        ]
+      }
+    }
+  }
+}

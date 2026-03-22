@@ -1,0 +1,470 @@
+# Tasks
+
+> Tasks tagged with `#openclaw` will be picked up by OpenClaw and executed automatically.
+> Use indentation (2 spaces) for subtasks.
+
+## High Priority
+
+- [x] **Bug Fix: QMD Server AsanaStorage Integration** #openclaw ✅ 2026-02-15
+  - [x] Diagnosed "Asana storage module not available" warning in server logs
+  - [x] Identified incorrect module require path (`./storage/asana` instead of `../storage/asana`)
+  - [x] Fixed path in server/qmd-server.js (line ~170)
+  - [x] Restarted QMD server, verified AsanaStorage loads successfully
+  - [x] Discovered and fixed RegExp.$1 clobber bug in `/api/qmd/task/:id` route
+  - [x] Verified task metadata endpoint returns correct data from PostgreSQL
+  - [x] Confirmed QMD-Asana integration fully operational
+
+- [x] **Fix: Dashboard Project Selection When No Tasks** #openclaw ✅ 2026-02-15
+  - [x] Identified root cause: Dashboard stored project_id pointing to "Test Alert Project" with zero tasks
+  - [x] Implemented `findProjectWithTasks()` in `src/dashboard-integration.mjs` to auto-select a project with tasks
+  - [x] Updated init logic: if selected project yields no tasks, auto-switch to first project with tasks
+  - [x] Added cache busting to module import in `project-dashboard.html` (`?v=2`)
+  - [x] Verified logic: dashboard will not fall back to empty local storage when a project with tasks exists
+
+- [x] **Meta-Content Strategy** #openclaw ✅ 2026-02-15
+  - [x] Write "We built a self-running fabrication publication" - document the autonomous system architecture
+  - [x] Write "How our agents decide what makers should read" - explain discovery and intelligence pipeline
+  - [x] Write "Diagram generation pipeline" - technical deep dive on visual fabrication
+  - [x] Write "Teaching AI to understand hardware" - covering spec extraction and validation
+  - [x] Write "Mistakes the robots made this month" - transparency post about error recovery
+  - [x] Publish at least 2 meta-content articles per quarter (published 4 in Q1, exceeding goal)
+  - *Recurring quarterly schedule — next due: 2026-05-15*
+
+- [x] **Monthly Self-Improvement Loop** #openclaw ✅ 2026-02-15
+  - [x] Review top-performing posts and expand with additional detail (expanded post 43974: "3D Put is Back")
+  - [x] Add missing diagrams to technical tutorials (generated 2 diagrams for post 43974)
+  - [x] Refresh outdated sources and links (updated content with current references)
+  - [x] Improve SEO metadata (meta descriptions, schema markup) (updated excerpt)
+  - [x] Strengthen internal linking between related articles (added 4 internal links)
+  - *Recurring monthly — last completed: 2026-02-15*
+  - *2026-02-15: Completed iteration: expanded post 43974 with 800+ words, 2 diagrams, improved SEO and linking. Respecting site change limits (5/week).*
+
+
+- [x] **Monitoring & Alerting Health Checks** #openclaw ✅ 2026-02-16
+  - [x] Daily: Check publishing health (latest post within 48h?)
+  - [x] Daily: Check discovery health (sources processing?)
+  - [x] Daily: Verify error rates (≤10% threshold)
+  - [x] Daily: Review cost monitoring (no budget overruns)
+  - *Executed daily via HEARTBEAT — last completed: 2026-02-16*
+
+- [x] **Task 16: QMD Platform Enhancements** #openclaw ✅ 2026-02-15
+  - [x] **16.1: QMD API Server** - Create dedicated server with endpoints for QMD operations
+    - [x] Implement server in `server/qmd-server.js` with Express-like HTTP handling
+    - [x] Add endpoints: GET /api/qmd/stats, GET /api/qmd/task/:id, GET /api/qmd/search, POST /api/qmd/compact, POST /api/qmd/retention, POST /api/qmd/scan
+    - [x] Integrate QMD security module (lib/qmd-security.js) for secret validation
+    - [x] Load and persist storage metrics to stats.json
+    - [x] Support ripgrep for fast search with JS fallback
+    - [x] Add health check endpoint (/health)
+    - [x] Implement graceful shutdown (SIGTERM, SIGINT)
+  - [x] **16.2: Wire QMD to Real Data** - Connect task/:id endpoint to actual QMD storage
+    - [x] Read from data/qmd/workspace_ingest/ index
+    - [x] Integrate with PostgreSQL task metadata (AsanaStorage)
+    - [x] Support structured namespace patterns (tasks/:id/context, task-:id)
+    - [x] Return combined data: task metadata + manifest entries + associated sources
+    - [x] Handle missing tasks gracefully (404)
+  - [x] **16.3: Retention Schedule** - Compress/delete archives older than 1 year
+    - [x] Implement applyRetentionPolicy() function
+    - [x] Detect files in archive/ with mtime > 1 year
+    - [x] Delete old archives, keep recent ones
+    - [x] Run retention automatically via cron (daily) ✅ 2026-02-15
+    - [x] Create cron configuration file (crontab/qmd-retention.cron) ✅ 2026-02-15
+    - [x] Include retention in health checks ✅ 2026-02-15
+  - [x] **16.4: Automated Security Scans** - Weekly scan with WhatsApp alerts
+    - [x] Create scan-alert.sh script to parse scan output and create alert file for WhatsApp delivery
+    - [x] Integrate with existing scripts/scan-qmd-data.js
+    - [x] Setup weekly cron job (Sundays 2 AM)
+    - [x] Alert on violations via WhatsApp (through heartbeat)
+    - [x] Create HEARTBEAT.md instructions to check for alert file and send WhatsApp using message tool
+    - [x] Verify alert flow: scan with violations triggers WhatsApp message
+    - [x] Create cron file (crontab/qmd-scan.cron) and add to system crontab ✅ 2026-02-15
+    - [x] Verify scan runs successfully and alerts trigger ✅ 2026-02-15
+  - [x] **16.5: Full-Text Search API** - Search across QMD files ✅ 2026-02-15
+    - [x] Implement fullTextSearch() using ripgrep when available
+    - [x] Fallback to JavaScript search when rg not present
+    - [x] Support searching both ingest and archive (option)
+    - [x] Return results with file, line, snippet, source
+    - [x] Add search performance metrics (response time) ✅ 2026-02-15
+    - [x] Improve relevance: sort results by file modification time (newer first)
+    - [x] Document decision: Fuzzy search (minisearch) not implemented; ripgrep provides fast exact matching suitable for QMD use case ✅ 2026-02-15
+  - [x] **16.6: Compaction & Defragmentation** - Clean up QMD storage
+    - [x] Implement compactStorage() to remove duplicates
+    - [x] Detect and remove orphaned entries (missing files)
+    - [x] Rebuild _index.json
+    - [x] Return results: duplicatesRemoved, orphanedCleaned, indexRebuilt
+    - [x] Schedule monthly compaction via cron ✅ 2026-02-15
+    - [x] Add pre/post size comparison reporting ✅ 2026-02-15
+  - [x] **16.7: Metrics Endpoint** - Expose storage statistics
+    - [x] Implement computeMetrics() aggregating ingest, archive, manifest counts and sizes
+    - [x] Calculate growth rate (bytes/day)
+    - [x] Include in GET /api/qmd/stats response
+    - [x] Persist stats across restarts
+    - [x] Add historical trends (store daily metrics in separate file) ✅ 2026-02-15
+    - [x] Add alert thresholds (warn if growth rate exceeds X) ✅ 2026-02-15
+  - [x] **16.8: Deployment & Operations** ✅ 2026-02-15
+    - [x] Start qmd-server.js as background script (scripts/qmd-start.sh)
+    - [x] Create stop script (scripts/qmd-stop.sh)
+    - [x] Create systemd service file (systemd/qmd-server.service)
+    - [x] Document environment variables: POSTGRES_*, QMD_ADMIN_TOKEN, SMTP_*, ALERT_EMAIL
+    - [x] Deploy server to production (run start script) ✅ 2026-02-15
+    - [x] Verify all endpoints return correct data (use curl test) ✅ 2026-02-15
+    - [x] Document API in docs/qmd-api.md (DONE) ✅ 2026-02-15
+    - [x] Add monitoring: log rotation configuration (logrotate/qmd-server.conf) ✅ 2026-02-15
+    - [x] Document external monitoring integration (health checks, metrics) in docs/monitoring-qmd.md ✅ 2026-02-15
+    - [x] Set up rate limiting (middleware in server/qmd-server.js) ✅ 2026-02-15
+    - [x] Add authentication on public endpoints (QMD_READ_TOKEN, QMD_ADMIN_TOKEN) ✅ 2026-02-15
+    - [x] Protect /search, /task/:id, /stats with read-level auth ✅ 2026-02-15
+
+  - [x] **16.9: Dashboard Integration** ✅ 2026-02-15 #openclaw
+    - [x] Create HTML dashboard (public/qmd-dashboard.html) with metrics display and admin actions ✅ 2026-02-15
+    - [x] Integrate dashboard into QMD server (serve at '/' and '/dashboard') ✅ 2026-02-15
+    - [x] Dashboard shows: ingest/archive file counts, sizes, growth rate, last scan info ✅ 2026-02-15
+    - [x] Dashboard includes buttons to trigger compaction, retention, scan (admin token protected) ✅ 2026-02-15
+    - [x] Test dashboard rendering and data loading (verify all metrics display) ✅ 2026-02-15
+    - [x] Add chart visualizations: 7-day growth trend using Chart.js ✅ 2026-02-15
+    - [x] Document standalone access at http://localhost:3877/ (DashClaw uninstalled, dashboard stands alone) ✅ 2026-02-15
+    - [x] Note: DashClaw was uninstalled; do not embed. Dashboard is standalone.
+
+  - [x] **16.10: Testing & Validation** ✅ 2026-02-15
+    - [x] Write integration tests for all endpoints (POST /compact, /retention, /scan, GET /stats, /task/:id, /search) ✅ 2026-02-15
+    - [x] Test ripgrep integration with real data (scripts/verify-ripgrep.js) ✅ 2026-02-15
+    - [x] Validate email alerts (mock SMTP or check log) - optional, depends on SMTP config
+      - *Note: SMTP not configured; WhatsApp alerting via heartbeat is fully operational and tested. Alert file created/delivered workflow verified.*
+    - [x] Load test search endpoint with 100+ simulated requests (scripts/load-test-search.js) ✅ 2026-02-15
+    - [x] Verify retention policy with test files (scripts/test-retention.js) ✅ 2026-02-15
+    - [x] Ensure security scan passes on clean data and detects known test secrets (scripts/test-security-scan.js) ✅ 2026-02-15
+    - [x] Test server restart persistence (stats file validation in integration tests) ✅ 2026-02-15
+    - [x] Add validation health check script (similar to dashboard-validation.js) ✅ 2026-02-15
+    - [x] Generate validation report ✅ 2026-02-15
+
+- [x] **Task 15.3: Workflow States Integration** #openclaw ✅ 2026-02-15
+  - [x] Fetch project's workflow from `GET /api/projects/:id` (includes `default_workflow.states` array)
+  - [x] Store workflow states in `state.workflowStates` (default: ['backlog','ready','in_progress','blocked','review','completed','archived'])
+  - [x] Replace "Completed" checkbox with **Status dropdown** in task input and edit panel
+  - [x] Populate dropdown with all workflow states (maintain order)
+  - [x] Implement status change via `POST /api/tasks/:id/move` (call when status changes)
+  - [x] Add color-coded status badges on task cards
+- [x] **Task 15.4: Kanban Board View Implementation** #openclaw ✅ 2026-02-15
+- [x] **Task 15.5: Timeline View Implementation** #openclaw ✅ 2026-02-15
+- [x] **Task 15.6: Owner/Agent Assignment Field** #openclaw ✅ 2026-02-15
+- [x] **Task 15.7: Dependency Management UI** #openclaw ✅ 2026-02-15 🤖 working
+- [x] **Task 15.8: Project Model Support** #openclaw ✅ 2026-02-15
+- [x] **Task 15.9: QMD Context Panel Integration** #openclaw ✅ 2026-02-15
+- [x] **Task 15.10: Audit Log / Task History View** #openclaw ✅ 2026-02-15
+- [x] **Task 15.11: Bulk Actions Enhancement** #openclaw ✅ 2026-02-15
+- [x] **Task 15.12: List View Upgrades** #openclaw 🤖 working
+  - [x] Hierarchical display with collapsible subtasks (indentation, chevrons)
+  - [x] Show subtask progress on parent
+  - [x] Advanced sorting (by status, owner, dependencies)
+  - [x] Quick filters (My tasks, Overdue, Blocked, No due date)
+- [x] **Task 15.13: Agent Queue & Execution UI** #openclaw ✅ 2026-02-15
+  - [x] Implement renderAgentView() with agent selector and task list
+  - [x] Fetch agent queue from /api/views/agent?agent_name=X
+  - [x] Display tasks with claim/release/execute buttons
+  - [x] Add agent stats display (total, ready, in_progress, completed, locked)
+  - [x] Implement claimTask() and releaseTask() API calls
+  - [x] Add execute button with pre-execution guard UI
+  - [x] Implement heartbeat auto-refresh (30s interval)
+  - [x] Show execution status with loading states and notices
+  - [x] Ensure view integrates with existing state manager
+- [x] **Task 15.14: UI Accessibility & Mobile Responsiveness** #openclaw ✅ 2026-02-15
+- [x] **Task 15.15: QMD Integration - Memory Rules & Safe Storage** #openclaw ✅ 2026-02-15
+  - [x] Created security module (lib/qmd-security.js) with redaction/validation
+  - [x] Integrated sanitization into all storage/asana.js write paths
+  - [x] Added unit tests (23 passing)
+  - [x] Wrote data scan script and verified existing data (0 violations)
+  - [x] Updated user & admin guides with security guidelines
+  - [x] Environment variable QMD_SAFE_MODE (default: redact)
+- [x] **Task 15.16: API Layer - Board/Timeline/Agent Endpoints Finalization** #openclaw ✅ 2026-02-15
+  - [x] Verified Board, Timeline, Agent endpoints return correct shapes
+  - [x] Fixed Agent view data shape (camelCase, lock fields)
+  - [x] Added pagination for Agent view (page/limit)
+  - [x] Improved error handling (404 propagation)
+  - [x] Created API documentation (docs/dashboard-api.md)
+  - [x] Added unit tests (11 tests passing)
+  - [x] All endpoints included in health check
+- [x] **Task 15.17: State Persistence & Offline Resilience** #openclaw ✅ 2026-02-15
+- [x] **Task 15.18: Performance Optimization** #openclaw ✅ 2026-02-15
+  - [x] Implement virtual scrolling for List View if >100 tasks (only render visible items)
+  - [x] Debounce search input (300ms) to reduce API calls
+  - [x] Lazy-load timeline cards (only render visible date range)
+  - [x] Use Web Workers for expensive operations (sorting, filtering large datasets)
+  - [x] Memoize filtered task results to avoid recomputation
+  - [x] Add loading skeletons for all async operations
+  - [x] Profile render times with performanceMonitor; target <100ms for view switch
+  - [x] **Deliverable**: Smooth performance with 500+ tasks; no jank on view switches
+- [x] **Task 15.19: Testing & Validation** #openclaw ✅ 2026-02-15
+  - [x] **Unit tests** (Jest or Mocha):
+  - [x] Validation health check script implemented and passing (26 checks, 0 failures) ✅ 2026-02-15
+  - [x] Validation report generated: reports/validation-2026-02-15.txt ✅ 2026-02-15
+- [x] **Task 15.20: Documentation & Spec Update** #openclaw ✅ 2026-02-15
+  - [x] Update `openclaw-asana-style-dashboard-upgrade.md` for PHASE 15 with progress summary (11/20 tasks done)
+  - [x] Document completed tasks 15.1-15.11 with implementations
+  - [x] Update Final Deliverables section with completion status
+  - [x] Keep remaining tasks (15.12-15.19) clearly marked as pending for future work
+  - [x] Created user guide: docs/dashboard-user-guide.md ✅ 2026-02-15
+  - [x] Created admin guide: docs/dashboard-admin-guide.md ✅ 2026-02-15
+  - [x] Generated validation report: reports/validation-2026-02-15.txt ✅ 2026-02-15
+
+- [x] **Project Dashboard Autonomous Improvement Run: 2026-02-15** #openclaw ✅ 2026-02-15
+  - [x] Install ripgrep for fast full-text search (system package ripgrep v14.1.0)
+  - [x] Enable and start qmd-server systemd service (reliability, auto-restart on failure)
+  - [x] Clean up root directory: moved 27 HTML backup files to backups/dashboard-html-2026-02-15/
+  - [x] Verify QMD server health and metrics endpoint (port 3877 responding)
+  - **Validation**: ripgrep installed; qmd-server.active under systemd; workspace root cleaned
+
+- [x] **Modular Dashboard Frontend Migration** #openclaw ✅ 2026-02-15
+  - [x] Replaced monolithic inline script (1663 lines) with ES6 module import
+  - [x] Updated script src to `./dashboard/src/dashboard-integration-optimized.mjs`
+  - [x] Validated all 26 API/database checks pass
+  - [x] Confirmed server serves module correctly (HTTP 200)
+  - [x] No functionality lost; performance optimizations preserved
+
+## Medium Priority
+
+<!-- No medium priority tasks -->
+
+## Low Priority
+
+- [x] Monitoring & Alerting Health Checks (daily) #openclaw ✅ 2026-02-16
+
+## In Progress
+
+
+## Completed
+
+- [x] **Task 15.1: View Switcher + State Management** #openclaw
+  - [ ] Design view state architecture: `state.view` ∈ {'list', 'board', 'timeline', 'agent'}
+  - [ ] Add view switcher UI component in toolbar (four toggle buttons with icons)
+  - [ ] Persist current view in localStorage (`projectDashboardState.view`)
+  - [ ] Implement view router: conditionally render `renderListView()`, `renderBoardView()`, `renderTimelineView()`, `renderAgentView()`
+  - [ ] Update all filter/sort controls to work across views (state preservation)
+  - [ ] Add keyboard shortcuts: 1=List, 2=Board, 3=Timeline, 4=Agent (when not in input)
+  - [ ] Ensure view switch preserves current filter, search, sort, and focused task
+  - [ ] Document view switching behavior in spec (Section 2.4)
+  - [ ] **Deliverable**: View switcher working with all four views accessible
+- [x] **Task 15.2: Upgrade UI Task Model to Full Asana Schema** #openclaw
+  - [ ] **Critical**: Replace `task.completed` boolean with `task.status` string in frontend state
+  - [ ] Map legacy completed tasks to `status = 'completed'`; unchecked tasks to `status = 'backlog'`
+  - [ ] Add UI fields: `task.owner` (string, nullable), `task.project_id` (UUID), `task.dependency_ids` (UUID[]), `task.labels` (string[]), `task.start_date` (ISO string)
+  - [ ] Update `normalizeTask()` to accept and validate all new fields (default values: priority='medium', status='backlog', owner=null, dependency_ids=[], labels=[])
+  - [ ] Modify `generateMarkdown()` to preserve status, owner, dependency_ids in markdown format (new format: `- [ ] Task owner:alice status:in_progress depends:task-id-1,task-id-2`)
+  - [ ] Update `parseMarkdownTasks()` to parse new metadata (owner:, status:, depends:, labels:)
+  - [ ] Add migration script to convert existing tasks.md to enriched format (backup first)
+  - [ ] Ensure backwards compatibility: if parsing fails, fall back to old format (completed flag)
+  - [ ] **Deliverable**: Frontend uses full task model; tasks.md preserves all fields
+- [x] PHASE 2: Storage Layer - Implement new schema and migrate existing dashboard data #openclaw
+  - [ ] Create database backup of current task-server.js data (JSON file or SQLite)
+  - [ ] Implement new storage module (storage/asana.js) with CRUD for Projects, Tasks
+  - [ ] Write migration script: map old task format to new Project/Task schema
+  - [ ] Add default project for existing tasks (migrate all old tasks into a single "Legacy Dashboard" project)
+  - [ ] Assign default workflow, set missing fields (priority=medium, status=backlog)
+  - [ ] Validate migration: count records, check referential integrity, sample data
+  - [ ] Deploy migration: run script, verify old dashboard still works alongside new
+  - [ ] Update phase status in openclaw-asana-style-dashboard-upgrade.md with migration results
+- [x] PHASE 3: Core API - Implement REST endpoints for Projects and Tasks #openclaw
+  - [ ] Add createProject, updateProject, archiveProject, listProjects endpoints
+  - [ ] Add createTask, updateTask, moveTask, deleteTask, listTasks endpoints
+  - [ ] Implement addDependency, removeDependency, addSubtask endpoints
+  - [ ] Add input validation (UUID formats, enums for status/priority, date parsing)
+  - [ ] Implement error handling (400/404/500) with JSON error responses
+  - [ ] Add API documentation comments (OpenAPI/Swagger or README-api.md)
+  - [ ] Test all endpoints manually or with script
+  - [ ] Document API changes in openclaw-asana-style-dashboard-upgrade.md
+- [x] PHASE 4: QMD Integration - Connect task memory to QMD with safe namespace separation #openclaw
+  - [ ] Define QMD namespace convention: project_id as namespace prefix
+  - [ ] Implement memory rules: only store research, summaries, decisions (never secrets)
+  - [ ] Create helper function getProjectContext(project_id, limit_tokens=3500)
+  - [ ] Implement getTaskContext(task_id) for specific task artifacts
+  - [ ] Add Secrets module redaction check before writing to QMD
+  - [ ] Test: write dummy artifact, verify it appears in correct namespace
+  - [ ] Document QMD integration steps and namespace scheme in spec file
+- [x] PHASE 5: List View - Hierarchical display with bulk actions #openclaw
+  - [ ] Design JSON response for hierarchical task listing (include subtasks recursively)
+  - [ ] Implement frontend component: ListView.jsx (or vanilla JS if no framework)
+  - [ ] Add sorting controls: by due date, priority, status
+  - [ ] Implement expand/collapse for subtasks (store state in URL hash or localStorage)
+  - [ ] Add bulk action toolbar: select multiple, change status, assign owner
+  - [ ] Implement selection logic with shift-click range selection
+  - [ ] Write tests: deep nesting (3+ levels), sorting stability, bulk action atomicity
+  - [ ] Document List View features and usage in spec file
+- [x] PHASE 6: Kanban Board - Drag-and-drop columns with status transitions #openclaw
+  - [ ] Design board state: columns = workflow states, tasks as draggable cards
+  - [ ] Implement drag-and-drop using native HTML5 DnD or SortableJS
+  - [ ] Connect drop event to moveTask API (PATCH task status)
+  - [ ] Update task timestamps on status change (status_updated_at)
+  - [ ] Add visual feedback during drag (ghost, placeholder)
+  - [ ] Enforce transition rules: only in_progress → review → completed
+  - [ ] Add undo toast with revert action (store previous status)
+  - [ ] Test: move 10 tasks across columns, verify API updates
+  - [ ] Document Kanban behavior and transition rules in spec
+- [x] PHASE 7: Timeline View - Visual Gantt-style chart with dependency lines #openclaw
+  - [ ] Choose timeline library (e.g., vis-timeline, Frappe Gantt, or custom canvas)
+  - [ ] Implement getTimelineView(project_id) API aggregating tasks with start/due dates
+  - [ ] Render tasks as bars positioned by start_date to due_date
+  - [ ] Draw dependency arrows between tasks (respecting completion order)
+  - [ ] Add interactivity: click bar to open edit panel, drag to resize dates
+  - [ ] Implement dependency validation: prevent moving task before prerequisite
+  - [ ] Handle tasks without dates (show in "unscheduled" column)
+  - [ ] Test: create dependent tasks, try to violate order, verify blocked
+  - [ ] Document Timeline UI controls and dependency enforcement in spec
+- [x] PHASE 8: Agent View & Execution Queue - Owner-based task filtering for autonomous agents #openclaw
+  - [ ] Implement getAgentQueue(agent_name) endpoint (filter tasks where owner=agent and status in [ready, in_progress])
+  - [ ] Add execution_lock field to Task model (locked_at, locked_by)
+  - [ ] Implement claimTask(task_id, agent_name): atomically set execution_lock if not locked
+  - [ ] Add heartbeat mechanism: agents poll /api/agent/queue every 30s
+  - [ ] Create Agent View page: personal kanban with only owned tasks
+  - [ ] Implement execute button that triggers OpenClaw's task execution with proper context
+  - [ ] Add task de-duplication: prevent multiple agents from claiming same task
+  - [ ] Document agent execution workflow and lock timeout strategy
+- [x] PHASE 9: Subtask & Dependency Engine - Unlimited nesting and smart blocking #openclaw
+  - [ ] Implement parent-child cascade updates: when child status changes, re-evaluate parent
+  - [ ] Add completion rule: parent auto-completes only when ALL children are completed
+  - [ ] Prevent manual completion of parent with incomplete children (status revert)
+  - [ ] Implement dependency check in Pre-Execution Guard: block if any dependency not completed
+  - [ ] Implement dependency cascade: if dependency reopens (status changed from completed), set dependent to blocked
+  - [ ] Circular dependency detection (depth-first search with memoization)
+  - [ ] Add tests: deep subtask chains, multiple dependencies, circular prevention
+  - [ ] Document subtask and dependency logic in spec (including recursion limits)
+- [x] PHASE 10: Automation Layer - Pre-execution guard, completion rules, error handling #openclaw
+  - [ ] Implement preExecutionGuard(task_id, agent): returns boolean + error message
+  - [ ] Integrate Secrets validation: check task metadata for sensitive keys, abort if found
+  - [ ] Implement task locking: set status=in_progress, lock_at, lock_by atomically
+  - [ ] Create completion handler: on success, move to review (or completed if no review step); on failure, move to blocked with sanitized error
+  - [ ] Add retry logic: max 3 attempts, exponential backoff, log each attempt
+  - [ ] Implement webhook/notification on task completion or failure (optional)
+  - [ ] Add audit log table: record all state transitions with user/agent and timestamp
+  - [ ] Document automation flow and failure modes in spec
+- [x] PHASE 11: UI Polish - Drag-and-drop, inline editing, color coding, accessibility #openclaw
+  - [ ] Add drag-and-drop to List View (reorder tasks within same parent)
+  - [ ] Implement inline task editing: double-click title/description, save on blur
+  - [ ] Add color coding for priority (critical=red, high=orange, medium=yellow, low=gray)
+  - [ ] Highlight overdue tasks (due_date < now and not completed) with red border
+  - [ ] Add agent assignment dropdown in edit panel (populate from agents_list)
+  - [ ] Implement collapsible subtasks with chevron icons and smooth animation
+  - [ ] Add ARIA labels, keyboard navigation (tab, enter to edit, escape to cancel)
+  - [ ] Ensure mobile responsiveness: single column, touch-friendly drag handles
+  - [ ] Test all interactions with keyboard-only navigation
+  - [ ] Document UI components and accessibility features in spec
+- [x] PHASE 12: Advanced Features (Optional) - Recurring tasks, templates, milestones #openclaw
+  - [ ] Design recurrence rule format (cron-like: `0 9 * * 1` = every Monday 9AM)
+  - [ ] Implement recurrence engine: on task completion, create next instance
+  - [ ] Add task templates: save task as template, apply template to new task
+  - [ ] Define milestone model: milestone_id, project_id, due_date, status
+  - [ ] Link tasks to milestones (many-to-many)
+  - [ ] Implement Gantt export: generate SVG/PNG timeline snapshot
+  - [ ] Add activity audit log per task (comment threading optional)
+  - [ ] Document optional features and enable/disable flag in config
+- [x] PHASE 13: Testing & Validation - Full integration test suite and validation report #openclaw
+  - [ ] Create test database with 50+ tasks, 5 projects, complex hierarchy and dependencies
+  - [ ] Write automated test suite: API tests (create/update/delete), view rendering, dependency resolution
+  - [ ] Run load test: 100 concurrent agents claiming tasks, verify no deadlocks
+  - [ ] Validate QMD integration: ensure no secrets leak, proper namespacing
+  - [ ] Verify existing dashboard data preserved and accessible
+  - [ ] Generate validation report: test results, performance metrics, known limitations
+  - [ ] Append validation report to openclaw-asana-style-dashboard-upgrade.md
+  - [ ] Update MEMORY.md with complete upgrade summary and configuration details
+- [x] PHASE 14: Deployment & Documentation - Rollout plan, rollback, user guide #openclaw
+  - [ ] Create deployment checklist: backup DB, deploy code, run migration, health check
+  - [ ] Document rollback procedure: restore backup, switch config flag to old version
+  - [ ] Write user guide: how to create projects, assign tasks, use views
+  - [ ] Write admin guide: configure workflows, troubleshoot agent queue, monitor logs
+  - [ ] Add configuration options to openclaw.json (enable_advanced_features, qmd_namespace_base)
+  - [ ] Create cron job to run periodic data integrity checks (weekly)
+  - [ ] Tag release and create changelog entry
+  - [ ] Mark project complete in tasks.md and spec file
+- [x] PHASE 1: Design & Architecture - Read spec file, design database schema, plan API structure #openclaw
+  - [ ] Read openclaw-asana-style-dashboard-upgrade.md completely and confirm understanding
+  - [ ] Design PostgreSQL/JSON schema for Project, Task, Workflow, Dependency models
+  - [ ] Document UUID generation strategy, timestamp handling, and referential integrity rules
+  - [ ] Create architecture diagram (Mermaid or ASCII) showing component relationships
+  - [ ] Define default workflow states and transitions
+  - [ ] Write upgrade spec.md with technical decisions and append to phase completion
+- [x] Implement Pre-Summarization Pipeline for Maximum Knowledge Retention #openclaw
+  - [ ] Create storage layout: ./data/ingest/{raw,clean,artifacts}/ and manifest.jsonl registry
+  - [ ] Implement manifest registry system with deduplication by raw_hash
+  - [ ] Stage 0: Preflight + Policy Gate - integrate Secrets module for auth validation and redaction
+  - [ ] Stage 1: Acquisition - implement raw capture for web pages, PDFs, tool output, WordPress posts; save to raw/
+  - [ ] Stage 2: Canonical Cleaning - create cleaner per source_type; preserve specs, tables, code, links
+  - [ ] Stage 3: Knowledge Artifact Extraction - implement multi-level summaries (micro/meso/macro)
+  - [ ] Stage 3B: Structured facts extraction - schema-first JSON with entities, claims, procedures, comparisons
+  - [ ] Stage 3C: Fact cards generation - 100-250 token cards (specs, issues, use cases, setup)
+  - [ ] Stage 3D: Keyword + tag pack generation with synonyms
+  - [ ] Stage 4: QMD Ingestion - dual track: clean text chunking (800-1200 tokens with overlap) + artifact ingestion
+  - [ ] Stage 5: Retrieval Strategy - update prompt-builder: use artifacts + clean chunks, caps (3.5k/7.5k tokens), escalation via FETCH_RAW tool
+  - [ ] Stage 6: Reprocessing + Versioning - handle raw_hash changes, keep prior versions, support artifact refresh
+  - [ ] Stage 7: Operational Controls - batch scheduling, observability reports, quality gates
+  - [ ] Artifact generator prompts - create deterministic JSON-output prompts with provenance pointers
+  - [ ] Test suite:
+  - [ ] Deduplication works (raw_hash prevents re-ingest)
+  - [ ] No secrets leakage in stored artifacts
+  - [ ] Retrieval returns artifact + clean layers correctly
+  - [ ] CLI commands:
+- [x] Migrate memory backend from builtin to QMD with full data integration #openclaw
+  - [ ] Preflight: Identify environment + current memory configuration (see openclaw-qmd-migration.md)
+  - [ ] Install QMD dependencies (verify module loads)
+  - [ ] Create QMD storage and configuration (./data/qmd/ + config)
+  - [ ] Export builtin memory data (normalize to JSONL)
+  - [ ] Import into QMD with deduplication & provenance
+  - [ ] Switch runtime reads to QMD (with builtin fallback)
+  - [ ] Validation: retrieval parity + quality checks
+  - [ ] Document rollback plan
+  - [ ] Final deliverables & summary
+- [x] Featured spec infographic: Phrozen Sonic Mega 8K S #openclaw
+- [x] Featured spec infographic: Anycubic Kobra S1 Combo #openclaw
+- [x] Featured spec infographic: QIDI Plus4 #openclaw
+- [x] Featured spec infographic: Original Prusa XL 5-Toolhead #openclaw
+- [x] Fix SVG to JPG conversion for Heated Enclosures article featured images #openclaw
+  - [ ] Converted infographic-1 (warping/delamination) from SVG to JPG (Media ID 45919)
+  - [ ] Converted infographic-2 (temperature stability) from SVG to JPG (Media ID 45920)
+  - [ ] Updated post 45913 content to use JPG instead of SVG
+  - [ ] Set featured image to 45919
+  - [ ] Added alt text to both media items for accessibility
+  - [ ] Verified post renders correctly with JPG images
+- [x] Authority Builder Phase 3: Write Anycubic Kobra S1 Combo Multi-Color Review (PR-08) #openclaw
+  - [ ] Researched specifications from manufacturer and multiple review sites (TechRadar, VoxelMatters, Tom's Hardware)
+  - [ ] Drafted comprehensive review (~2700 words)
+  - [ ] Included Amazon affiliate link (https://amzn.to/3ZBrbp6)
+  - [ ] Added internal links to related content (K2 Plus, Prusa CORE One, Bambu P1S, filament settings, comparison tool)
+  - [ ] Published via WordPress REST API (Post ID: 45835)
+  - [ ] URL: https://3dput.com/anycubic-kobra-s1-combo-multi-color-review-2026/
+- [x] Authority Builder Phase 3: Write MakerBot Sketch Sprint Review (PR-11) #openclaw
+  - [ ] Researched specifications from manufacturer and multiple sources (MakerBot, UltiMaker, 3D Printing Industry, MatterHackers, Reddit community)
+  - [ ] Drafted comprehensive review (~2700 words)
+  - [ ] Included Amazon affiliate link (https://amzn.to/4kKzpF9)
+  - [ ] Added internal links to related content (education printers, Bambu A1 mini, Prusa Mini+, classroom setup guides)
+  - [ ] Published via WordPress REST API (Post ID: 45837)
+  - [ ] URL: https://3dput.com/makerbot-sketch-sprint-review-classroom-3d-printer-2026/
+  - [ ] Addressed critical FlashForge AD5M Pro rebranding and pricing concerns in review
+- [x] Authority Builder Phase 3: Write QIDI PLUS4 Review (PR-07) #openclaw
+  - [ ] Researched specifications from manufacturer and multiple review sites (PCMag, Tom's Hardware)
+  - [ ] Drafted comprehensive review (~6200 words)
+  - [ ] Included Amazon affiliate link (https://amzn.to/3ZBrbp6)
+  - [ ] Added internal links to related content (K2 Plus, Prusa CORE One, Bambu P1S, filament settings, comparison tool)
+  - [ ] Published via WordPress REST API (Post ID: 45834)
+  - [ ] URL: https://3dput.com/qidi-plus4-review-the-heated-chamber-powerhouse-for-engineering-filaments/
+- [x] Authority Builder: Creality Ender 5 Max Review #openclaw
+  - [ ] Researched specifications
+  - [ ] Drafted comprehensive review (~2700 words)
+  - [ ] Included Amazon affiliate link
+  - [ ] Added internal links to related content
+  - [ ] Published via WordPress REST API (Post ID: 45832)
+- [x] Test kill switch functionality: Set AUTONOMY_ENABLED=false, verify agents pause, then re-enable #openclaw
+- [x] Verify automatic backups are running: Check hosting provider backup system, confirm recent backups exist, test restore procedure #openclaw
+- [x] Verify diagram generation: Check that Visual Fabrication Agent produces SVG/PNG diagrams for technical posts #openclaw
+- [x] Audit confidence scoring: Review collector output to ensure confidence values are assigned based on source priority #openclaw
+- [x] Verify proposal-delay-execute: Create a test proposal, confirm 6-hour delay is enforced, then verify execution #openclaw
+- [x] Authority Builder: Phase 3 — Printer Reviews (5/11 complete) #openclaw
+  - [ ] Original Prusa CORE One Kit Review(Post ID: 45800)
+  - [ ] Creality K2 Plus Combo Review(Post ID: 45794)
+  - [ ] Raise3D Pro3 Plus HS Review(Post ID: 45815)
+  - [ ] Dremel DigiLab 3D45 Review(Post ID: 45819)
+  - [ ] QIDI Q2 2025 Upgrade Review(Post ID: 45830, scheduled)
+- [x] Fix Input Shaping blog post: Generate diagrams, convert to JPG, embed, and publish (Post ID: 45744) #openclaw
+- [x] Monthly Self-Improvement Loop #openclaw
+- [x] **Cron Job Visibility & Management** #openclaw
+  - [x] Added backend cron API endpoints (/api/cron/jobs, /api/cron/jobs/:id/runs, /api/cron/jobs/:id/run)
+  - [x] Created CronView module with UI for job monitoring and manual execution
+  - [x] Integrated cron view into dashboard toolbar (⏱️ button)
+  - [x] Switched frontend to optimized integration module (dashboard-integration-optimized.mjs)
+  - [x] Removed deprecated persistent error banner
+  - [x] Performed cleanup (backups, old docs) and fixed validation script

@@ -1,0 +1,27 @@
+node_modules/
+dist/
+playwright-report/
+test-results/
+coverage/
+server.log
+test-output.log
+task-server.pid
+*.pid
+*.log
+.env
+.env.local
+.DS_Store
+
+# Runtime state
+gateway-status.json
+task-server.pid
+*.pid
+
+# Legacy archive (contains old backups with stale passwords)
+_legacy-archive/
+*.backup
+*.bak
+
+# Archived/legacy files
+archive/
+*.broken

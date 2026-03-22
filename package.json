@@ -1,0 +1,64 @@
+{
+  "name": "openclaw-project-dashboard",
+  "version": "2.0.0-rc.3",
+  "description": "Operations-first project dashboard for OpenClaw with hierarchical boards, agent-aware task routing, OpenClaw model selection, and audit-friendly task execution.",
+  "main": "task-server.js",
+  "directories": {
+    "doc": "docs",
+    "lib": "lib",
+    "test": "tests"
+  },
+  "files": [
+    "agents.html",
+    "dashboard.html",
+    "docs",
+    "lib",
+    "schema",
+    "scripts",
+    "src",
+    "storage",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "RELEASE.md",
+    "sw.js",
+    "task-server.js",
+    ".env.example"
+  ],
+  "scripts": {
+    "start": "node task-server.js",
+    "validate": "node scripts/dashboard-validation.js",
+    "test:filters": "node tests/test-filter-behavior.js",
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug",
+    "package:release": "npm pack --pack-destination dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pgedeon/openclaw-project-dashboard.git"
+  },
+  "keywords": [
+    "openclaw",
+    "dashboard",
+    "tasks",
+    "agents",
+    "project-management"
+  ],
+  "author": "pgedeon",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/pgedeon/openclaw-project-dashboard/issues"
+  },
+  "homepage": "https://github.com/pgedeon/openclaw-project-dashboard#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

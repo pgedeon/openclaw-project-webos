@@ -1,0 +1,186 @@
+/* ============================================
+   Win11 Taskbar
+   ============================================ */
+
+.win11-taskbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: var(--win11-surface);
+  backdrop-filter: blur(20px) saturate(125%);
+  -webkit-backdrop-filter: blur(20px) saturate(125%);
+  border-top: 1px solid var(--win11-border);
+  z-index: 9999;
+}
+
+.win11-taskbar__section {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.win11-taskbar__section--left {
+  flex: 0 0 auto;
+}
+
+.win11-taskbar__section--center {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.win11-taskbar__section--right {
+  flex: 0 0 auto;
+  gap: 0;
+}
+
+/* Start button */
+.win11-taskbar__start-button {
+  position: relative;
+}
+
+.win11-taskbar__start-button.is-active {
+  background: var(--win11-surface-active);
+}
+
+.win11-taskbar__widgets-button.is-active {
+  background: var(--win11-surface-active);
+}
+
+/* App buttons */
+.win11-taskbar__app {
+  position: relative;
+}
+
+.win11-taskbar__app-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.win11-taskbar__indicator {
+  display: none;
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--win11-text-tertiary);
+  transition: width 0.15s ease, background 0.15s ease;
+}
+
+.win11-taskbar__app.is-running .win11-taskbar__indicator {
+  display: block;
+}
+
+.win11-taskbar__app.is-active .win11-taskbar__indicator {
+  width: 16px;
+  background: var(--win11-accent);
+}
+
+.win11-taskbar__app.is-minimized .win11-taskbar__indicator {
+  opacity: 0.5;
+}
+
+/* Generic button */
+.win11-taskbar__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 38px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--win11-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s ease;
+}
+
+.win11-taskbar__button:hover {
+  background: var(--win11-surface-hover);
+}
+
+.win11-taskbar__glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.win11-taskbar__glyph svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Tooltip */
+.win11-taskbar__tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: var(--win11-surface-solid);
+  border: 1px solid var(--win11-border);
+  box-shadow: var(--win11-shadow);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--win11-text);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.win11-taskbar__button:hover .win11-taskbar__tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Tray buttons */
+.win11-taskbar__tray-button {
+  min-width: 32px;
+  padding: 0 6px;
+}
+
+/* Clock */
+.win11-taskbar__clock {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  height: 38px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--win11-text);
+  font-size: 0.78rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .win11-taskbar {
+    padding: 0 6px;
+  }
+
+  .win11-taskbar__section--center {
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .win11-taskbar__section--center::-webkit-scrollbar {
+    display: none;
+  }
+}
