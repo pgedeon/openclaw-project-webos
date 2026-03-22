@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const { execSync } = require('child_process');
 
 const DEFAULT_OPTIONS = Object.freeze({
   pollIntervalMs: 30_000,
@@ -527,6 +528,42 @@ class GatewayWorkflowDispatcherV2 {
     }
   }
 
+  /**
+   * Wake the main agent via openclaw system event.
+   * This tells the agent to check for pending workflow runs on its next heartbeat.
+   */
+  wakeAgent(run) {
+    const workflowType = run.workflowType || run.workflow_type || 'unknown';
+    const runId = run.id || 'unknown';
+    const targetAgent = run.targetAgentId || run.target_agent_id || run.ownerAgentId || 'unknown';
+    
+    const eventText = [
+      `Workflow run ${runId} dispatched`,
+      `Type: ${workflowType}`,
+      `Target agent: ${targetAgent}`,
+      `Claim via: POST /api/workflow-runs/${runId}/claim`,
+      `Input: ${JSON.stringify(run.inputPayload || run.input_payload || {}).slice(0, 200)}`,
+    ].join('\n');
+
+    try {
+      const result = execSync(
+        'openclaw system event --mode now --json --text ' + JSON.stringify(eventText),
+        { timeout: 15000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      const parsed = JSON.parse(result.trim());
+      if (parsed.ok) {
+        this.log.log('[v2] Agent woken for workflow run', runId);
+      } else {
+        this.log.error('[v2] Warning: system event returned', parsed);
+      }
+      return parsed.ok;
+    } catch (err) {
+      // Don't fail the dispatch if wake fails — the agent will pick it up on next heartbeat
+      this.log.error('[v2] Warning: could not wake agent for run', runId, err.message?.slice(0, 100));
+      return false;
+    }
+  }
+
   async dispatchQueuedRuns(limit = this.options.batchSize) {
     const result = await this.pool.query(SQL.dispatchCandidates, [clampLimit(limit, this.options.batchSize)]);
     const dispatched = [];
@@ -534,13 +571,17 @@ class GatewayWorkflowDispatcherV2 {
     for (const candidate of result.rows) {
       const dispatchResult = await this.pool.query(SQL.markDispatched, [candidate.id, candidate.routed_agent_id]);
       if (dispatchResult.rows[0]) {
-        dispatched.push(normalizeRunRow({
+        const dispatchedRun = normalizeRunRow({
           ...dispatchResult.rows[0],
           routed_agent_id: candidate.routed_agent_id,
           routing_priority: candidate.routing_priority,
           max_concurrent: candidate.max_concurrent,
           timeout_minutes: candidate.timeout_minutes
-        }));
+        });
+        dispatched.push(dispatchedRun);
+        
+        // Wake the main agent to claim this run
+        this.wakeAgent(dispatchedRun);
       }
     }
 
