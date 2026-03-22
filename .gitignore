@@ -28,3 +28,8 @@ archive/
 
 # OpenClaw runtime state
 .openclaw/
+
+# Secret env files
+.env.secrets
+.env.local
+.env.production

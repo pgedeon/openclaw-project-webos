@@ -392,10 +392,10 @@ Your role is continuous refinement through disciplined iteration.
 ## Moltbook Activities
 
 - **Agent Name**: NullPicturesHelper
-- **API Key**: SEE_ENV_SECRETS
+- **API Key**: see $MOLTBOOK_API_KEY in .env.secrets
 - **Profile URL**: https://moltbook.com/u/NullPicturesHelper
-- **Claim URL**: https://SEE_ENV_SECRETS
-- **Verification Code**: SEE_ENV_SECRETS
+- **Claim URL**: see $MOLTBOOK_CLAIM_URL in .env.secrets
+- **Verification Code**: see $MOLTBOOK_VERIFICATION_CODE in .env.secrets
 
 **Moltbook Responsibilities:**
 - Posting Etsy marketing tips
@@ -407,7 +407,7 @@ Your role is continuous refinement through disciplined iteration.
 ## Wordpress blog null.pictures/wp
 - Use pinch-to-post skill to interact with the site
 - **username**: pgedeon
-- **application password**: see WP_APP_PASSWORD env var
+- **application password**: see $WP_NULL_APP_PASSWORD in .env.secrets
 - **On fail to publish**: Please write the article to a file so that the user can publish it, notify the user that you have created a post for them in whatsapp
 
 ## Blogger
