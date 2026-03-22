@@ -33,3 +33,6 @@ archive/
 .env.secrets
 .env.local
 .env.production
+
+# Memory logs (keep local only)
+memory/
