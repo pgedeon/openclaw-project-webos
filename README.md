@@ -118,7 +118,7 @@ See [.env.example](.env.example) for supported environment variables:
 ├─────────────────────────────────────────────┤
 │  cron-manager-server.mjs (:3878)            │
 │  memory-api-server.mjs (:3879)              │
-│  gateway-sync, workflow-dispatcher           │
+│  gateway-workflow-dispatcher-v2.js          │
 └─────────────────────────────────────────────┘
 ```
 
@@ -128,7 +128,9 @@ See [.env.example](.env.example) for supported environment variables:
 ├── task-server.js              # Main API server
 ├── cron-manager-server.mjs     # Cron job management API
 ├── memory-api-server.mjs       # Memory system endpoints
-├── gateway-workflow-dispatcher.js
+├── gateway-workflow-dispatcher.js     # v1 (disabled)
+├── gateway-workflow-dispatcher-v2.js  # v2 dispatcher (active)
+├── agent-workflow-client.js           # CLI for agent workflow operations
 ├── workflow-run-monitor.js
 ├── workflow-runs-api.js        # Workflow engine API
 ├── schema/
@@ -176,6 +178,60 @@ python3 ~/.openclaw/workspace/main/scripts/agent_reporter.py task complete -i <t
 | `task list` | List with optional filters |
 | `activity` | Post status update + heartbeat |
 | `heartbeat` | "I'm alive" ping |
+
+## Workflow Dispatcher v2
+
+Database-first workflow queue with system event notifications. Replaces the old file-based `/tmp/dashboard-workflow-pickup.json` system.
+
+### How It Works
+
+```
+Dashboard creates workflow_run (queued)
+  → Dispatcher tick (30s): marks "dispatched" + sends system event
+  → Gateway delivers event → wakes agent on heartbeat
+  → Agent claims via atomic SQL (no double-claim)
+  → Agent spawns sub-agent to execute the task
+  → Sub-agent heartbeats → completes
+```
+
+### Key Files
+
+| File | Description |
+|------|-------------|
+| `gateway-workflow-dispatcher-v2.js` | Dispatcher engine (849 lines) |
+| `agent-workflow-client.js` | CLI tool for manual testing |
+| `schema/migrations/021_add_workflow_agent_routing.sql` | Agent routing table |
+| `tests/test-dispatcher-v2.js` | 47 unit tests |
+| `tests/test-dispatcher-v2-integration.js` | 21 integration tests |
+| `docs/AGENT_INTEGRATION.md` | Full integration guide |
+| `docs/DISPATCHER_V2_DESIGN.md` | Design specification |
+
+### Configuration
+
+- Agent routing: `workflow_agent_routing` DB table (no code changes needed)
+- Heartbeat target: `agents.defaults.heartbeat.target: "last"` in `openclaw.json`
+- Heartbeat interval: `agents.defaults.heartbeat.every: "2h"`
+- HEARTBEAT.md must stay under 1772 characters (gateway bootstrap limit)
+
+### API Endpoints
+
+```
+GET  /api/workflow-runs/pending              # List dispatched runs
+POST /api/workflow-runs/{id}/claim           # Atomic claim (requires agent_id + session_id)
+POST /api/workflow-runs/{id}/heartbeat       # Sub-agent heartbeat
+POST /api/workflow-runs/{id}/complete        # Mark run complete
+GET  /api/workflow-runs/dispatcher/stats     # Queue stats
+```
+
+### Testing
+
+```bash
+node tests/test-dispatcher-v2.js                # 47 unit tests
+node tests/test-dispatcher-v2-integration.js     # 21 integration tests (needs DB)
+node agent-workflow-client.js stats             # Quick health check
+```
+
+See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for the full agent integration guide.
 
 ## Development
 
