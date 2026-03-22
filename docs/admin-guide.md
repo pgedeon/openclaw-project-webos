@@ -1,355 +1,169 @@
-# Project Dashboard Administration Guide
+# Admin Guide
 
-Procedures and reference for operators of the OpenClaw Project Dashboard.
+## Overview
 
-## Contents
+The OpenClaw Project Dashboard is an operations-first task management system with a Win11-style desktop shell UI. It integrates with the OpenClaw agent runtime for bidirectional agent communication.
 
-1. [Installation & Configuration](#installation--configuration)
-2. [Running the Server](#running-the-server)
-3. [Health Monitoring](#health-monitoring)
-4. [Database Maintenance](#database-maintenance)
-5. [Migration & Upgrades](#migration--upgrades)
-6. [Security](#security)
-7. [Logging & Troubleshooting](#logging--troubleshooting)
-8. [Backup & Restore](#backup--restore)
+## Server Management
 
----
-
-## Installation & Configuration
-
-### Prerequisites
-
-- Node.js v18+ (v22 recommended)
-- PostgreSQL 14+ (if using `STORAGE_TYPE=postgres`)
-- `uuid` npm package (installed automatically if missing)
-
-### Setup
-
-1. Ensure database exists:
-
-```sql
-CREATE DATABASE openclaw_dashboard;
-CREATE USER openclaw WITH PASSWORD 'your-password-here';
-GRANT ALL ON DATABASE openclaw_dashboard TO openclaw;
-```
-
-2. Apply schema:
+### Start
 
 ```bash
-psql -U openclaw -d openclaw_dashboard -f dashboard/schema/openclaw-dashboard.sql
+node task-server.js
 ```
 
-3. Set environment variables (example in a `.env` file in the dashboard repo root):
+### Restart
 
 ```bash
-PORT=3876
-STORAGE_TYPE=postgres
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=openclaw_dashboard
-POSTGRES_USER=openclaw
-POSTGRES_PASSWORD=yourpassword
-OPENCLAW_WORKSPACE=/root/.openclaw/workspace
-OPENCLAW_CONFIG_FILE=/root/.openclaw/openclaw.json
+bash scripts/restart-task-server.sh
 ```
 
-4. Start the server:
+### Health Check
 
 ```bash
-npm start
+bash scripts/dashboard-health.sh check
 ```
 
----
-
-## Running the Server
-
-### Direct (development)
+### Validate API
 
 ```bash
-npm start
+node scripts/dashboard-validation.js
 ```
 
-The server prints startup logs and listens on `0.0.0.0:PORT`. Press Ctrl+C to stop.
+## Database Management
 
-### Health script (production helper)
-
-`scripts/dashboard-health.sh` can start, stop, check status, and auto-restart if unhealthy.
+### Apply a Migration
 
 ```bash
-# Check status (exit 0 if healthy)
-./scripts/dashboard-health.sh status
-
-# Start
-./scripts/dashboard-health.sh start
-
-# Stop
-./scripts/dashboard-health.sh stop
-
-# Health check (used by cron or monitoring)
-./scripts/dashboard-health.sh check
+bash scripts/apply-workflow-migration.sh schema/migrations/001_add_workflow_runs.sql
 ```
 
-By default the script writes logs under `$OPENCLAW_WORKSPACE/logs`, stores the active PID at `$OPENCLAW_WORKSPACE/.dashboard.pid`, and mirrors that PID into the legacy `dashboard/task-server.pid` file for compatibility with older tooling. Health probes target `/api/health`. Override with `DASHBOARD_LOG_DIR`, `DASHBOARD_HEALTH_LOG_FILE`, `DASHBOARD_SERVER_LOG_FILE`, `DASHBOARD_PID_FILE`, `DASHBOARD_LEGACY_PID_FILE`, or `DASHBOARD_HEALTH_URL` if needed.
-
-A source-managed cron entry is available at `../crontab/dashboard-health.cron`. Install or merge that file into the host crontab if you want the dashboard to auto-start on boot and auto-restart every 5 minutes when unhealthy.
-
-### Systemd (recommended for production)
-
-Create `/etc/systemd/system/dashboard.service`:
-
-```ini
-[Unit]
-Description=OpenClaw Project Dashboard
-After=network.target postgresql.service
-
-[Service]
-Type=simple
-WorkingDirectory=/root/.openclaw/workspace/dashboard
-ExecStart=/usr/bin/node task-server.js
-Restart=on-failure
-EnvironmentFile=/root/.openclaw/workspace/dashboard/.env
-# Or set Environment= lines explicitly
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
+### Check Database Connection
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable dashboard.service
-sudo systemctl start dashboard.service
-sudo systemctl status dashboard.service
+PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1;"
 ```
 
-Logs via `journalctl -u dashboard.service -f`.
-
----
-
-## Health Monitoring
-
-The built‑in `/api/health` endpoint returns JSON:
-
-```json
-{
-  "status": "ok",
-  "timestamp": "2026-02-15T16:25:16.870Z",
-  "asana_storage": "enabled",
-  "storage_type": "postgres",
-  "port": 3876
-}
-```
-
-- `asana_storage` is `"enabled"` if storage initialized, `"disabled"` otherwise.
-- Use this endpoint for uptime checks (monitoring, cron).
-
-The health script (`dashboard-health.sh`) performs this check and restarts the server if the port is not listening or the endpoint returns non‑200.
-
----
-
-## Database Maintenance
-
-### Schema
-
-Key tables (see `dashboard/schema/openclaw-dashboard.sql`):
-
-- `projects`
-- `tasks`
-- `workflows`
-- `audit_log`
-
-Indexes are provided for common queries (project_id, status, owner, timestamps).
-
-### Routine Tasks
-
-- **Vacuum & Analyze** (PostgreSQL only, weekly):
-
-```sql
-VACUUM ANALYZE projects, tasks, audit_log;
-```
-
-- **Table bloat check** (monthly) if large updates occur:
-
-```sql
-SELECT schemaname, tablename, n_dead_tup, n_live_tup FROM pg_stat_user_tables WHERE schemaname = 'public';
-```
-
-If `n_dead_tup` is high, consider `VACUUM FULL` during maintenance windows.
-
-### Archiving Old Tasks
-
-The dashboard uses an `archived` flag rather than deleting tasks. To physically delete very old archived tasks:
-
-```sql
-DELETE FROM audit_log WHERE created_at < NOW() - INTERVAL '2 years';
-DELETE FROM tasks WHERE archived = true AND completed_at < NOW() - INTERVAL '2 years';
--- Optionally delete from projects if empty
-```
-
-Always test deletes on a staging database first.
-
----
-
-## Migration & Upgrades
-
-### From Legacy Markdown (`tasks.md`) to PostgreSQL
-
-Use `dashboard/scripts/migrate-dashboard-to-asana.js`. It:
-
-1. Backs up `tasks.md`.
-2. Creates a “Legacy Dashboard” project.
-3. Parses markdown tasks (including subtasks by indentation).
-4. Inserts into PostgreSQL preserving hierarchy.
-5. Maps `#openclaw` tags to labels.
-
-Run:
+### Reset (Destructive)
 
 ```bash
-STORAGE_TYPE=postgres node dashboard/scripts/migrate-dashboard-to-asana.js
+psql -U postgres -d mission_control -f schema/openclaw-dashboard.sql
 ```
 
-### JSON → PostgreSQL
+## Cron Job Management
 
-If you have an existing `data/asana-db.json` from the JSON storage backend, you can write a one‑off script to read that file and insert records into PostgreSQL using the `AsanaStorage` class. There is no builtin script for this yet; see `storage/asana.js` for the data model.
+### Install Cron Jobs
 
-### Version Upgrades
-
-Dashboard files are self‑contained. To upgrade:
-
-1. Pull new files into the dashboard repository.
-2. Review `schema/` for migrations. If the schema changed, apply the new SQL on top of existing DB (backward compatible changes are typical). For breaking changes, a migration script will be provided.
-3. Restart the server.
-
-No data loss should occur; however, always backup the database before schema changes:
+Cron definitions are in `crontab/` files. Install with:
 
 ```bash
-pg_dump -U openclaw openclaw_dashboard > backup_$(date +%F).sql
+cat crontab/*.cron | crontab -
 ```
 
----
+### Monitor Cron
 
-## Security
-
-### Authentication
-
-The dashboard API currently has no built‑in authentication; it is intended to be bound to localhost or placed behind a reverse proxy with basic auth or IP allowlist.
-
-If exposing externally, put Nginx/Apache in front with TLS and require authentication.
-
-### Secrets & QMD Integration
-
-- The storage layer integrates with `src/security/secrets.py` to detect and redact secrets before writing to QMD.
-- Ensure `QMD_SAFE_MODE` is set to `redact` (default) in production.
-- Audit logs may contain sensitive data; restrict log file permissions (`600`).
-
-### Data Validation
-
-- Input validation on all API endpoints (UUID formats, enums, date strings).
-- Dependency circularity detection enforced by `storage/asana.js`.
-- Task model rejects unknown fields.
-
----
-
-## Logging & Troubleshooting
-
-### Server‑side logs
-
-If running directly or via systemd, logs go to stdout/stderr. With systemd:
+The cron-manager-server (port 3878) provides an API:
 
 ```bash
-journalctl -u dashboard.service -f
+curl http://127.0.0.1:3878/api/cron-admin/jobs
 ```
 
-### Health script logs
+### Keepalive Servers
 
-`logs/dashboard-health.log` contains start/stop/restart events.
+The cron-manager and memory-api servers auto-restart every 2 minutes via keepalive crons. They log health checks to `/tmp/cron-manager-restart.log` and `/tmp/memory-api-restart.log`.
 
-### Common Issues
+## Agent Integration
 
-**“Cannot find module './src/offline/state-manager.mjs'”**
+### Agent Reporting
 
-- You are running an old version. Ensure you start `dashboard/task-server.js` from the workspace root; it expects the `dashboard/` directory with `src/` inside.
-
-**Audit view shows “unavailable”**
-
-- The dynamic import of `./src/audit-view.mjs` failed. Check the browser console for 404. Verify the file exists and the server can serve it (path `dashboard/src/audit-view.mjs` from the server root).
-
-**Board/Timeline placeholders**
-
-- These views are stubs. The modules `board-view.mjs` and `timeline-view.mjs` are present but not yet integrated. Future updates will wire them up.
-
-**Tasks not persisting**
-
-- If `STORAGE_TYPE=json`, writes go to `data/asana-db.json`. Ensure the directory exists and is writable.
-- If `postgres`, verify DB credentials and that the connection succeeds (check server logs on startup).
-
-**Port already in use**
-
-- Another process is on 3876. Change `PORT` or kill the existing process.
-
----
-
-## Backup & Restore
-
-### PostgreSQL
-
-Backup (daily via cron recommended):
+Agents report work to the Kanban board via `agent_reporter.py`:
 
 ```bash
-pg_dump -U openclaw openclaw_dashboard > /backup/dashboard_$(date +%F).sql
+# Create task
+python3 scripts/agent_reporter.py task create -t "Task title" -p "Project" --auto-claim
+
+# Complete task
+python3 scripts/agent_reporter.py task complete -i <task-id>
 ```
 
-Restore:
+### Agent Heartbeat
+
+Agents send heartbeats via:
 
 ```bash
-psql -U openclaw -d openclaw_dashboard -f /backup/dashboard_2026-02-15.sql
+python3 scripts/agent_reporter.py heartbeat
 ```
 
-### JSON storage
+The dashboard displays live agent status in the Agents view.
 
-Copy `data/asana-db.json` to a safe location. Ensure the server is stopped during copy to avoid race conditions.
+### Gateway Sync
 
----
+The gateway sync runs every 30 seconds, pulling OpenClaw agent status into the dashboard. Enable via:
 
-## Performance Tips
+```bash
+# Already configured in crontab
+* * * * * node /path/to/sync-gateway-status.mjs >> /path/to/logs/sync-gateway-status.log 2>&1
+```
 
-- Indexes are defined on `project_id`, `status`, `owner`, `created_at`, `updated_at`. For large datasets (100k+ tasks), monitor query performance and consider partial indexes for active tasks.
-- The UI uses virtual scrolling for the List view when >100 tasks; this is automatic.
-- Debounced search prevents excessive API calls.
-- If using the Agent heartbeat, a 30‑second interval is a good balance; you can adjust in `dashboard/dashboard.html` (search for `agentRefreshInterval`).
+## Troubleshooting
 
----
+### Server won't start
+
+```bash
+# Check if port is in use
+ss -tlnp | grep 3876
+
+# Check database connection
+PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d mission_control -c "SELECT 1;"
+
+# Check logs
+node task-server.js 2>&1 | head -20
+```
+
+### Blank page in browser
+
+1. Check server is running: `curl http://localhost:3876/api/health`
+2. Check browser console for JS errors
+3. Clear browser cache and hard refresh
+
+### Cron jobs showing stale
+
+1. Verify crontab is installed: `crontab -l | grep cron-manager`
+2. Check keepalive log: `tail -20 /tmp/cron-manager-restart.log`
+3. Run heartbeat guard: `python3 scripts/heartbeat_cron_guard.py --json`
+
+### Widget panel not loading
+
+1. Check IndexedDB availability in browser
+2. Clear site data: DevTools → Application → Clear storage
+3. Hard refresh the page
 
 ## Customization
 
-### Styling
+### CSS Theme
 
-All styles are embedded in `dashboard/dashboard.html`. You can edit the `:root` CSS variables to change colors:
+The Win11 theme uses CSS variables. Edit `src/styles/win11-theme.css`:
 
 ```css
---bg: #f4f1ff;
---surface: #ffffff;
---accent: #5c6bf2;
+:root {
+  --win11-accent: #0078d4;
+  --win11-bg: #202020;
+  /* ... */
+}
 ```
 
-For dark theme, edit the `[data-theme="dark"]` block.
+### Add a Custom View
 
-### Adding New Views
+See `DEVELOPER_GUIDE.md` → "Adding a New View"
 
-1. Create a module in `dashboard/src/`, e.g., `my-view.mjs`.
-2. Export a class with a constructor `(container, options)` and a `render()` method.
-3. Add a button in the view switcher (HTML) with `data-view="myview"`.
-4. Add a `case 'myview':` in `renderView()` to instantiate and call `render()`.
+## Security
 
----
+- All credentials via environment variables (`.env`)
+- Secret scanning pipeline in `src/security/`
+- No hardcoded credentials in codebase
+- CORS headers configured per-origin
+- See `.env.example` for all configurable settings
 
 ## Support
 
-For bugs or feature requests, open an issue on the GitHub repository: https://github.com/pgedeon/openclaw-project-dashboard
-
-Include:
-- Dashboard version (commit hash or date)
-- Browser console logs (if UI issue)
-- Server logs (if API error)
-- Steps to reproduce
+- Issues: https://github.com/pgedeon/openclaw-project-webos/issues

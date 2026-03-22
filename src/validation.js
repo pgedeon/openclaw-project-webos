@@ -5,7 +5,7 @@
  * to verify all optimizations are active and working correctly.
  * 
  * Usage:
- * 1. Open the dashboard (project-dashboard.html)
+ * 1. Open the dashboard (index.html)
  * 2. Open Developer Console
  * 3. Paste and run this script
  * 4. Check the output summary

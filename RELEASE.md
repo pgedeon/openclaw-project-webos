@@ -1,39 +1,28 @@
-# Release Candidate v2.0.0-rc.2 – 2026-03-08
+# Release Notes
 
-## Summary
+## v2.0.0-rc.2 — 2026-03-22
 
-This release candidate advances the packaged dashboard beyond the initial standalone export. It adds the new `/agents` workspace, carries over the latest project/task UX improvements, and updates the package metadata so the release artifacts include the full multi-page dashboard.
+### What's New
 
-## Highlights
+- **Win11 Desktop Shell** — Complete rewrite as a desktop-style SPA with draggable windows, taskbar, start menu, and widget panel
+- **25 Native Views** — Board, Tasks, Agents, Operations, Workflows, Handoffs, Timeline, Memory, Cron, Approvals, Diagnostics, Metrics, and more
+- **Widget System** — Desktop widgets: system health, error feed, cron countdown, agent fleet, approval queue, clock, and more
+- **Workflow Engine** — Template-based workflow runs with queue, blocker classification, approvals, and artifact storage
+- **Cron Manager** — Dedicated API for monitoring cron jobs with log viewing and manual triggers
+- **Offline Support** — IndexedDB-backed state with background sync and retry logic
+- **Security** — Secret scanning and redaction pipeline, QMD security module
+- **Agent Integration** — Bidirectional OpenClaw gateway bridge for agent heartbeat and task reporting
 
-- Dedicated `/agents` workspace with live agent floor view, focus panel, and presence filters
-- Improved project workspace panel and richer task/task-edit UX
-- Task composer with agent and preferred-model assignment
-- OpenClaw-aware `/api/task-options` and agent heartbeat/status surfaces
-- Better filter correctness, subtask visibility, and stats consistency
-- Package contents updated to include `agents.html`, `src/agents-page.mjs`, and `sw.js`
+### Migration from Previous Versions
 
-## Release Artifacts
+The dashboard was previously a multi-page app (`dashboard.html`, `agents.html`, `operations.html`). All functionality has been consolidated into the single-page desktop shell.
 
-- Git tag: `v2.0.0-rc.2`
-- Default branch target: `main`
-- Repository target: `github.com/pgedeon/openclaw-project-dashboard`
+The main entry point is now `index.html`. The shell loads all views dynamically via ES modules.
 
-## Validation
+### Repository
 
-- `node --check task-server.js`
-- `node --check src/dashboard-integration-optimized.mjs`
-- `node --check src/agents-page.mjs`
-- `bash -n scripts/dashboard-health.sh`
-- `bash -n scripts/restart-task-server.sh`
-- `node scripts/dashboard-validation.js`
-- Live health check at `http://localhost:3876/api/health`
+https://github.com/pgedeon/openclaw-project-webos
 
-## Migration Notes
+### License
 
-No schema migration was added for this RC. Existing dashboard databases remain compatible.
-
-## Install References
-
-- [docs/install-openclaw.md](docs/install-openclaw.md)
-- [docs/install-standalone.md](docs/install-standalone.md)
+MIT

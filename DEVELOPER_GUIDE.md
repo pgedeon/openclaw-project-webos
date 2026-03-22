@@ -1,390 +1,165 @@
-# Dashboard Developer Guide
+# OpenClaw Project Dashboard — Developer Guide
 
-**Last Updated**: 2026-03-12
-**Status**: Phase 0 - Stabilization
-
----
-
-## Source of Truth
-
-### Primary Implementation Directory
-
-All dashboard implementation work happens in:
-
-```
-/root/.openclaw/workspace/dashboard/
-```
-
-**DO NOT** use dashboard copies from other workspace directories as implementation targets.
-
-### Primary Files
-
-| File | Purpose | Size |
-|------|---------|------|
-| `task-server.js` | Main HTTP server and route handler | ~67KB |
-| `storage/asana.js` | PostgreSQL storage layer | ~77KB |
-| `workflow-runs-api.js` | Workflow runs handler (already modular!) | ~26KB |
-| `dashboard.html` | Main dashboard UI | ~76KB |
-| `src/dashboard-integration-optimized.mjs` | Frontend logic | ~156KB |
-| `src/agent-view.mjs` | Agent queue view | ~28KB |
-| `src/agents-page.mjs` | Agents overview page | ~31KB |
-| `schema/openclaw-dashboard.sql` | Base schema | ~6KB |
-| `schema/migrations/*` | Database migrations | - |
-
----
-
-## Architecture Principles
-
-### 1. Additive Migrations Only
-
-**Rule**: Never edit old migrations. Always add new migrations.
-
-**Location**: `/root/.openclaw/workspace/dashboard/schema/migrations/`
-
-**Naming**: `NNN_descriptive_name.sql` where NNN is a number
-
-**Example**:
-```
-001_add_workflow_runs.sql
-002_add_workflow_queues.sql
-003_add_approvals.sql
-```
-
-### 2. Modular Route Files
-
-**Rule**: Extract new route families into separate modules, mount from task-server.js
-
-**Pattern**:
-```javascript
-// In task-server.js
-import { orgAPI } from './org-api.js';
-import { serviceRequestsAPI } from './service-requests-api.js';
-
-// Mount routes
-if (url.startsWith('/api/org')) {
-  return orgAPI(req, res, url, method, body);
-}
-```
-
-**New Route Modules** (to be created):
-- `org-api.js` - Organization and agent profiles
-- `service-requests-api.js` - Service catalog and requests
-- `artifacts-api.js` - Workflow artifacts
-- `approvals-api.js` - Approval workflows
-- `metrics-api.js` - Business metrics
-
-### 3. Explicit Backend Contracts
-
-**Rule**: Define all contracts explicitly, no hidden coupling.
-
-**For each feature, document**:
-- Table/view changes (migration)
-- Storage-layer methods (in storage/asana.js or storage/*.js)
-- API endpoints (in route module)
-- Request payloads (JSON schema)
-- Response payloads (JSON schema)
-- UI consumers (which frontend modules call it)
-
-**Example**:
-```
-Feature: Department View
-
-Migration: 006_add_departments.sql
-  - Creates: departments table
-
-Storage Method (storage/org.js):
-  - listDepartments()
-  - getDepartment(id)
-
-API Endpoints (org-api.js):
-  - GET /api/org/departments
-  - GET /api/org/departments/:id
-
-Request Schema:
-  - Query params: status, limit, offset
-
-Response Schema:
-  - { departments: [...], total: N, limit: N, offset: N }
-
-UI Consumer:
-  - src/departments-view.mjs (new)
-  - src/agents-page.mjs (updated)
-```
-
-### 4. No Browser Config Parsing
-
-**Rule**: Browser consumes normalized API data. Config parsing happens on server.
-
-**Wrong**:
-```javascript
-// In browser
-const config = await fetch('/openclaw.json');
-```
-
-**Right**:
-```javascript
-// In task-server.js
-app.get('/api/agents', (req, res) => {
-  const config = JSON.parse(fs.readFileSync('/root/.openclaw/openclaw.json'));
-  const normalized = normalizeAgentData(config);
-  res.json(normalized);
-});
-```
-
-### 5. Explicit Business Metadata
-
-**Rule**: Use explicit records for business structure, not heuristics.
-
-**Wrong**:
-```javascript
-// Infer department from workspace path
-const department = workspace.includes('3dput') ? 'automation' : 'content';
-```
-
-**Right**:
-```javascript
-// Fetch from database
-const agent = await getAgentProfile(agentId);
-const department = agent.department_id; // Explicit reference
-```
-
-### 6. Stable Agent IDs
-
-**Rule**: Agent IDs match OpenClaw configuration.
-
-**Source**: `/root/.openclaw/openclaw.json`
-
-**DO NOT** rename or transform agent IDs in the dashboard layer.
-
-**Example**:
-```javascript
-// Right
-const agentId = 'affiliate-editorial'; // Matches config
-
-// Wrong
-const agentId = 'affiliateEditorial'; // Transformed name
-```
-
----
-
-## Database Management
-
-### Connection
-
-```javascript
-// In storage/asana.js or task-server.js
-const pool = new Pool({
-  host: process.env.POSTGRES_HOST || 'localhost',
-  port: parseInt(process.env.POSTGRES_PORT) || 5432,
-  database: process.env.POSTGRES_DB || 'openclaw_dashboard',
-  user: process.env.POSTGRES_USER || 'openclaw',
-  password: process.env.POSTGRES_PASSWORD || 'openclaw_password'
-});
-```
-
-### Migration Status Check
+## Quick Start
 
 ```bash
-# Check applied migrations
-PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U openclaw -d openclaw_dashboard \
-  -c "SELECT migration_name, applied_at FROM schema_migrations ORDER BY applied_at DESC;"
-```
-
-### Required Tables (as of Phase 0)
-
-- tasks
-- projects
-- workflow_runs
-- workflow_steps
-- workflow_templates
-- workflow_approvals
-- task_runs
-- agent_heartbeats
-- audit_log
-- saved_views
-- cron_jobs
-- cron_job_runs
-- schema_migrations (new in Phase 0)
-
----
-
-## Testing
-
-### Validation Script
-
-```bash
-cd /root/.openclaw/workspace/dashboard
-node scripts/dashboard-validation.js
-```
-
-### API Tests
-
-```bash
-# Test specific route family
-node tests/test-saved-views-api.js
-npm test
-```
-
----
-
-## Health Endpoints
-
-### Basic Health Check
-
-```
-GET /api/health
-Response: { status: 'ok', timestamp: '...', storage_type: 'postgres' }
-```
-
-### Comprehensive Health Check
-
-```
-GET /api/health-status
-Response: {
-  status: 'ok' | 'degraded',
-  checks: {
-    database: { healthy: true, latency_ms: 5 },
-    stuck_workflow_runs: { count: 2, healthy: true },
-    active_workflow_runs: { count: 5 },
-    migrations: { applied: [001, 002, 003, 004], pending: [] }
-  }
-}
-```
-
----
-
-## Adding New Features
-
-### Step-by-Step Process
-
-1. **Create Migration**
-   ```bash
-   # In schema/migrations/
-   006_add_new_feature.sql
-   ```
-
-2. **Add Storage Methods**
-   ```javascript
-   // In storage/asana.js or new storage file
-   async listNewFeature() { ... }
-   ```
-
-3. **Create Route Module**
-   ```javascript
-   // In new-feature-api.js
-   export function newFeatureAPI(req, res, url, method, body) { ... }
-   ```
-
-4. **Mount in task-server.js**
-   ```javascript
-   import { newFeatureAPI } from './new-feature-api.js';
-   
-   if (url.startsWith('/api/new-feature')) {
-    return newFeatureAPI(req, res, url, method, body);
-   }
-   ```
-
-5. **Update Frontend**
-   ```javascript
-   // In src/new-feature-view.mjs
-   const data = await fetch('/api/new-feature');
-   ```
-
-6. **Add Tests**
-   ```bash
-   # In tests/
-   test-new-feature-api.js
-   ```
-
-7. **Update Documentation**
-   - Update this file
-   - Update DASHBOARD_PROGRESS.md
-
----
-
-## Current Route Structure
-
-### Already Modular
-
-- ✅ `workflow-runs-api.js` - Workflow runs management
-
-### In task-server.js (to be extracted)
-
-- 📦 Projects API - `/api/projects/*`
-- 📦 Tasks API - `/api/tasks/*`
-- 📦 Views API - `/api/views/*`
-- 📦 Agent API - `/api/agent/*`, `/api/agents`
-- 📦 Metrics API - `/api/metrics/*`
-- 📦 Cron API - `/api/cron/*`
-- 📦 Stats API - `/api/stats`
-- 📦 Health API - `/api/health*`
-
-### Planned (Phase 1+)
-
-- 🆕 `org-api.js` - Organization and departments
-- 🆕 `service-requests-api.js` - Service catalog and requests
-- 🆕 `artifacts-api.js` - Workflow artifacts
-- 🆕 `approvals-api.js` - Approval management
-- 🆕 `metrics-api.js` - Business metrics (enhance existing)
-
----
-
-## Troubleshooting
-
-### Dashboard Won't Start
-
-```bash
-# Check if port is in use
-lsof -i :3876
-
-# Check logs
-tail -f /root/.openclaw/workspace/dashboard/task-server.log
-
-# Restart
-cd /root/.openclaw/workspace/dashboard
+npm install
+cp .env.example .env
+# Edit .env with your PostgreSQL credentials
+psql -U postgres -d mission_control -f schema/openclaw-dashboard.sql
 node task-server.js
 ```
 
-### Database Connection Failed
+Open `http://localhost:3876` in your browser.
 
-```bash
-# Check PostgreSQL is running
-systemctl status postgresql
+## Architecture Overview
 
-# Test connection
-PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U openclaw -d openclaw_dashboard -c "SELECT 1"
+The dashboard is a Win11-style desktop shell SPA. The single `index.html` entry point loads the shell (`shell-main.mjs`), which manages windows, taskbar, start menu, and widget panel. Each view is a lazy-loaded ES module under `src/shell/native-views/`.
+
+```
+index.html
+  └─ shell-main.mjs (desktop shell)
+       ├─ window-manager.mjs (draggable windows)
+       ├─ taskbar.mjs + start-menu.mjs (taskbar)
+       ├─ app-registry.mjs (app definitions)
+       ├─ view-adapter.mjs (loads views into windows)
+       ├─ widgets/ (desktop widget system)
+       └─ native-views/ (all view modules)
+            ├─ board-view.mjs
+            ├─ agents-view.mjs
+            ├─ operations-view.mjs
+            ├─ workflows-view.mjs
+            ├─ tasks-view.mjs
+            └─ ... (25 views total)
 ```
 
-### Migration Failed
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `index.html` | SPA entry point, loads shell CSS + JS |
+| `task-server.js` | Main API server (port 3876) |
+| `cron-manager-server.mjs` | Cron monitoring API (port 3878) |
+| `memory-api-server.mjs` | Memory system API (port 3879) |
+| `workflow-runs-api.js` | Workflow engine API |
+| `gateway-workflow-dispatcher.js` | OpenClaw gateway bridge |
+| `storage/asana.js` | PostgreSQL storage layer |
+| `src/shell/shell-main.mjs` | Desktop shell initialization |
+| `src/shell/window-manager.mjs` | Window management |
+| `src/shell/native-views/` | All view modules |
+| `src/shell/widgets/` | Widget system |
+| `src/offline/` | IndexedDB offline sync |
+| `src/security/` | Secret scanning and redaction |
+| `schema/openclaw-dashboard.sql` | Base database schema |
+| `schema/migrations/` | Database migrations |
+
+## API Server
+
+The `task-server.js` provides a REST API:
+
+- `GET /api/tasks` — List tasks (with filters, pagination)
+- `POST /api/tasks` — Create task
+- `PATCH /api/tasks/:id` — Update task
+- `DELETE /api/tasks/:id` — Soft-delete task
+- `GET /api/projects` — List projects
+- `GET /api/agents/status` — Agent fleet status
+- `POST /api/agents/heartbeat` — Agent heartbeat
+- `GET /api/workflows/*` — Workflow engine endpoints
+- `GET /api/cron/jobs` — Cron job list
+- See `docs/api.md` for full reference
+
+## Database
+
+PostgreSQL with `mission_control` database by default.
+
+Apply migrations:
 
 ```bash
-# Check what was applied
-PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U openclaw -d openclaw_dashboard \
-  -c "SELECT * FROM schema_migrations"
-
-# Apply manually
-PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U openclaw -d openclaw_dashboard \
-  -f schema/migrations/005_add_migration_tracking.sql
+psql -U postgres -d mission_control -f schema/openclaw-dashboard.sql
+for f in schema/migrations/*.sql; do
+  psql -U postgres -d mission_control -f "$f"
+done
 ```
 
----
+Or use the migration script:
 
-## Next Phase Checklist
+```bash
+bash scripts/apply-workflow-migration.sh <migration-file>
+```
 
-Before moving to Phase 1, ensure:
+## Adding a New View
 
-- [ ] All Phase 0 tasks complete
-- [ ] Health endpoint checks migrations
-- [ ] Route modules documented
-- [ ] Developer guide complete
-- [ ] All tests passing
-- [ ] Dashboard running normally
+1. Create `src/shell/native-views/your-view.mjs`:
+```javascript
+export class YourView {
+  constructor(container, apiClient) {
+    this.container = container;
+    this.api = apiClient;
+  }
+  async render() {
+    this.container.innerHTML = '<div class="your-view">...</div>';
+  }
+  destroy() { this.container.innerHTML = ''; }
+}
+```
 
----
+2. Register in `src/shell/app-registry.mjs`:
+```javascript
+{ id: 'your-view', label: 'Your View', viewModule: () => import('./native-views/your-view.mjs') }
+```
 
-## References
+3. The shell will automatically add it to the start menu and taskbar.
 
-- Full Plan: `DASHBOARD_BUSINESS_PLAN.md`
-- Progress: `DASHBOARD_PROGRESS.md`
-- Tests: `tests/` directory
-- Migrations: `schema/migrations/` directory
+## Adding a Widget
+
+1. Create `src/shell/widgets/widgets/your-widget.mjs`
+2. Register in `src/shell/widgets/widget-registry.mjs`
+3. Widget panel will pick it up automatically
+
+## Testing
+
+```bash
+# Run all tests
+node tests/comprehensive-test.mjs
+
+# Validate API
+node scripts/dashboard-validation.js
+
+# Smoke test (server must be running)
+bash scripts/smoke-test-dashboard.sh
+
+# Health check
+bash scripts/dashboard-health.sh check
+
+# Specific test suites
+node tests/test-workflow-approvals-api.js
+node tests/test-saved-views-api.js
+pytest tests/  # Python security tests
+npx playwright test  # E2E tests
+```
+
+## Offline Support
+
+The offline system uses IndexedDB for local storage:
+
+- `src/offline/idb.mjs` — IndexedDB wrapper
+- `src/offline/state-manager.mjs` — State management with action queue
+- `src/offline/sync-manager.mjs` — Background sync with retry logic
+- `src/offline/offline-ui.mjs` — Offline banner and status indicators
+
+## Security
+
+- Secret scanning: `src/security/secrets.py` — detects and redacts credentials
+- QMD security: `lib/qmd-security.js` — workspace data protection
+- All credentials via environment variables (see `.env.example`)
+- CORS headers configured in `task-server.js`
+
+## Configuration
+
+See `.env.example` for all environment variables. Key settings:
+
+- `PORT` — API server port (default: 3876)
+- `STORAGE_TYPE` — `postgres` or `memory`
+- `POSTGRES_*` — Database connection settings
+- `OPENCLAW_WORKSPACE` — OpenClaw workspace path (auto-detected)
+- `OPENCLAW_CONFIG_FILE` — OpenClaw config path (auto-detected)

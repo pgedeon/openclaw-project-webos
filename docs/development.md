@@ -1,268 +1,149 @@
 # Development Guide
 
-Architecture, conventions, and extension points for the OpenClaw Project Dashboard.
+## Setup
 
----
-
-## Architecture Overview
-
-```
-┌────────────────────┐
-│   dashboard/       │
-│   dashboard.html   │  ← Single‑page UI (embedded JS/CSS)
-└─────────┬──────────┘
-          │
-          │ dynamic imports
-          ▼
-   ┌──────────────┐
-   │ /src/*.mjs   │  ← Modular UI renderers & state managers
-   └──────┬───────┘
-          │
-          │ fetch()
-          ▼
-   ┌──────────────┐
-   │  task‑server │  ← Node.js HTTP server, REST API
-   │  .js         │
-   └──────┬───────┘
-          │
-          │ uses
-          ▼
-   ┌──────────────┐
-   │ storage/     │  ← AsanaStorage (PostgreSQL or JSON)
-   │ asana.js     │
-   └──────────────┘
+```bash
+git clone https://github.com/pgedeon/openclaw-project-webos.git
+cd openclaw-project-webos
+npm install
+cp .env.example .env
+# Edit .env, then start
+node task-server.js
 ```
 
-- **Frontend** is a single HTML file with inline CSS and JavaScript. Heavy logic lives in ES modules under `src/`. The page uses dynamic imports to load `audit-view.mjs`, `board-view.mjs`, `timeline-view.mjs` only when needed.
-- **State Management** is provided by `src/offline/state-manager.mjs`, which persists to IndexedDB for offline resilience and syncs with the server via `sync-manager.mjs`.
-- **Backend** is a small custom HTTP server (`task-server.js`) with route handlers for Projects, Tasks, Views, Agent actions, and Audit.
-- **Storage** is abstracted in `storage/asana.js`. It supports PostgreSQL (default) and a JSON file fallback.
+## Architecture
 
----
+The dashboard is a single-page application with a Win11 desktop shell.
 
-## Extending the API
+### SPA Entry Point
 
-Add a new endpoint in `task-server.js`:
-
-1. Parse `url` and `method`.
-2. If needed, `await asanaStorage.someMethod()`.
-3. Return JSON via `sendJSON(res, status, payload)`.
-
-Example:
-
-```js
-// GET /api/hello
-if (url === '/api/hello' && method === 'GET') {
-  sendJSON(res, 200, { message: 'Hello world' });
-  return;
-}
-```
-
-Remember to export any new storage methods from `storage/asana.js`.
-
----
-
-## Extending the UI
-
-### Adding a New View
-
-1. Create `src/my-view.mjs`:
-
-```js
-export default class MyView {
-  constructor(container, options = {}) {
-    this.container = container;
-    this.options = options;
-  }
-  async load(params) { /* fetch data if needed */ }
-  render() { /* render into this.container */ }
-}
-```
-
-2. In `dashboard.html`, add a button in the view switcher:
+`index.html` — loads CSS and the shell module:
 
 ```html
-<button class="view-btn" data-view="myview" type="button" title="My view">⭐</button>
+<script type="module" src="/src/shell/shell-main.mjs"></script>
 ```
 
-3. Add a case in `renderView()`:
+### Shell System (`src/shell/`)
 
-```js
-case 'myview':
-  await this.renderMyView();
-  break;
-```
+- **`shell-main.mjs`** — Initializes desktop, taskbar, widgets, and default view
+- **`window-manager.mjs`** — Draggable, resizable window management
+- **`taskbar.mjs`** — Bottom taskbar with app buttons and system tray
+- **`start-menu.mjs`** — Start menu with pinned apps
+- **`app-registry.mjs`** — Registry of all available apps/views
+- **`view-adapter.mjs`** — Loads view modules into windows
+- **`view-state.mjs`** — Per-view state management
+- **`realtime-sync.mjs`** — WebSocket integration for live updates
+- **`api-client.mjs`** — REST API client with auth and error handling
 
-4. Implement `renderMyView()` to dynamically import your module and instantiate:
+### Views (`src/shell/native-views/`)
 
-```js
-async function renderMyView() {
-  dom.taskList.innerHTML = '';
-  try {
-    const mod = await import('./src/my-view.mjs');
-    const view = new mod.default(dom.taskList, { /* options */ });
-    await view.load();
-  } catch (e) {
-    console.error('[Dashboard] MyView failed:', e);
-    dom.taskList.innerHTML = '<div class="empty-state">My view unavailable</div>';
-  }
+Each view is an ES module exporting a class:
+
+```javascript
+export class MyView {
+  constructor(container, apiClient, options) { ... }
+  async render() { ... }
+  destroy() { ... }
 }
 ```
 
-### Styling
+Views are lazy-loaded when their window is opened.
 
-All styles are in the `<style>` block of `dashboard.html`. They use CSS variables:
+### Widgets (`src/shell/widgets/`)
 
-```css
-:root {
-  --bg: #f4f1ff;
-  --surface: #ffffff;
-  --text: #1f1f2b;
-  --accent: #5c6bf2;
-}
-[data-theme="dark"] { ... }
-```
+- **`widget-registry.mjs`** — Registers available widgets
+- **`widget-host.mjs`** — Renders widgets in the panel
+- **`widget-panel.mjs`** — Slide-out widget panel UI
+- Individual widgets in `widgets/` directory
 
-To change a color, edit the variable in both `:root` and `[data-theme="dark"]`.
+### Offline (`src/offline/`)
 
----
+- **`idb.mjs`** — IndexedDB wrapper
+- **`state-manager.mjs`** — Action queue with undo support
+- **`sync-manager.mjs`** — Background sync with exponential backoff
+- **`offline-ui.mjs`** — Connection status indicators
 
-## Storage Layer (`storage/asana.js`)
+### API Server (`task-server.js`)
 
-This class implements CRUD for Projects, Tasks, and Views. It is the sole writer to the database.
+Express-like HTTP server providing REST endpoints. Key routes:
 
-### Methods (existing)
+- `/api/tasks/*` — Task CRUD
+- `/api/projects/*` — Project management
+- `/api/agents/*` — Agent status and heartbeat
+- `/api/workflows/*` — Workflow engine
+- `/api/cron/*` — Cron job management
+- `/api/audit` — Audit log
+- `/api/health` — Health check
 
-- `init()` – connect to DB and ensure tables exist.
-- `createProject(data)`
-- `updateProject(id, data)`
-- `archiveProject(id)`
-- `listProjects(filters?)`
-- `createTask(data)`
-- `getTask(id, options?)`
-- `updateTask(id, data)`
-- `deleteTask(id)`
-- `listTasks(projectId, options?)`
-- `moveTask(id, newStatus)` – sets status and timestamps.
-- `addDependency(taskId, depId)`, `removeDependency(...)`
-- `addSubtask(parentId, subId)`
-- `getBoardView(projectId)`
-- `getTimelineView(projectId, start, end)`
-- `getAgentQueue(agentName, statuses, { page, limit })`
-- `claimTask(taskId, agentName)`
-- `releaseTask(taskId)`
-- `getAuditLog(taskId, limit)`
+### Storage (`storage/asana.js`)
 
-### Adding a New Method
+PostgreSQL storage layer with parameterized queries. All mutations write to an audit log.
 
-1. Implement the function using `this.pool` (pg client) or `this.db` (JSON).
-2. For PostgreSQL, use parameterized queries to avoid SQL injection.
-3. Return plain objects that match the API response shape.
-4. Add a route in `task-server.js` that calls the method.
+### Security (`src/security/`)
 
----
+- **`secrets.py`** — Detects and redacts credentials in text
+- **`test_secrets.py`** — Tests for the secret scanner
+- **`utils/security.mjs`** — Client-side security utilities
+
+## Making Changes
+
+### Adding a View
+
+1. Create `src/shell/native-views/your-view.mjs` exporting a class with `render()` and `destroy()`
+2. Add entry to `src/shell/app-registry.mjs` in the `apps` array
+3. The shell automatically adds it to the start menu and taskbar
+
+### Adding a Widget
+
+1. Create `src/shell/widgets/widgets/your-widget.mjs`
+2. Register in `src/shell/widgets/widget-registry.mjs`
+
+### Adding an API Endpoint
+
+1. Add route handler in `task-server.js`
+2. Add storage methods in `storage/asana.js` if needed
+3. Add migration in `schema/migrations/` if schema changes
+4. Add tests in `tests/`
+5. Update `docs/api.md`
+
+### Adding a Database Migration
+
+1. Create `schema/migrations/NNN_description.sql`
+2. Test against local database
+3. Document in CHANGELOG.md
 
 ## Testing
 
-### Unit Tests (storage)
-
-Create `storage/__tests__/asana.test.js` using any test runner (Mocha, Jest). Example with Node’s `assert`:
-
-```js
-import { strict as assert } from 'node:assert';
-import { AsanaStorage } from '../storage/asana.js';
-
-let storage;
-beforeAll(async () => {
-  storage = new AsanaStorage({ database: 'test_db' });
-  await storage.init();
-});
-afterAll(async () => {
-  await storage.pool.end();
-});
-
-test('create project', async () => {
-  const p = await storage.createProject({ name: 'Test' });
-  assert(p.id);
-  assert.equal(p.name, 'Test');
-});
-```
-
-Run with `node --experimental-vm-modules node_modules/.bin/jest` or your preferred runner.
-
-### API Integration Tests
-
-`dashboard/scripts/dashboard-validation.js` performs basic integration checks. Extend it to cover new endpoints.
-
-Run:
-
 ```bash
-node dashboard/scripts/dashboard-validation.js
+# API validation (server must be running)
+node scripts/dashboard-validation.js
+
+# Comprehensive test suite
+node tests/comprehensive-test.mjs
+
+# Individual test files
+node tests/test-workflow-approvals-api.js
+node tests/test-saved-views-api.js
+
+# Python security tests
+pytest tests/test_secrets.py
+
+# E2E with Playwright
+npx playwright test
 ```
-
-It exits with `0` on success.
-
----
-
-## Coding Conventions
-
-- **Node version:** Use ES modules (`.mjs` extension). `type: "module"` is set in `package.json` for the workspace.
-- **Async:** All I/O should be `async/await`. Handle errors with try/catch.
-- **Error handling:** In storage methods, throw `new Error('message')` with a clear message; the server catches and returns 500.
-- **UUIDs:** Use `crypto.randomUUID()` (Node 19+) or import `uuid` package. The storage layer generates UUIDs for new records.
-- **SQL:** Use parameterized queries (`pool.query(sql, [params])`). Never interpolate values directly.
-- **JSON storage:** When `STORAGE_TYPE=json`, the `AsanaStorage` uses a file (`data/asana-db.json`). You must call `this._save()` after mutations.
-- **Frontend modules:** Use ES module syntax. Export a default class or function. Avoid global variables.
-- **Styling:** Prefer CSS variables for colors. Support dark mode via `[data-theme="dark"]`.
-
----
 
 ## Debugging
 
-### Server
+- Server logs: `node task-server.js` (stdout)
+- Browser: DevTools → Console
+- API calls: DevTools → Network
+- Database: `psql` directly or via `scripts/dashboard-health.sh`
 
-Set `DEBUG=dashboard:*` and look for `console.debug` statements (add them as needed). Or insert `console.log` in route handlers.
+## Style Guide
 
-### Frontend
-
-Open browser DevTools → Console. Errors from dynamic imports appear there. Network tab shows API calls.
-
-The `performanceMonitor` module (`src/performance-monitor.mjs`) logs render times if enabled:
-
-```js
-performanceMonitor.measure('renderListView', () => {
-  // ...
-});
-```
-
----
-
-## Deployment Checklist
-
-- [ ] Set `STORAGE_TYPE=postgres` and verify DB connectivity.
-- [ ] Run `dashboard/scripts/dashboard-validation.js` and ensure all checks pass.
-- [ ] Configure a process manager (systemd/pm2) with restart on failure.
-- [ ] Place behind a reverse proxy with TLS (Nginx example in README).
-- [ ] Restrict access by IP or add authentication at proxy layer.
-- [ ] Set up log rotation for `logs/dashboard-health.log` and systemd journal.
-- [ ] Schedule daily PostgreSQL backups.
-- [ ] Verify `/api/health` returns `"asana_storage":"enabled"`.
-
----
-
-## Future Work
-
-- Multi‑project UI (currently single‑project implicit)
-- Real‑time updates via WebSocket (currently polling only in Agent view)
-- Full Board and Timeline interactions (drag‑and‑drop, resizing)
-- Recurring task engine
-- Role‑based access control
-- CSV import with column mapping UI
-
----
-
-## Getting Help
-
-- Read the inline code comments; they often explain design decisions.
-- Check the GitHub Issues for known problems.
-- Reach out on OpenClaw Discord: https://discord.com/invite/clawd
+- ES modules (`import`/`export`)
+- Classes for views and major components
+- Async/await for all I/O
+- No hardcoded credentials (use env vars)
+- Parameterized SQL queries only
+- CSS variables for theming

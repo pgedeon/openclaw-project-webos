@@ -1,121 +1,80 @@
-# Install In OpenClaw
+# Install — OpenClaw Workspace
 
-Use this mode when the dashboard should be part of an existing OpenClaw installation and read the local OpenClaw config and workspace state directly.
-
-## Target Layout
-
-```text
-~/.openclaw/
-├── openclaw.json
-└── workspace/
-    ├── dashboard/
-    ├── scripts/
-    ├── tasks.md
-    └── ...
-```
-
-The dashboard assumes that layout by default. When cloned into `~/.openclaw/workspace/dashboard`, no extra path configuration is required.
+Install the dashboard inside an existing OpenClaw workspace.
 
 ## Prerequisites
 
 - Node.js 18+
 - PostgreSQL 14+
-- An existing OpenClaw install with `~/.openclaw/openclaw.json`
+- OpenClaw installed at `~/.openclaw/`
 
-## Setup
-
-1. Clone the dashboard into the OpenClaw workspace.
+## Install
 
 ```bash
-git clone https://github.com/pgedeon/openclaw-project-dashboard.git ~/.openclaw/workspace/dashboard
+git clone https://github.com/pgedeon/openclaw-project-webos.git ~/.openclaw/workspace/dashboard
 cd ~/.openclaw/workspace/dashboard
-```
-
-2. Install dependencies.
-
-```bash
 npm install
-```
-
-3. Configure environment variables.
-
-```bash
 cp .env.example .env
 ```
 
-At minimum, set `POSTGRES_PASSWORD`. Leave `OPENCLAW_WORKSPACE` and `OPENCLAW_CONFIG_FILE` at their defaults unless your install lives elsewhere.
-
-4. Create or update the database schema.
+## Database Setup
 
 ```bash
-psql -U openclaw -d openclaw_dashboard -f schema/openclaw-dashboard.sql
+# Create database
+createdb mission_control
+
+# Apply schema
+psql -U postgres -d mission_control -f schema/openclaw-dashboard.sql
+
+# Apply migrations
+for f in schema/migrations/*.sql; do
+  psql -U postgres -d mission_control -f "$f"
+done
 ```
 
-5. Start the dashboard.
+## Configure
+
+Edit `.env` with your PostgreSQL credentials:
+
+```env
+PORT=3876
+STORAGE_TYPE=postgres
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5432
+POSTGRES_DB=mission_control
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your-password
+```
+
+## Start
 
 ```bash
-npm start
+node task-server.js
 ```
 
-6. Open `http://localhost:3876/`.
+Open `http://localhost:3876` in your browser.
 
-## Agent Setup (Recommended)
+The server auto-detects the OpenClaw workspace when installed at `~/.openclaw/workspace/dashboard`. For custom paths, set `OPENCLAW_WORKSPACE` in `.env`.
 
-If you want agents to report their work to the Kanban board, configure each agent:
-
-1. Ensure `agent_reporter.py` is accessible. It lives at:
-   ```
-   ~/.openclaw/workspace/main/scripts/agent_reporter.py
-   ```
-
-2. For each agent that should report work, add the following to its `SOUL.md` (located in the agent's `agentDir`):
-
-   ```markdown
-   ---
-
-   ## Dashboard Reporting
-
-   When working on substantive tasks, report your work to the Kanban board. See
-   docs/AGENT-DASHBOARD-REPORTING.md for full instructions.
-
-   Quick start:
-   python3 ~/.openclaw/workspace/main/scripts/agent_reporter.py task create -t "Description" -p "Project Name" --auto-claim
-   python3 ~/.openclaw/workspace/main/scripts/agent_reporter.py task complete -i <task-id>
-   ```
-
-3. Verify reporting works for an agent:
-   ```bash
-   OPENCLAW_AGENT_ID=my-agent python3 ~/.openclaw/workspace/main/scripts/agent_reporter.py heartbeat
-   ```
-
-Agents will now create Kanban tasks when they start substantive work and complete them when done. See [AGENT-DASHBOARD-REPORTING.md](AGENT-DASHBOARD-REPORTING.md) for the full reference.
-
-## Operational Notes
-
-- `task-server.js` reads OpenClaw agent and model configuration from `OPENCLAW_CONFIG_FILE`.
-- `/api/task-options` exposes those configured agents and models to the task composer.
-- Dashboard-to-agent wakeups rely on the bridge scripts already present in the OpenClaw workspace.
-- The health helper can be used directly:
+## Start on Boot
 
 ```bash
-./scripts/dashboard-health.sh start
-./scripts/dashboard-health.sh status
+# Copy the systemd unit (adjust paths)
+cp scripts/openclaw-dashboard.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable openclaw-dashboard
+systemctl start openclaw-dashboard
 ```
 
-## Systemd Example
+## Verify
 
-```ini
-[Unit]
-Description=OpenClaw Project Dashboard
-After=network.target postgresql.service
+```bash
+# Health check
+bash scripts/dashboard-health.sh check
 
-[Service]
-Type=simple
-WorkingDirectory=%h/.openclaw/workspace/dashboard
-EnvironmentFile=%h/.openclaw/workspace/dashboard/.env
-ExecStart=/usr/bin/node task-server.js
-Restart=on-failure
+# API validation
+node scripts/dashboard-validation.js
 
-[Install]
-WantedBy=default.target
+# Smoke test
+bash scripts/smoke-test-dashboard.sh
 ```
