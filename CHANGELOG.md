@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Filesystem sidecar instability**: Fixed restart and availability handling so dead PID files and missing sidecar processes no longer break Explorer delete/save flows.
 - **Dashboard startup degradation on missing PostgreSQL**: Fixed the raw `{"error":"Asana storage not initialized"}` boot failure by falling back to read-only snapshot storage when `openclaw_dashboard` is unavailable.
 
-## [2.0.0-rc.2] – 2026-03-21
+## [1.0.0-rc.2] – 2026-03-21
 
 ### Added
 - **Windows 11-style Desktop Shell**: Complete webOS with taskbar, start menu, window manager, draggable/resizable windows, theme toggle (dark/light), system tray clock, and keyboard shortcuts.
