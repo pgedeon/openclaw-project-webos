@@ -4,6 +4,7 @@ set -euo pipefail
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-3876}"
 BASE_URL="http://$HOST:$PORT"
+FS_CANARY_PATH="${FS_CANARY_PATH:-AGENTS.md}"
 
 json_get() {
   local key="$1"
@@ -28,6 +29,14 @@ project_description="Smoke test created at ${timestamp}"
 health_json="$(curl -fsS --max-time 5 "$BASE_URL/api/health-status")"
 health_status="$(printf '%s' "$health_json" | json_get status)"
 echo "health_status=$health_status"
+
+fs_read_json="$(curl -fsS --max-time 5 "$BASE_URL/api/fs/file?path=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$FS_CANARY_PATH")")"
+fs_read_name="$(printf '%s' "$fs_read_json" | json_get name)"
+if [ -z "$fs_read_name" ] || [ "$fs_read_name" = "null" ]; then
+  echo "Filesystem API smoke test failed for $FS_CANARY_PATH"
+  exit 1
+fi
+echo "filesystem_read=$fs_read_name"
 
 create_payload="$(printf '{"name":"%s","description":"%s"}' "$project_name" "$project_description")"
 create_json="$(curl -fsS --max-time 10 -X POST -H "Content-Type: application/json" -d "$create_payload" "$BASE_URL/api/projects")"

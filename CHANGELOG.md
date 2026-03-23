@@ -5,6 +5,24 @@ All notable changes to the Project Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.4] – 2026-03-23
+
+### Added
+- **Explorer → Notepad desktop flow**: Explorer can open files directly in Notepad from the desktop shell, and Notepad now exposes a visible Save button with in-flight save state.
+- **Read-only JSON snapshot fallback**: When PostgreSQL is unavailable, the dashboard now boots against `workspace/data/asana-db.json` for projects, tasks, board, timeline, stats, and audit reads instead of failing hard.
+- **Regression coverage for desktop file editing and storage fallback**: Added focused tests for filesystem routing, gateway health snapshot usage, and JSON snapshot storage behavior.
+
+### Changed
+- **Filesystem API routing moved in-process**: Desktop `/api/fs/*` requests now use a shared in-process filesystem handler instead of a second localhost proxy hop, improving Explorer/Notepad save, open, and delete reliability.
+- **Health reporting now exposes degraded storage mode**: `/api/health` and `/api/health-status` now distinguish between full PostgreSQL mode and read-only snapshot mode so the shell can stay usable during database outages.
+- **Gateway health checks now use cached status**: `/api/health-status` reads `gateway-status.json` instead of invoking `openclaw gateway status`, avoiding repeated false-positive gateway conflict warnings in logs.
+
+### Fixed
+- **Notepad save path failures**: Fixed save failures caused by CORS checks, forwarded browser transport headers, drained request bodies, and aborted proxy hops.
+- **Explorer file opening**: Fixed the shell wiring that prevented Explorer's "Open in Notepad" action from opening or focusing the Notepad window.
+- **Filesystem sidecar instability**: Fixed restart and availability handling so dead PID files and missing sidecar processes no longer break Explorer delete/save flows.
+- **Dashboard startup degradation on missing PostgreSQL**: Fixed the raw `{"error":"Asana storage not initialized"}` boot failure by falling back to read-only snapshot storage when `openclaw_dashboard` is unavailable.
+
 ## [2.0.0-rc.3] – 2026-03-21
 
 ### Added

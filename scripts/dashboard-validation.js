@@ -327,7 +327,8 @@ class ValidationRunner {
     const staticEndpoints = [
       '/api/health',
       '/api/stats',
-      '/api/views/agent?agent_name=openclaw'
+      '/api/views/agent?agent_name=openclaw',
+      '/api/fs/list?path=workspace/dashboard'
     ];
 
     for (const ep of staticEndpoints) {
@@ -394,6 +395,19 @@ class ValidationRunner {
       }
     } catch (err) {
       this.fail('Capped /api/projects endpoint', err.message);
+    }
+
+    try {
+      const res = await this.requestJson('/api/fs/file?path=AGENTS.md');
+      if (res.status !== 200) {
+        this.fail('Filesystem API root-level file read returns 200', `status=${res.status}`);
+      } else if (!res.json?.path || !res.json?.name || typeof res.json?.content !== 'string') {
+        this.fail('Filesystem API root-level file payload shape', 'missing path, name, or content');
+      } else {
+        this.pass('Filesystem API can read root-level files for Notepad');
+      }
+    } catch (err) {
+      this.fail('Filesystem API root-level file read', err.message);
     }
 
     if (!defaultProject?.id) {

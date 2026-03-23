@@ -44,12 +44,18 @@ POSTGRES_PORT=5432
 POSTGRES_DB=mission_control
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=your-password
+OPENCLAW_FS_ROOT=/root/.openclaw
+FILESYSTEM_API_PORT=3880
 ```
 
 ## Start
 
 ```bash
+# Terminal 1
 node task-server.js
+
+# Terminal 2
+node filesystem-api-server.mjs
 ```
 
 Open `http://localhost:3876` in your browser.

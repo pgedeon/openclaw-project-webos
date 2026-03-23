@@ -22,17 +22,6 @@ _legacy-archive/
 *.backup
 *.bak
 
-# Archived/legacy files
-archive/
-*.broken
-
-# OpenClaw runtime state
-.openclaw/
-
-# Secret env files
+# Secret files
 .env.secrets
-.env.local
-.env.production
-
-# Memory logs (keep local only)
-memory/
+.env.blogger

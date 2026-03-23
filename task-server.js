@@ -38,7 +38,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { URL } = require('url');
+const { URL, pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const { createWorkflowRunsHandler } = require('./workflow-runs-api.js');
 const { GatewayWorkflowDispatcher } = require('./gateway-workflow-dispatcher.js');
@@ -62,6 +62,12 @@ process.on('unhandledRejection', (reason, promise) => {
 const PORT = process.env.PORT || 3876;
 const WORKSPACE = '/root/.openclaw/workspace';
 const TASKS_FILE = path.join(WORKSPACE, 'tasks.md');
+const DASHBOARD_ROOT = path.join(WORKSPACE, 'dashboard');
+const GATEWAY_STATUS_FILE = path.join(DASHBOARD_ROOT, 'gateway-status.json');
+const GATEWAY_STATUS_STALE_MS = 2 * 60 * 1000;
+const FILESYSTEM_API_SCRIPT = process.env.FILESYSTEM_API_SCRIPT || path.join(DASHBOARD_ROOT, 'filesystem-api-server.mjs');
+const FILESYSTEM_API_ROOT = process.env.OPENCLAW_FS_ROOT || '/root/.openclaw';
+const ASANA_JSON_SNAPSHOT_PATH = process.env.ASANA_JSON_SNAPSHOT_PATH || path.join(WORKSPACE, 'data/asana-db.json');
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -82,8 +88,58 @@ let asanaStorage = null;
 let workflowRunsHandler = null;
 let v2DispatcherHandler = null;
 const requestBodyCache = new Map();
+let filesystemApiModulePromise = null;
+
+function getAsanaStorageMode() {
+  if (!asanaStorage) {
+    return 'disabled';
+  }
+  if (asanaStorage.readOnly === true) {
+    return asanaStorage.mode || 'json_snapshot';
+  }
+  return 'postgres';
+}
+
+function getAsanaStorageHealth() {
+  const mode = getAsanaStorageMode();
+  if (mode === 'postgres') {
+    return {
+      mode,
+      ready: true,
+      databaseHealthy: true,
+      label: 'connected',
+      note: null,
+    };
+  }
+  if (mode === 'json_snapshot') {
+    return {
+      mode,
+      ready: true,
+      databaseHealthy: false,
+      label: 'snapshot',
+      note: `PostgreSQL unavailable; serving read-only snapshot from ${ASANA_JSON_SNAPSHOT_PATH}`,
+    };
+  }
+  return {
+    mode,
+    ready: false,
+    databaseHealthy: false,
+    label: 'disconnected',
+    note: 'No task storage backend is available',
+  };
+}
+
+function normalizeTaskListProjectId(projectId) {
+  const normalized = typeof projectId === 'string' ? projectId.trim() : '';
+  if (!normalized || normalized.toLowerCase() === 'all') {
+    return '';
+  }
+  return normalized;
+}
 
 async function initAsanaStorage() {
+  workflowRunsHandler = null;
+  v2DispatcherHandler = null;
   try {
     if (STORAGE_TYPE === 'postgres') {
       const AsanaStorage = require('./storage/asana');
@@ -123,15 +179,26 @@ async function initAsanaStorage() {
         }
       }
     } else {
-      // Fallback to JSON storage (legacy)
-      const ASANA_DB_PATH = path.join(WORKSPACE, 'data/asana-db.json');
-      const AsanaStorage = require('./storage/asana');
-      asanaStorage = new AsanaStorage(ASANA_DB_PATH);
+      const { AsanaJsonSnapshotStorage } = require('./storage/asana-json-snapshot');
+      asanaStorage = new AsanaJsonSnapshotStorage(ASANA_JSON_SNAPSHOT_PATH);
       await asanaStorage.init();
-      console.log('✅ Asana JSON storage initialized');
+      console.log(`✅ Asana JSON snapshot storage initialized (read-only) from ${ASANA_JSON_SNAPSHOT_PATH}`);
     }
   } catch (err) {
     console.error('❌ Failed to initialize Asana storage:', err.message);
+
+    if (STORAGE_TYPE === 'postgres' && fs.existsSync(ASANA_JSON_SNAPSHOT_PATH)) {
+      try {
+        const { AsanaJsonSnapshotStorage } = require('./storage/asana-json-snapshot');
+        asanaStorage = new AsanaJsonSnapshotStorage(ASANA_JSON_SNAPSHOT_PATH);
+        await asanaStorage.init();
+        console.warn(`⚠️  Falling back to read-only JSON snapshot storage: ${ASANA_JSON_SNAPSHOT_PATH}`);
+        return;
+      } catch (fallbackErr) {
+        console.error('❌ Failed to initialize JSON snapshot fallback:', fallbackErr.message);
+      }
+    }
+
     asanaStorage = null;
   }
 }
@@ -195,6 +262,65 @@ function parseJSONBody(req) {
     });
     req.on('error', reject);
   });
+}
+
+function loadFilesystemApiModule() {
+  if (!filesystemApiModulePromise) {
+    filesystemApiModulePromise = import(pathToFileURL(FILESYSTEM_API_SCRIPT).href);
+  }
+  return filesystemApiModulePromise;
+}
+
+async function handleFilesystemApiInProcess(url, method, body) {
+  const module = await loadFilesystemApiModule();
+  return module.handleFilesystemApiRequest({
+    rootPath: FILESYSTEM_API_ROOT,
+    url,
+    method,
+    body,
+  });
+}
+
+function readGatewayStatusSnapshot() {
+  try {
+    const raw = fs.readFileSync(GATEWAY_STATUS_FILE, 'utf8');
+    const payload = JSON.parse(raw);
+    const syncedAt = typeof payload?.syncedAt === 'string' ? payload.syncedAt : null;
+    const syncedAtMs = syncedAt ? Date.parse(syncedAt) : Number.NaN;
+    const ageMs = Number.isFinite(syncedAtMs) ? Math.max(0, Date.now() - syncedAtMs) : null;
+    const isStale = ageMs == null || ageMs > GATEWAY_STATUS_STALE_MS;
+    const hasError = typeof payload?.error === 'string' && payload.error.trim().length > 0;
+    const agentCount = Array.isArray(payload?.agents) ? payload.agents.length : 0;
+
+    return {
+      status: hasError ? 'error' : isStale ? 'stale' : 'running',
+      healthy: !hasError && !isStale,
+      syncedAt,
+      ageMs,
+      agentCount,
+      error: hasError ? payload.error.trim() : null,
+    };
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return {
+        status: 'missing',
+        healthy: false,
+        syncedAt: null,
+        ageMs: null,
+        agentCount: 0,
+        error: 'gateway-status.json not found',
+      };
+    }
+
+    return {
+      status: 'error',
+      healthy: false,
+      syncedAt: null,
+      ageMs: null,
+      agentCount: 0,
+      error: error.message || 'Failed to read gateway status snapshot',
+    };
+  }
 }
 
 // ============================================
@@ -421,11 +547,14 @@ const server = http.createServer(async (req, res) => {
 
     // GET /api/health
     if (url === '/api/health' && method === 'GET') {
+      const storageHealth = getAsanaStorageHealth();
       sendJSON(res, 200, {
-        status: 'ok',
+        status: storageHealth.ready ? (storageHealth.databaseHealthy ? 'ok' : 'degraded') : 'error',
         timestamp: new Date().toISOString(),
-        asana_storage: asanaStorage ? 'initialized' : 'disabled',
+        asana_storage: storageHealth.mode,
         storage_type: STORAGE_TYPE,
+        storage_mode: storageHealth.mode,
+        storage_note: storageHealth.note,
         port: PORT
       });
       return;
@@ -666,7 +795,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const projectId = query.get('project_id');
+      const projectId = normalizeTaskListProjectId(query.get('project_id'));
       const includeGraph = query.get('includeGraph') === 'true';
       const includeArchived = query.get('include_archived') === 'true';
       const includeDeleted = query.get('include_deleted') === 'true';
@@ -1281,23 +1410,56 @@ const server = http.createServer(async (req, res) => {
     // Health status endpoint for operations page
     if (url === '/api/health-status' && method === 'GET') {
       try {
+        const gatewaySnapshot = readGatewayStatusSnapshot();
+        const storageHealth = getAsanaStorageHealth();
+        const databaseHealthy = storageHealth.databaseHealthy;
+        const gatewayHealthy = gatewaySnapshot.healthy;
+        const overallStatus = databaseHealthy && gatewayHealthy
+          ? 'healthy'
+          : storageHealth.ready || gatewayHealthy
+            ? 'degraded'
+            : 'error';
+
         const healthData = {
-          status: 'healthy',
+          status: overallStatus,
           timestamp: new Date().toISOString(),
-          database: { status: asanaStorage ? 'connected' : 'disconnected' },
-          gateway: { status: 'unknown' },
-          task_server: { healthy: true }
+          database: {
+            status: storageHealth.label,
+            healthy: databaseHealthy,
+            mode: storageHealth.mode,
+            note: storageHealth.note || undefined,
+          },
+          gateway: {
+            status: gatewaySnapshot.status,
+            healthy: gatewayHealthy,
+            synced_at: gatewaySnapshot.syncedAt,
+            age_ms: gatewaySnapshot.ageMs,
+            agent_count: gatewaySnapshot.agentCount,
+            note: gatewaySnapshot.error || undefined,
+          },
+          task_server: { healthy: true, status: 'running' },
+          checks: {
+            database: {
+              healthy: databaseHealthy,
+              status: storageHealth.label,
+              mode: storageHealth.mode,
+              note: storageHealth.note || undefined,
+            },
+            gateway_sync: {
+              healthy: gatewayHealthy,
+              status: gatewaySnapshot.status,
+              note: gatewaySnapshot.error || (gatewaySnapshot.syncedAt
+                ? `Last sync ${gatewaySnapshot.syncedAt}`
+                : 'Gateway sync has not produced a snapshot yet'),
+              count: gatewaySnapshot.agentCount,
+            },
+            task_server: {
+              healthy: true,
+              status: 'running',
+            },
+          },
         };
-        
-        // Check gateway status
-        try {
-          const { execSync } = require('child_process');
-          const result = execSync('openclaw gateway status 2>/dev/null || echo "stopped"', { encoding: 'utf8', timeout: 5000 });
-          healthData.gateway.status = result.includes('running') ? 'running' : 'stopped';
-        } catch (e) {
-          healthData.gateway.status = 'unknown';
-        }
-        
+
         sendJSON(res, 200, healthData);
       } catch (err) {
         sendJSON(res, 500, { status: 'error', error: err.message });
@@ -1372,7 +1534,11 @@ const server = http.createServer(async (req, res) => {
     if (workflowRunsHandler) {
       // Parse body for POST/PATCH/PUT requests (needed for workflow endpoints)
       let requestBody = requestBodyCache.get(req);
-      if (requestBody === undefined && (method === 'POST' || method === 'PATCH' || method === 'PUT')) {
+      if (
+        requestBody === undefined &&
+        !url.startsWith('/api/fs/') &&
+        (method === 'POST' || method === 'PATCH' || method === 'PUT')
+      ) {
         try {
           requestBody = await parseJSONBody(req);
           requestBodyCache.set(req, requestBody);
@@ -1388,6 +1554,29 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ============================================
+    // ============================================
+    // FILESYSTEM API: /api/fs/* → shared filesystem handler
+    // ============================================
+    if (url.startsWith('/api/fs/') && !url.includes('..')) {
+      try {
+        let requestBody = requestBodyCache.get(req);
+        if (
+          requestBody === undefined &&
+          (method === 'POST' || method === 'PATCH' || method === 'PUT' || method === 'DELETE')
+        ) {
+          requestBody = await parseJSONBody(req);
+          requestBodyCache.set(req, requestBody);
+        }
+
+        const result = await handleFilesystemApiInProcess(req.url, method, requestBody || {});
+        sendJSON(res, result.status, result.payload);
+      } catch (error) {
+        const statusCode = error?.statusCode || 500;
+        console.error(`[filesystem-route] ${method} ${url} failed: ${error.stack || error.message}`);
+        sendJSON(res, statusCode, { error: error.message });
+      }
+      return;
+    }
     // STATIC FILE SERVING
     // ============================================
 

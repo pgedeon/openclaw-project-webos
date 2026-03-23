@@ -105,6 +105,15 @@ const appIcon = {
     <path d="M12 8.3a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4Z" />
     <path d="M4 12h2.1m11.8 0H20m-3.2-5.6-1.5 1.5M8.7 15.3l-1.5 1.5m0-9.7 1.5 1.5m6.6 6.6 1.5 1.5M12 4v2.1m0 11.8V20" />
   `),
+  folder: iconTemplate(`
+    <path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-9Z" />
+    <path d="M3.5 9h17" />
+  `),
+  document: iconTemplate(`
+    <path d="M8 3.5h6l4 4v13a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 7 20.5v-15A2 2 0 0 1 8 3.5Z" />
+    <path d="M14 3.5V8h4" />
+    <path d="M9.5 11.5h5M9.5 15h5" />
+  `),
 };
 
 export const APP_CATEGORY_ORDER = ['Work', 'Operations', 'Admin'];
@@ -291,6 +300,26 @@ export const APP_REGISTRY = Object.freeze([
     defaultHeight: 700,
   },
   {
+    id: 'explorer',
+    label: 'Explorer',
+    icon: appIcon.folder,
+    url: '/?view=explorer',
+    viewModule: './native-views/explorer-view.mjs',
+    category: 'Admin',
+    defaultWidth: 1020,
+    defaultHeight: 700,
+  },
+  {
+    id: 'notepad',
+    label: 'Notepad',
+    icon: appIcon.document,
+    url: '/?view=notepad',
+    viewModule: './native-views/notepad-view.mjs',
+    category: 'Admin',
+    defaultWidth: 960,
+    defaultHeight: 700,
+  },
+  {
     id: 'skills-tools',
     label: 'Skills & Tools',
     icon: appIcon.wrench,
@@ -324,6 +353,8 @@ export const APP_REGISTRY = Object.freeze([
 
 export const PINNED_APP_IDS = Object.freeze([
   'tasks',
+  'explorer',
+  'notepad',
   'agents',
   'skills-tools',
   'operations',

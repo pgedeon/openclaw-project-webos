@@ -376,6 +376,7 @@ export class WindowManager extends EventTarget {
         stateStore: _sharedAdapter?.stateStore,
         state: _sharedAdapter?.state,
         sync: _sharedSync,
+        navigateToView: (viewId, options = {}) => this.openWindow(viewId, options),
       });
 
       entry._cleanup = typeof cleanup === 'function' ? cleanup : (cleanup?.destroy || cleanup?.cleanup || cleanup?.unmount || null);

@@ -2,244 +2,195 @@
 
 `2.0.0-rc.2`
 
-Operations-first project dashboard for OpenClaw. Win11-style desktop shell with hierarchical Kanban boards, agent-aware task routing, workflow engine, widget system, cron monitoring, and audit trails — all wired into the OpenClaw runtime.
+Operations-first dashboard for OpenClaw. It gives you hierarchical boards, OpenClaw-aware task composition, agent queue visibility, audit trails, and a thin bridge back into the OpenClaw runtime so the dashboard is not just a passive UI.
 
 ## Screenshots
 
-### Desktop Shell
+### Dashboard
 
 <p align="center">
-  <img src="docs/screenshots/desktop-welcome.png" alt="Win11-style desktop shell with taskbar" width="100%" />
+  <img src="docs/screenshots/dashboard-overview-dark-full.png" alt="Dark-mode full-page desktop overview of the OpenClaw Project Dashboard" width="100%" />
 </p>
 
-### Tasks (Kanban Board)
+### Agents
 
 <p align="center">
-  <img src="docs/screenshots/tasks.png" alt="Kanban board with tasks, priorities, and agent assignments" width="100%" />
+  <img src="docs/screenshots/agents-overview-dark-full.png" alt="Dark-mode full-page desktop overview of the OpenClaw agents workspace" width="100%" />
 </p>
 
-### Operations Center
+## What This RC Includes
 
-<p align="center">
-  <img src="docs/screenshots/operations.png" alt="System health, agents, and cron job management" width="100%" />
-</p>
-
-### Workflows
-
-<p align="center">
-  <img src="docs/screenshots/workflows.png" alt="Workflow engine with runs, queues, and approvals" width="100%" />
-</p>
-
-## Features
-
-**Desktop Shell**
-- Win11-style taskbar, start menu, and draggable windows
-- Widget panel with system health, cron countdowns, error feed, and more
-- Real-time sync via WebSocket with offline support (IndexedDB)
-
-**Kanban Board**
-- Hierarchical folder-style projects with parent and child boards
-- Rich task composer: agent assignment, priority, recurrence, dates, tags
-- Drag-and-drop columns, subtask expansion, live stats
-
-**Workflow Engine**
-- Template-based workflow runs with queue, start, and completion tracking
-- Blocker classification, business context, and delivery status
-- Artifact storage and approval gates
-
-**Operations Center**
-- System health overview with live agent status from the OpenClaw gateway
-- Cron job management with inline log viewing and run triggers
-- Agent fleet monitoring with session counts and last-seen timestamps
-
-**Agent Integration**
-- OpenClaw bridge endpoints for bidirectional agent ↔ dashboard communication
-- Agents report work to the Kanban board via `agent_reporter.py`
-- Heartbeat system with cron monitoring and failure escalation
-
-**Security**
-- Secret scanning and redaction pipeline (`src/security/`)
-- QMD security module for workspace data protection
-- Environment-driven config — no hardcoded credentials
+- Folder-style project hierarchy with parent and child boards
+- Project context manager with create, edit, archive, and child-board actions
+- Rich task composer with agent assignment, preferred LLM model, priority, recurrence, start date, and due date
+- Dedicated `/agents` workspace with live OpenClaw agent status, queue presence, and per-agent detail rail
+- OpenClaw bridge endpoints so agents can watch for runnable work and write status back into the dashboard
+- Improved list filtering, subtask expansion, and live stats consistency
+- Release-ready packaging, install docs, and environment-driven runtime paths
 
 ## Install
 
+Two install modes are documented:
+
+- OpenClaw workspace install: [docs/install-openclaw.md](docs/install-openclaw.md)
+- Standalone repo install: [docs/install-standalone.md](docs/install-standalone.md)
+
+Quick OpenClaw workspace install:
+
 ```bash
-git clone https://github.com/pgedeon/openclaw-project-webos.git
-cd openclaw-project-webos
+git clone https://github.com/pgedeon/openclaw-project-dashboard.git ~/.openclaw/workspace/dashboard
+cd ~/.openclaw/workspace/dashboard
 npm install
 cp .env.example .env
-# Edit .env with your PostgreSQL credentials
-psql -U openclaw -d mission_control -f schema/openclaw-dashboard.sql
+psql -U openclaw -d openclaw_dashboard -f schema/openclaw-dashboard.sql
 npm start
 ```
 
-See [docs/install-openclaw.md](docs/install-openclaw.md) and [docs/install-standalone.md](docs/install-standalone.md) for detailed setup.
+When the repo is installed at `~/.openclaw/workspace/dashboard`, the server auto-detects the workspace path. If you install elsewhere, set `OPENCLAW_WORKSPACE` and `OPENCLAW_CONFIG_FILE`.
 
-When installed at `~/.openclaw/workspace/dashboard`, the server auto-detects the workspace path. Set `OPENCLAW_WORKSPACE` and `OPENCLAW_CONFIG_FILE` for custom paths.
-
-## Configuration
-
-See [.env.example](.env.example) for supported environment variables:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | API server port | `3876` |
-| `STORAGE_TYPE` | `postgres` or `memory` | `postgres` |
-| `POSTGRES_HOST` | Database host | `127.0.0.1` |
-| `POSTGRES_PORT` | Database port | `5432` |
-| `POSTGRES_DB` | Database name | `mission_control` |
-| `POSTGRES_USER` | Database user | `postgres` |
-| `POSTGRES_PASSWORD` | Database password | — |
-| `OPENCLAW_WORKSPACE` | OpenClaw workspace path | auto-detected |
-| `OPENCLAW_CONFIG_FILE` | OpenClaw config path | auto-detected |
-| `OPENCLAW_BIN` | Path to openclaw binary | `openclaw` |
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│              Browser (WebOS Shell)           │
-│  ┌──────┐ ┌───────┐ ┌────────┐ ┌────────┐ │
-│  │Board │ │Agents │ │Workflows│ │Ops Ctr │ │
-│  └──┬───┘ └───┬───┘ └───┬────┘ └───┬────┘ │
-│     └─────────┴──────────┴──────────┘      │
-│                   │ REST + WebSocket        │
-├───────────────────┼─────────────────────────┤
-│           task-server.js (:3876)            │
-│  ┌─────────┐ ┌──────────┐ ┌─────────────┐  │
-│  │Tasks API│ │Workflows │ │Metrics API  │  │
-│  └────┬────┘ └────┬─────┘ └──────┬──────┘  │
-│       └───────────┼───────────────┘         │
-│                   │                         │
-│  ┌────────────────▼──────────────────────┐  │
-│  │        PostgreSQL (mission_control)    │  │
-│  └───────────────────────────────────────┘  │
-├─────────────────────────────────────────────┤
-│  cron-manager-server.mjs (:3878)            │
-│  memory-api-server.mjs (:3879)              │
-│  gateway-workflow-dispatcher-v2.js          │
-└─────────────────────────────────────────────┘
-```
-
-## Repository Layout
-
-```
-├── task-server.js              # Main API server
-├── cron-manager-server.mjs     # Cron job management API
-├── memory-api-server.mjs       # Memory system endpoints
-├── gateway-workflow-dispatcher.js     # v1 (disabled)
-├── gateway-workflow-dispatcher-v2.js  # v2 dispatcher (active)
-├── agent-workflow-client.js           # CLI for agent workflow operations
-├── workflow-run-monitor.js
-├── workflow-runs-api.js        # Workflow engine API
-├── schema/
-│   ├── openclaw-dashboard.sql  # Base schema
-│   └── migrations/             # Schema migrations
-├── src/
-│   ├── shell/                  # Win11 desktop shell
-│   │   ├── native-views/       # All view modules
-│   │   ├── widgets/            # Desktop widget system
-│   │   ├── window-manager.mjs
-│   │   └── taskbar.mjs
-│   ├── offline/                # Offline sync + IDB
-│   ├── security/               # Secret scanning
-│   └── styles/                 # Win11 CSS theme
-├── scripts/
-│   ├── dashboard-health.sh     # Health check + restart
-│   ├── dashboard-validation.js # API validation suite
-│   ├── smoke-test-dashboard.sh # End-to-end test
-│   └── system-improvement-scan.sh
-├── tests/                      # Unit + integration tests
-├── docs/                       # Guides, API docs, screenshots
-└── runbooks/                   # Operational runbooks
-```
-
+## Runtime Model
 ## Agent Dashboard Reporting
 
-Agents report work to the Kanban board via `agent_reporter.py`:
+Agents can report their work to the Kanban board in real-time using the built-in `agent_reporter.py` CLI. This lets you see what every agent is working on directly from the Board view.
+
+### Quick Example
 
 ```bash
-# Create and claim a task
-python3 ~/.openclaw/workspace/main/scripts/agent_reporter.py task create \
-  -t "Build authentication feature" -p "OpenClaw System" --auto-claim
+# Agent creates a task (appears in "ready" column)
+python3 ~/.openclaw/workspace/main/scripts/agent_reporter.py task create   --title "Build authentication feature"   --project "OpenClaw System"   --auto-claim
 
-# Complete a task
+# Agent completes the task (moves to "completed" column)
+python3 ~/.openclaw/workspace/main/scripts/agent_reporter.py task complete --id <task-id>
+```
+
+### Required Setup
+
+For each agent that should report to the dashboard, add the following to the agent's `SOUL.md`:
+
+```markdown
+---
+
+## Dashboard Reporting
+
+When working on substantive tasks, report your work to the Kanban board. See
+`docs/AGENT-DASHBOARD-REPORTING.md` for full instructions.
+
+Quick start:
+python3 ~/.openclaw/workspace/main/scripts/agent_reporter.py task create -t "Description" -p "Project Name" --auto-claim
 python3 ~/.openclaw/workspace/main/scripts/agent_reporter.py task complete -i <task-id>
 ```
 
+This instructs the agent to create Kanban tasks when it starts work and complete them when done. The agent's name is automatically attached via `OPENCLAW_AGENT_ID`.
+
+### Available Commands
+
 | Command | Description |
 |---------|-------------|
-| `task create` | Create a task (`--auto-claim` to start) |
-| `task start` | Claim and begin working |
-| `task complete` | Move to completed |
-| `task block` | Mark as blocked with reason |
-| `task move` | Move to any column |
-| `task list` | List with optional filters |
-| `activity` | Post status update + heartbeat |
-| `heartbeat` | "I'm alive" ping |
+| `task create` | Create a task on the board (`--auto-claim` to start immediately) |
+| `task start` | Claim and begin working on a task |
+| `task complete` | Move a task to completed |
+| `task block` | Mark a task as blocked with a reason |
+| `task move` | Move a task to any column |
+| `task list` | List tasks with optional filters |
+| `activity` | Post a status update + heartbeat |
+| `heartbeat` | Send a simple "I'm alive" ping |
 
-## Workflow Dispatcher v2
+### Known Projects
 
-Database-first workflow queue with system event notifications. Replaces the old file-based `/tmp/dashboard-workflow-pickup.json` system.
+- **OpenClaw System** — agent infrastructure, dashboard, gateway
+- **Dashboard & Task System** — dashboard features, task management
+- **Memory & Recall** — memory system, facts DB, semantic search
+- **Models & Providers** — LLM provider configs, model management
+- **Heartbeat & Automation** — cron jobs, automation, monitoring
+- **Facts & Structured Data** — facts_db, structured data pipeline
 
-### How It Works
+See [docs/AGENT-DASHBOARD-REPORTING.md](docs/AGENT-DASHBOARD-REPORTING.md) for the full reference including when to report, Kanban column flow, and rules for what not to report.
 
+
+
+The dashboard is served by `task-server.js` and stores data in PostgreSQL by default.
+
+- Agents page: `agents.html`
+- UI entry: `dashboard.html`
+- API server: `task-server.js`
+- Storage layer: `storage/asana.js`
+- Frontend integration: `src/dashboard-integration-optimized.mjs`
+
+Important OpenClaw-aware endpoints:
+
+- `GET /api/task-options`
+- `GET /api/projects/default`
+- `GET /api/views/agent`
+- `GET /api/agents/status`
+- `POST /api/agents/heartbeat`
+
+## Repository Layout
+
+```text
+.
+├── dashboard.html
+├── task-server.js
+├── storage/
+│   └── asana.js
+├── src/
+│   ├── dashboard-integration-optimized.mjs
+│   ├── board-view.mjs
+│   ├── timeline-view.mjs
+│   ├── agent-view.mjs
+│   └── offline/
+├── schema/
+│   └── openclaw-dashboard.sql
+├── scripts/
+│   ├── dashboard-health.sh
+│   ├── dashboard-validation.js
+│   ├── migrate-dashboard-to-asana.js
+│   └── sync-openclaw-projects.mjs
+└── docs/
+    ├── admin-guide.md
+    ├── api.md
+    ├── development.md
+    ├── install-openclaw.md
+    ├── install-standalone.md
+    └── user-guide.md
 ```
-Dashboard creates workflow_run (queued)
-  → Dispatcher tick (30s): marks "dispatched" + sends system event
-  → Gateway delivers event → wakes agent on heartbeat
-  → Agent claims via atomic SQL (no double-claim)
-  → Agent spawns sub-agent to execute the task
-  → Sub-agent heartbeats → completes
-```
 
-### Key Files
+## Configuration
 
-| File | Description |
-|------|-------------|
-| `gateway-workflow-dispatcher-v2.js` | Dispatcher engine (849 lines) |
-| `agent-workflow-client.js` | CLI tool for manual testing |
-| `schema/migrations/021_add_workflow_agent_routing.sql` | Agent routing table |
-| `tests/test-dispatcher-v2.js` | 47 unit tests |
-| `tests/test-dispatcher-v2-integration.js` | 21 integration tests |
-| `docs/AGENT_INTEGRATION.md` | Full integration guide |
-| `docs/DISPATCHER_V2_DESIGN.md` | Design specification |
+See [.env.example](.env.example) for the supported environment variables.
 
-### Configuration
+The most important ones are:
 
-- Agent routing: `workflow_agent_routing` DB table (no code changes needed)
-- Heartbeat target: `agents.defaults.heartbeat.target: "last"` in `openclaw.json`
-- Heartbeat interval: `agents.defaults.heartbeat.every: "2h"`
-- HEARTBEAT.md must stay under 1772 characters (gateway bootstrap limit)
-
-### API Endpoints
-
-```
-GET  /api/workflow-runs/pending              # List dispatched runs
-POST /api/workflow-runs/{id}/claim           # Atomic claim (requires agent_id + session_id)
-POST /api/workflow-runs/{id}/heartbeat       # Sub-agent heartbeat
-POST /api/workflow-runs/{id}/complete        # Mark run complete
-GET  /api/workflow-runs/dispatcher/stats     # Queue stats
-```
-
-### Testing
-
-```bash
-node tests/test-dispatcher-v2.js                # 47 unit tests
-node tests/test-dispatcher-v2-integration.js     # 21 integration tests (needs DB)
-node agent-workflow-client.js stats             # Quick health check
-```
-
-See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for the full agent integration guide.
+- `PORT`
+- `STORAGE_TYPE`
+- `POSTGRES_HOST`
+- `POSTGRES_PORT`
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `OPENCLAW_WORKSPACE`
+- `OPENCLAW_CONFIG_FILE`
+- `OPENCLAW_BIN`
 
 ## Development
 
 ```bash
 npm install
 npm run validate
-node tests/comprehensive-test.mjs
+node tests/test-filter-behavior.js
 ```
+
+If the dashboard server is already running on another port, point validation at it:
+
+```bash
+DASHBOARD_API_BASE=http://localhost:3887 node scripts/dashboard-validation.js
+```
+
+## Release Candidate Notes
+
+This repository snapshot targets `github.com/pgedeon/openclaw-project-dashboard` and is tagged as `v2.0.0-rc.2`.
+
+Release notes: [RELEASE.md](RELEASE.md)  
+Change history: [CHANGELOG.md](CHANGELOG.md)
 
 ## License
 

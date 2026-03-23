@@ -1,6 +1,6 @@
 {
-  "name": "openclaw-project-webos",
-  "version": "2.0.0-rc.2",
+  "name": "openclaw-project-dashboard",
+  "version": "2.0.0-rc.3",
   "description": "Operations-first project dashboard for OpenClaw with hierarchical boards, agent-aware task routing, OpenClaw model selection, and audit-friendly task execution.",
   "main": "task-server.js",
   "directories": {
@@ -36,7 +36,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pgedeon/openclaw-project-webos.git"
+    "url": "git+https://github.com/pgedeon/openclaw-project-dashboard.git"
   },
   "keywords": [
     "openclaw",
@@ -48,9 +48,9 @@
   "author": "pgedeon",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/pgedeon/openclaw-project-webos/issues"
+    "url": "https://github.com/pgedeon/openclaw-project-dashboard/issues"
   },
-  "homepage": "https://github.com/pgedeon/openclaw-project-webos",
+  "homepage": "https://github.com/pgedeon/openclaw-project-dashboard#readme",
   "engines": {
     "node": ">=18"
   },

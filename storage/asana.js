@@ -45,6 +45,14 @@ function normalizeTaskMetadata(metadata) {
     : {};
 }
 
+function normalizeTaskListProjectId(projectId) {
+  const normalized = typeof projectId === 'string' ? projectId.trim() : '';
+  if (!normalized || normalized.toLowerCase() === 'all') {
+    return '';
+  }
+  return normalized;
+}
+
 function buildDependencyBlockHistoryEntry(incompleteDependencies, actor = 'system') {
   return {
     timestamp: new Date().toISOString(),
@@ -2111,10 +2119,15 @@ class AsanaStorage {
   }
 
   async listTasks(projectId, options = {}) {
+    const normalizedProjectId = normalizeTaskListProjectId(projectId);
+    if (!normalizedProjectId) {
+      return this.listAllTasks(options);
+    }
+
     const rollupContext = options.include_child_projects
-      ? await this.getProjectRollupContext(projectId)
+      ? await this.getProjectRollupContext(normalizedProjectId)
       : null;
-    const projectIds = rollupContext?.descendantIds?.length ? rollupContext.descendantIds : [projectId];
+    const projectIds = rollupContext?.descendantIds?.length ? rollupContext.descendantIds : [normalizedProjectId];
     const projectPathLookup = rollupContext
       ? new Map(Array.from(rollupContext.projectMap.entries()).map(([id, project]) => [id, project.project_path || project.name]))
       : new Map();
@@ -2125,7 +2138,7 @@ class AsanaStorage {
       JOIN projects p ON p.id = t.project_id
       WHERE ${projectIds.length > 1 ? 't.project_id = ANY($1::uuid[])' : 't.project_id = $1'}
     `;
-    const values = [projectIds.length > 1 ? projectIds : projectId];
+    const values = [projectIds.length > 1 ? projectIds : normalizedProjectId];
     let idx = 2;
 
     // Filter out deleted tasks by default (soft-delete)
