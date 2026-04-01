@@ -22,7 +22,7 @@ log() { echo "[$(date -Iseconds)] $*" >> "$LOG_FILE"; }
 
 # Check if a scan is already active (no more than 1 concurrent)
 ACTIVE=$(curl -sfS "$DASHBOARD_API/api/workflow-runs/active?template=system-improvement-scan&limit=1" 2>/dev/null \
-  | python3 -c "import sys,json; r=json.load(sys.stdin); runs=r.get('workflow_runs',r) if isinstance(r,dict) else r; print(len(runs) if runs else 0)" 2>/dev/null \
+  | python3 -c "import sys,json; r=json.load(sys.stdin); runs=r.get('workflow_runs',r.get('runs',[])) if isinstance(r,dict) else r; print(len(runs) if runs else 0)" 2>/dev/null \
   || echo "0")
 
 if [ "$ACTIVE" -gt 0 ]; then
@@ -36,7 +36,7 @@ RECENT=$(curl -sfS "$DASHBOARD_API/api/workflow-runs?template=system-improvement
 import sys, json
 from datetime import datetime, timedelta
 r = json.load(sys.stdin)
-runs = r.get('workflow_runs', r) if isinstance(r, dict) else r
+runs = r.get('workflow_runs', r.get('runs', [])) if isinstance(r, dict) else r
 if not runs:
     print('0')
     exit()

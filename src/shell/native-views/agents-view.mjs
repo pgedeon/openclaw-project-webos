@@ -67,6 +67,7 @@ export async function renderAgentsView({ mountNode, api, adapter, stateStore, sy
       <div id="avStats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;"></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <input id="avSearch" type="text" placeholder="Search agents..." style="flex:1;min-width:140px;padding:5px 10px;border-radius:5px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.82rem;outline:none;" />
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.78rem;color:var(--win11-text-secondary);cursor:pointer;white-space:nowrap;"><input type="checkbox" id="avShowInactive" /> Show inactive</label>
         <select id="avDeptFilter" style="padding:5px 8px;border-radius:5px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.8rem;">
           <option value="all">All departments</option>
         </select>
@@ -249,8 +250,18 @@ export async function renderAgentsView({ mountNode, api, adapter, stateStore, sy
       });
     }
 
+    // Hide inactive agents (never seen) unless toggle is on
+    const showInactive = root.querySelector('#avShowInactive')?.checked || false;
+    if (!showInactive && !search && deptFilter === 'all') {
+      filtered = filtered.filter(a => {
+        const lastSeen = a.lastSeenAt || a.last_seen_at || a.lastActiveAt || '';
+        const totalSessions = a.queueSummary?.total || 0;
+        return lastSeen || totalSessions > 0;
+      });
+    }
+
     if (filtered.length === 0) {
-      grid.innerHTML = `<div style="padding:32px;text-align:center;color:var(--win11-text-tertiary);">${search || deptFilter !== 'all' ? 'No agents match filters.' : 'No agents found.'}</div>`;
+      grid.innerHTML = `<div style="padding:32px;text-align:center;color:var(--win11-text-tertiary);">${search || deptFilter !== 'all' || showInactive ? 'No agents match filters.' : 'No active agents. Check "Show inactive" to see all.'}</div>`;
       return;
     }
 
@@ -506,6 +517,7 @@ export async function renderAgentsView({ mountNode, api, adapter, stateStore, sy
     searchTimer = setTimeout(() => renderGrid(), 150);
   });
   root.querySelector('#avDeptFilter')?.addEventListener('change', () => renderGrid());
+  root.querySelector('#avShowInactive')?.addEventListener('change', () => renderGrid());
   root.querySelector('#avRefreshBtn')?.addEventListener('click', () => loadAgents());
 
   // === Sync subscription ===

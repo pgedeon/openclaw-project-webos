@@ -261,7 +261,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
         <div style="flex:1;"></div>
         <button id="tvExportJson" class="tv-action-btn">Export JSON</button>
         <button id="tvExportCsv" class="tv-action-btn">Export CSV</button>
-        <label id="tvImportLabel" class="tv-action-btn" style="cursor:pointer;">Import<input type="file" id="tvImportFile" accept=".json,.csv" hidden /></label>
+        <label id="tvImportLabel" class="tv-action-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:5px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.78rem;white-space:nowrap;">📥 Import<input type="file" id="tvImportFile" accept=".json,.csv" hidden /></label>
         <button id="tvArchiveCompleted" class="tv-action-btn" style="color:var(--win11-text-tertiary);">Archive completed</button>
       </div>
     </div>
@@ -443,6 +443,10 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
     let filtered = [...tasks];
 
     switch (currentFilter) {
+      case 'all':
+        // Exclude archived by default — use "Archived" tab to see those
+        filtered = filtered.filter(t => !isTaskArchived(t));
+        break;
       case 'pending':
         filtered = filtered.filter(t => isTaskPending(t));
         break;
@@ -514,7 +518,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
 
   // === Rendering ===
   function renderStats() {
-    const total = tasks.length;
+    const total = tasks.filter(t => !isTaskArchived(t)).length;
     const pending = tasks.filter(t => isTaskPending(t)).length;
     const completed = tasks.filter(t => isTaskCompleted(t)).length;
     const archived = tasks.filter(t => isTaskArchived(t)).length;
