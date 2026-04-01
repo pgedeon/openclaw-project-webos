@@ -25,3 +25,5 @@ _legacy-archive/
 # Secret files
 .env.secrets
 .env.blogger
+.env*
+gateway-status.json

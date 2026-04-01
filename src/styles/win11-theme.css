@@ -77,11 +77,11 @@
   --win11-text-secondary: #9e9e9e;
   --win11-text-tertiary: #6a6a6a;
   --win11-close-hover: #c42b1c;
-  --win11-wallpaper-1: #0a1628;
-  --win11-wallpaper-2: #1a0a3e;
-  --win11-wallpaper-3: #0a2e2a;
-  --win11-wallpaper-4: #2a0a5e;
-  --win11-wallpaper-5: #0e1e3f;
+  --win11-wallpaper-1: rgba(56, 189, 248, 0.08);
+  --win11-wallpaper-2: rgba(139, 92, 246, 0.1);
+  --win11-wallpaper-3: rgba(16, 185, 129, 0.07);
+  --win11-wallpaper-4: rgba(244, 114, 182, 0.06);
+  --win11-wallpaper-5: #0c1222;
   --win11-widget-bg: var(--win11-surface-card);
   --win11-widget-bg-hover: rgba(255, 255, 255, 0.08);
   --win11-widget-border: var(--win11-border-subtle);

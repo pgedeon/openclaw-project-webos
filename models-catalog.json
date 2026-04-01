@@ -230,6 +230,19 @@
       "displayName": "Mistral Small 3.1 24b Instruct · openrouter2"
     },
     {
+      "id": "glm-5.1",
+      "name": "GLM-5.1",
+      "provider": "zai",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4/",
+      "reasoning": true,
+      "input": [
+        "text"
+      ],
+      "contextWindow": 200000,
+      "maxTokens": 128000,
+      "displayName": "GLM-5.1 · zai"
+    },
+    {
       "id": "GLM-5-Turbo",
       "name": "GLM-5-Turbo",
       "provider": "zai",
@@ -330,8 +343,8 @@
       "id": "zai",
       "baseUrl": "https://api.z.ai/api/coding/paas/v4/",
       "api": "openai-completions",
-      "modelCount": 5
+      "modelCount": 6
     }
   ],
-  "syncedAt": "2026-03-23T12:40:01.877Z"
+  "syncedAt": "2026-04-01T13:25:01.070Z"
 }

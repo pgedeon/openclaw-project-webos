@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Widget Host Tests</title>
+  <link rel="stylesheet" href="../src/styles/win11-theme.css">
+  <link rel="stylesheet" href="../src/styles/win11-widget-card.css">
+  <style>
+    body { font-family: Inter, system-ui, sans-serif; margin: 24px; background: #0f172a; color: #e2e8f0; }
+    #sandbox { width: 220px; min-height: 120px; margin-bottom: 16px; }
+    .result { padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; }
+    .pass { background: rgba(34, 197, 94, 0.15); color: #bbf7d0; }
+    .fail { background: rgba(248, 113, 113, 0.15); color: #fecaca; }
+  </style>
+</head>
+<body data-theme="dark">
+  <h1>Widget Host Tests</h1>
+  <div id="sandbox"></div>
+  <div id="summary"></div>
+  <div id="results"></div>
+
+  <script type="module">
+    import { WidgetHost } from '../src/shell/widgets/widget-host.mjs';
+
+    const summary = document.getElementById('summary');
+    const resultsEl = document.getElementById('results');
+    const results = [];
+
+    const wait = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
+    const test = (condition, message) => results.push({ pass: Boolean(condition), message });
+    const renderResults = () => {
+      const passed = results.filter((item) => item.pass).length;
+      const failed = results.length - passed;
+      summary.textContent = `${passed}/${results.length} passed${failed ? ` · ${failed} failed` : ''}`;
+      resultsEl.innerHTML = results.map((item) => `
+        <div class="result ${item.pass ? 'pass' : 'fail'}">${item.pass ? '✓' : '✗'} ${item.message}</div>
+      `).join('');
+      window.__widgetHostTest = { passed, failed, total: results.length };
+      document.body.dataset.testStatus = failed ? 'failed' : 'passed';
+    };
+
+    const syncData = { stats: { tasks: 12 }, healthStatus: { status: 'ok' } };
+    const syncSubscribers = new Set();
+    const sync = {
+      getData: () => ({ ...syncData }),
+      subscribe(callback) {
+        syncSubscribers.add(callback);
+        return () => syncSubscribers.delete(callback);
+      },
+      emit(changedKeys) {
+        syncSubscribers.forEach((callback) => callback(syncData, changedKeys));
+      },
+    };
+
+    const themeSubscribers = new Set();
+    const shellAPI = {
+      sync,
+      api: {},
+      navigate: () => {},
+      showNotice: () => {},
+      getTheme: () => 'dark',
+      onThemeChange(callback) {
+        themeSubscribers.add(callback);
+        return () => themeSubscribers.delete(callback);
+      },
+      helpers: {
+        escapeHtml: (value) => String(value ?? ''),
+      },
+    };
+
+    const sandbox = document.getElementById('sandbox');
+
+    const run = async () => {
+      let cleanupCount = 0;
+      const widgetDef = {
+        manifest: {
+          id: 'host-test',
+          label: 'Host Test',
+          description: 'Host fixture',
+          icon: '<path d="M5 5h14v14H5z"></path>',
+          size: 'small',
+          dataKeys: ['stats'],
+          defaults: { label: 'Widget' },
+        },
+        render(ctx) {
+          ctx.mountNode.innerHTML = `<div data-role="value">${ctx.data.stats?.tasks ?? 'none'}:${ctx.config.label}</div>`;
+          return () => {
+            cleanupCount += 1;
+            ctx.mountNode.innerHTML = '';
+          };
+        },
+      };
+
+      const hostContainer = document.createElement('div');
+      sandbox.appendChild(hostContainer);
+      const host = new WidgetHost(widgetDef, hostContainer, shellAPI, { label: 'Ready' });
+      await host.mount();
+
+      test(hostContainer.querySelector('[data-role="value"]')?.textContent === '12:Ready', 'mount() renders with filtered sync data and config');
+
+      syncData.stats = { tasks: 18 };
+      sync.emit(['stats']);
+      await wait(0);
+      await wait(0);
+      test(hostContainer.querySelector('[data-role="value"]')?.textContent === '18:Ready', 'sync updates trigger a filtered re-render');
+      test(cleanupCount >= 1, 're-render runs prior cleanup');
+
+      host.updateConfig({ label: 'Updated' });
+      await wait(0);
+      await wait(0);
+      test(hostContainer.querySelector('[data-role="value"]')?.textContent === '18:Updated', 'updateConfig() re-renders with merged config');
+
+      host.unmount();
+      test(hostContainer.innerHTML === '', 'unmount() clears the container');
+      test(syncSubscribers.size === 0, 'unmount() removes sync subscriptions');
+
+      const errorContainer = document.createElement('div');
+      sandbox.appendChild(errorContainer);
+      const badHost = new WidgetHost({
+        manifest: {
+          id: 'host-error',
+          label: 'Broken Widget',
+          description: 'Error fixture',
+          icon: '<path d="M12 5v14"></path>',
+          size: 'small',
+          dataKeys: [],
+          defaults: {},
+        },
+        render() {
+          throw new Error('boom');
+        },
+      }, errorContainer, shellAPI);
+
+      await badHost.mount();
+      test(Boolean(errorContainer.querySelector('.widget-card--error')), 'render errors are isolated to an error card');
+
+      renderResults();
+    };
+
+    run().catch((error) => {
+      test(false, `Unexpected test failure: ${error.message}`);
+      renderResults();
+    });
+  </script>
+</body>
+</html>

@@ -128,9 +128,10 @@ export class StartMenu extends EventTarget {
   }
 
   getGroupedApps() {
+    const pinnedSet = new Set(this.pinnedAppIds);
     return APP_CATEGORY_ORDER.map((category) => ({
       category,
-      apps: this.apps.filter((app) => app.category === category && matchesQuery(app, this.query)),
+      apps: this.apps.filter((app) => app.category === category && matchesQuery(app, this.query) && !pinnedSet.has(app.id)),
     })).filter((group) => group.apps.length > 0);
   }
 

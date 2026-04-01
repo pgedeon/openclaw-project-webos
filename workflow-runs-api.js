@@ -2963,9 +2963,9 @@ class WorkflowRunsAPI {
         SET status = 'cancelled',
             finished_at = COALESCE(finished_at, NOW()),
             operator_notes = CASE
-              WHEN $2 IS NULL OR $2 = '' THEN operator_notes
-              WHEN operator_notes IS NULL OR operator_notes = '' THEN $2
-              ELSE operator_notes || E'\\n' || $2
+              WHEN $2::text IS NULL OR $2::text = '' THEN operator_notes
+              WHEN operator_notes IS NULL OR operator_notes = '' THEN $2::text
+              ELSE operator_notes || E'\\n' || $2::text
             END,
             updated_at = NOW()
         WHERE id = $1
@@ -3038,9 +3038,9 @@ class WorkflowRunsAPI {
         SET status = $2,
             finished_at = NULL,
             operator_notes = CASE
-              WHEN $3 IS NULL OR $3 = '' THEN operator_notes
-              WHEN operator_notes IS NULL OR operator_notes = '' THEN $3
-              ELSE operator_notes || E'\\n' || $3
+              WHEN $3::text IS NULL OR $3::text = '' THEN operator_notes
+              WHEN operator_notes IS NULL OR operator_notes = '' THEN $3::text
+              ELSE operator_notes || E'\\n' || $3::text
             END,
             updated_at = NOW()
         WHERE id = $1

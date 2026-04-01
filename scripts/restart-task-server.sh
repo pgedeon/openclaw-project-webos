@@ -179,7 +179,7 @@ if command -v systemd-run >/dev/null 2>&1; then
     --setenv=POSTGRES_PORT="${POSTGRES_PORT:-5432}" \
     --setenv=POSTGRES_DB="${POSTGRES_DB:-openclaw_dashboard}" \
     --setenv=POSTGRES_USER="${POSTGRES_USER:-openclaw}" \
-    --setenv=POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-openclaw_password}" \
+    --setenv=POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}" \
     node task-server.js >/dev/null
   PID="$(get_systemd_main_pid "$DASHBOARD_SYSTEMD_UNIT" || true)"
 else
@@ -193,7 +193,7 @@ else
     POSTGRES_PORT="${POSTGRES_PORT:-5432}" \
     POSTGRES_DB="${POSTGRES_DB:-openclaw_dashboard}" \
     POSTGRES_USER="${POSTGRES_USER:-openclaw}" \
-    POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-openclaw_password}" \
+    POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}" \
     node task-server.js > "$SERVER_LOG_FILE" 2>&1 &
   PID=$!
 fi
