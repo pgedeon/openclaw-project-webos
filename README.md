@@ -1,6 +1,6 @@
 # OpenClaw Project WebOS
 
-`1.0.0-rc.2`
+`1.0.0-rc.3`
 
 A Windows 11-style desktop environment for managing OpenClaw agent workflows — served entirely in the browser with vanilla JS, no frameworks, no build step. Each feature is a windowed application launched from the taskbar or start menu.
 
@@ -40,19 +40,30 @@ A Windows 11-style desktop environment for managing OpenClaw agent workflows —
 
 ### Integration
 
-| Skills & Tools | Workflows | Operations |
-|:--------------:|:---------:|:----------:|
-| <img src="docs/screenshots/all-windows/skills-tools.png" width="100%" /> | <img src="docs/screenshots/all-windows/workflows.png" width="100%" /> | <img src="docs/screenshots/all-windows/operations.png" width="100%" /> |
+| Sessions ✨ | Skills & Tools | Workflows | Operations |
+|:-----------:|:--------------:|:---------:|:----------:|
+| <img src="docs/screenshots/all-windows/sessions.png" width="100%" /> | <img src="docs/screenshots/all-windows/skills-tools.png" width="100%" /> | <img src="docs/screenshots/all-windows/workflows.png" width="100%" /> | <img src="docs/screenshots/all-windows/operations.png" width="100%" /> |
 
 ## Features
 
 ### Desktop Shell
 - **Windows 11 aesthetic** — frosted glass taskbar, start menu with app grid, draggable/resizable windows
-- **27 windowed apps** — each feature is a self-contained view launched as a desktop window
+- **28 windowed apps** — each feature is a self-contained view launched as a desktop window
 - **Start menu** — searchable app grid organized by category (Work, Operations, System, Integration)
 - **Taskbar** — live clock, system tray, running app indicators
 
-### Explorer (New)
+### Sessions & Live Chat (New ✨)
+Browse all OpenClaw agent sessions and chat with them in real-time directly from the desktop.
+
+- **Session browser** — list all sessions across agents with status indicators (active/recent/idle), model badges, and token usage bars
+- **Conversation history** — paginated message viewer with role-based styling (user, agent, tool calls)
+- **Live chat** — send messages to any session via the OpenClaw Gateway WebSocket
+- **Real-time streaming** — token-by-token response streaming via SSE with animated cursor
+- **Abort support** — cancel running agent turns with the stop button
+- **Gateway status** — live connection indicator for the OpenClaw Gateway
+- **Agent selector** — switch between agents to browse their sessions
+
+### Explorer
 File explorer window for browsing the OpenClaw workspace directly from the desktop. Features:
 
 - **Quick-access roots** — one-click navigation to Backend, Dashboard, Extensions, Agents, and Docs directories
@@ -63,7 +74,7 @@ File explorer window for browsing the OpenClaw workspace directly from the deskt
 - **Filesystem API backend** — connects to `/api/fs` endpoint with path traversal protection and CORS support
 - **Responsive tree** — adapts to the available window size
 
-### Notepad (New)
+### Notepad
 Lightweight text editor window for viewing and editing files from the Explorer or standalone. Features:
 
 - **File open from Explorer** — Explorer dispatches `notepad:open-file` events; Notepad listens and loads the content
@@ -120,23 +131,33 @@ When installed at `~/.openclaw/workspace/dashboard`, the server auto-detects the
 
 ```
 ├── index.html                  # Desktop shell entry point
-├── task-server.js              # API server (tasks, workflows, agents, filesystem)
+├── task-server.js              # API server (tasks, workflows, agents, filesystem, chat)
+├── lib/
+│   ├── gateway-client.js       # WebSocket client to OpenClaw Gateway
+│   ├── session-jsonl-reader.js # Incremental JSONL session parser
+│   └── qmd-security.js         # Auth, CORS, security middleware
+├── routes/
+│   ├── router.js               # Minimal prefix-matching router
+│   ├── session-routes.js       # Session browser API endpoints
+│   ├── chat-routes.js          # Chat send/abort/status endpoints
+│   ├── sse-routes.js           # SSE event stream for real-time updates
+│   └── ...                     # Task, project, agent, health, cron routes
 ├── filesystem-api-server.mjs   # Filesystem browser API with CORS + path protection
 ├── gateway-workflow-dispatcher-v2.js  # Async workflow dispatch v2
-├── gateway-workflow-dispatcher.js     # Legacy workflow dispatcher
 ├── storage/
 │   └── asana.js                # PostgreSQL storage layer
 ├── src/
 │   ├── shell/
 │   │   ├── shell-main.mjs      # Desktop shell controller
-│   │   ├── app-registry.mjs    # 27-app window registry
+│   │   ├── app-registry.mjs    # 28-app window registry
 │   │   ├── window-manager.mjs  # Draggable/resizable window manager
 │   │   ├── start-menu.mjs      # Start menu with app grid
 │   │   ├── taskbar.mjs         # Bottom taskbar with clock + system tray
 │   │   ├── widgets/            # Desktop widgets (clock, health, pulse, etc.)
-│   │   └── native-views/       # All 27 window view implementations
-│   │       ├── explorer-view.mjs   # File explorer (new)
-│   │       ├── notepad-view.mjs    # Text editor (new)
+│   │   └── native-views/       # All 28 window view implementations
+│   │       ├── sessions-view.mjs   # Session browser + live chat (new)
+│   │       ├── explorer-view.mjs   # File explorer
+│   │       ├── notepad-view.mjs    # Text editor
 │   │       ├── tasks-view.mjs
 │   │       ├── board-view.mjs
 │   │       ├── agents-view.mjs
@@ -174,6 +195,8 @@ Key variables:
 - `OPENCLAW_WORKSPACE` — path to OpenClaw workspace root
 - `OPENCLAW_CONFIG_FILE` — path to openclaw.json
 - `OPENCLAW_BIN` — path to openclaw binary
+- `OPENCLAW_GATEWAY_URL` — Gateway WebSocket URL (default `ws://127.0.0.1:18789`)
+- `OPENCLAW_GATEWAY_PASSWORD` — Gateway auth password
 - `FILESYSTEM_API_PORT` — port for the filesystem API server (default 3880)
 
 ## Development
@@ -190,7 +213,7 @@ DASHBOARD_API_BASE=http://localhost:3887 node scripts/dashboard-validation.js
 
 ## Release
 
-Tagged as `v1.0.0-rc.2` on [github.com/pgedeon/openclaw-project-webos](https://github.com/pgedeon/openclaw-project-webos).
+Tagged as `v1.0.0-rc.3` on [github.com/pgedeon/openclaw-project-webos](https://github.com/pgedeon/openclaw-project-webos).
 
 - Release notes: [RELEASE.md](RELEASE.md)
 - Change history: [CHANGELOG.md](CHANGELOG.md)
