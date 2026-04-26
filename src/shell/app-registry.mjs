@@ -374,6 +374,14 @@ export const APP_REGISTRY = Object.freeze([
     description: 'Submit URLs to Bing & manage indexing',
     viewModule: './native-views/bing-view.mjs',
   },
+  {
+    id: 'settings',
+    label: 'Settings',
+    icon: appIcon.gear,
+    category: 'Admin',
+    description: 'Configure OpenClaw Desktop',
+    viewModule: './native-views/settings-view.mjs',
+  },
 ]);
 
 export const PINNED_APP_IDS = Object.freeze([

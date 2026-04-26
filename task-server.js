@@ -61,6 +61,8 @@ const { registerSSERoutes, broadcast } = require('./routes/sse-routes');
 const { registerSessionRoutes } = require('./routes/session-routes');
 const { registerChatRoutes } = require('./routes/chat-routes');
 const { registerBingRoutes } = require('./routes/bing-routes');
+const { registerSettingsRoutes } = require('./routes/settings-routes');
+const SettingsStore = require('./lib/settings-store');
 
 function loadDashboardEnv() {
   const envPath = path.join(__dirname, '.env');
@@ -207,6 +209,8 @@ function normalizeTaskListProjectId(projectId) {
   return normalized;
 }
 
+let settingsPool = null;
+
 async function initAsanaStorage() {
   workflowRunsHandler = null;
   v2DispatcherHandler = null;
@@ -222,6 +226,8 @@ async function initAsanaStorage() {
       });
       await asanaStorage.init();
       console.log('✅ Asana PostgreSQL storage initialized');
+// Wire pool into settings routes
+settingsPool = asanaStorage.pool || asanaStorage._pool || null;
       // Initialize workflow runs handler
       if (asanaStorage.pool) {
         try {
@@ -623,6 +629,19 @@ registerChatRoutes(router, gatewayClient);
 // ── Bing Webmaster ──────────────────────────────
 const BING_API_KEY = process.env.BING_WEBMASTER_API_KEY || null;
 registerBingRoutes(router, BING_API_KEY);
+
+// ── Settings / Control Panel ────────────────────
+const settingsStore = new SettingsStore();
+settingsStore.load();
+const SERVER_STARTED_AT = new Date().toISOString();
+// Settings deps - pool will be available after DB init
+const settingsDeps = {
+  get pool() { return settingsPool; },
+  gatewayClient,
+  startedAt: SERVER_STARTED_AT,
+  getSSEClientCount: () => 0,
+};
+registerSettingsRoutes(router, settingsStore, settingsDeps);
 registerHealthRoutes(router);
 registerCronRoutes(router);
 registerAgentRoutes(router);
