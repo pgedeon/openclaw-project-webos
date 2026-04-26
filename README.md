@@ -40,15 +40,19 @@ A Windows 11-style desktop environment for managing OpenClaw agent workflows —
 
 ### Integration
 
-| Sessions ✨ | Skills & Tools | Workflows | Operations |
-|:-----------:|:--------------:|:---------:|:----------:|
-| <img src="docs/screenshots/all-windows/sessions.png" width="100%" /> | <img src="docs/screenshots/all-windows/skills-tools.png" width="100%" /> | <img src="docs/screenshots/all-windows/workflows.png" width="100%" /> | <img src="docs/screenshots/all-windows/operations.png" width="100%" /> |
+| Sessions ✨ | Bing Webmaster ✨ | Skills & Tools | Workflows |
+|:-----------:|:-----------------:|:--------------:|:---------:|
+| <img src="docs/screenshots/all-windows/sessions.png" width="100%" /> | <img src="docs/screenshots/all-windows/bing.png" width="100%" /> | <img src="docs/screenshots/all-windows/skills-tools.png" width="100%" /> | <img src="docs/screenshots/all-windows/workflows.png" width="100%" /> |
+
+| Operations |
+|:----------:|
+| <img src="docs/screenshots/all-windows/operations.png" width="100%" /> |
 
 ## Features
 
 ### Desktop Shell
 - **Windows 11 aesthetic** — frosted glass taskbar, start menu with app grid, draggable/resizable windows
-- **28 windowed apps** — each feature is a self-contained view launched as a desktop window
+- **29 windowed apps** — each feature is a self-contained view launched as a desktop window
 - **Start menu** — searchable app grid organized by category (Work, Operations, System, Integration)
 - **Taskbar** — live clock, system tray, running app indicators
 
@@ -62,6 +66,15 @@ Browse all OpenClaw agent sessions and chat with them in real-time directly from
 - **Abort support** — cancel running agent turns with the stop button
 - **Gateway status** — live connection indicator for the OpenClaw Gateway
 - **Agent selector** — switch between agents to browse their sessions
+
+### Bing Webmaster (New ✨)
+Submit URLs to Bing and manage your site's indexing directly from the dashboard.
+
+- **Quick submit** — submit individual URLs to Bing via API or IndexNow protocol
+- **Batch submit** — submit up to 500 URLs at once
+- **Quota tracking** — see daily and monthly submission quotas with visual bars
+- **Submission history** — track all submissions with success/failure status
+- **Multi-site** — configure any site URL (defaults to 3dput.com)
 
 ### Explorer
 File explorer window for browsing the OpenClaw workspace directly from the desktop. Features:
@@ -197,6 +210,7 @@ Key variables:
 - `OPENCLAW_BIN` — path to openclaw binary
 - `OPENCLAW_GATEWAY_URL` — Gateway WebSocket URL (default `ws://127.0.0.1:18789`)
 - `OPENCLAW_GATEWAY_PASSWORD` — Gateway auth password
+- `BING_WEBMASTER_API_KEY` — Bing Webmaster Tools API key for URL submissions
 - `FILESYSTEM_API_PORT` — port for the filesystem API server (default 3880)
 
 ## Development
