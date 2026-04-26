@@ -283,7 +283,7 @@ export async function renderNotepadView({ mountNode, stateStore }) {
     }
 
     try {
-      const res = await fetch(`${FS_API}/file?path=${encodeURIComponent(path)}`);
+      const res = await fetch(`${FS_API}/file?path=${encodeURIComponent(path, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`);
       const data = await res.json();
 
       if (!res.ok) {

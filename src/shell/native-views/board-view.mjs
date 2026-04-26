@@ -165,7 +165,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore }) {
 
   // ── Load projects ──────────────────────────────────────────────────
   try {
-    const r = await fetch('/api/projects');
+    const r = await fetch('/api/projects', { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     projects = normalizeCollection(data, ['projects', 'data']);
@@ -205,7 +205,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore }) {
     try {
       const params = new URLSearchParams({ project_id: currentProjectId });
       if (includeChildren) params.set('include_child_projects', 'true');
-      const r = await fetch(`/api/views/board?${params}`);
+      const r = await fetch(`/api/views/board?${params}`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       boardData = await r.json();
       draw();
@@ -377,7 +377,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore }) {
     try {
       const r = await fetch(`/api/tasks/${taskId}/move`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
       if (!r.ok) throw new Error(await r.text());
@@ -416,7 +416,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore }) {
       try {
         const r = await fetch('/api/tasks', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title,
             project_id: currentProjectId,
@@ -532,7 +532,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore }) {
     try {
       const r = await fetch(`/api/tasks/${taskId}/move`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
       if (!r.ok) throw new Error(await r.text());

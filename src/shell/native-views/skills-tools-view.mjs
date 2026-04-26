@@ -107,7 +107,7 @@ export async function renderSkillsToolsView({ mountNode, api, adapter, stateStor
     const grid = root.querySelector('#stvGrid');
     grid.innerHTML = '<div style="padding:32px;text-align:center;color:var(--win11-text-tertiary);">Loading...</div>';
     try {
-      const res = await fetch('/api/catalog/skills-tools');
+      const res = await fetch('/api/catalog/skills-tools', { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       catalog = await res.json();
       updateSourceFilter();

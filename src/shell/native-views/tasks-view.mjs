@@ -326,7 +326,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
     // Load model catalog from sync'd openclaw.json (auto-updated by sync-models-catalog.js)
     try {
       const [catalogResult, agentsResult] = await Promise.allSettled([
-        fetch('/models-catalog.json').then(r => r.ok ? r.json() : null),
+        fetch('/models-catalog.json', { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }).then(r => r.ok ? r.json() : null),
         api.org.agents.list(),
       ]);
 

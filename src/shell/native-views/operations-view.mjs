@@ -123,7 +123,7 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
       api.health.check().catch(() => ({})),
       api.agents.status().catch(() => ({ agents: [] })),
       cronFetch('/jobs').catch(() => ({ jobs: [] })),
-      fetch('/gateway-status.json').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/gateway-status.json', { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }).then(r => r.ok ? r.json() : null).catch(() => null),
     ]);
     health = h.status === 'fulfilled' ? h.value : {};
     const agentPayload = a.status === 'fulfilled' ? a.value : { agents: [] };

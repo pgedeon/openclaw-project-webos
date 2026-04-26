@@ -234,7 +234,7 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
     if (panelCache[runId]) { panel.innerHTML = panelCache[runId]; return; }
     panel.innerHTML = '<div style="font-size:0.75rem;color:var(--win11-text-tertiary);">Loading...</div>';
     try {
-      const resp = await fetch('/api/workflow-runs/' + runId);
+      const resp = await fetch('/api/workflow-runs/' + runId, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       const run = await resp.json();
       const output = run.outputSummary || run.output_summary || {};
       const finished = run.finished_at || run.finishedAt || '';
@@ -315,7 +315,7 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
       confirmYes.disabled = true;
       confirmYes.textContent = 'Deleting...';
       try {
-        const resp = await fetch('/api/workflow-runs/' + runId, { method: 'DELETE' });
+        const resp = await fetch('/api/workflow-runs/' + runId, { method: 'DELETE' }, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
         if (resp.ok) {
           showNotice('Deleted.', 'success');
           await loadApprovals();
@@ -364,6 +364,7 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
       if (resultEl) { resultEl.style.display = 'block'; resultEl.textContent = 'Sending...'; resultEl.className = 'apv-result is-info'; }
       try {
         const resp = await fetch('/api/system-scan/followup', {
+      headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` },
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ runId, prompt })
@@ -387,7 +388,7 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
       execBtn.disabled = true;
       execBtn.textContent = '\u23f3 Starting...';
       try {
-        await fetch('/api/workflow-runs/' + runId + '/start', { method: 'POST' });
+        await fetch('/api/workflow-runs/' + runId + '/start', { method: 'POST' }, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
         showNotice('Run started.', 'success');
         setTimeout(() => loadApprovals(), 2000);
       } catch (err) { showNotice('Failed: ' + err.message, 'error'); execBtn.disabled = false; execBtn.textContent = '\u25b6 Execute'; }

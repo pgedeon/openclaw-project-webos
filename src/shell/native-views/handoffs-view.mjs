@@ -156,7 +156,7 @@ export async function renderHandoffsView({ mountNode, api, adapter, stateStore }
 
   // ── Load projects ──────────────────────────────────────────────────
   try {
-    const r = await fetch('/api/projects');
+    const r = await fetch('/api/projects', { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
     if (r.ok) {
       const data = await r.json();
       const projs = Array.isArray(data) ? data : (data.projects || data.data || []);
@@ -186,7 +186,7 @@ export async function renderHandoffsView({ mountNode, api, adapter, stateStore }
       if (filterActor) params.set('actor', filterActor);
       if (filterProject) params.set('project_id', filterProject);
 
-      const r = await fetch(`/api/lead-handoffs?${params}`);
+      const r = await fetch(`/api/lead-handoffs?${params}`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       events = data.events || [];
@@ -305,7 +305,7 @@ export async function renderHandoffsView({ mountNode, api, adapter, stateStore }
       if (filterActor) params.set('actor', filterActor);
       if (filterProject) params.set('project_id', filterProject);
 
-      const r = await fetch(`/api/lead-handoffs?${params}`);
+      const r = await fetch(`/api/lead-handoffs?${params}`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       if (!r.ok) return;
       const data = await r.json();
       events = data.events || [];

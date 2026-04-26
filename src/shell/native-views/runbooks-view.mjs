@@ -138,7 +138,7 @@ export async function renderRunbooksView({ mountNode, api, adapter, stateStore }
 
   // ── Load templates ─────────────────────────────────────────────────
   try {
-    const r = await fetch('/api/workflow-templates');
+    const r = await fetch('/api/workflow-templates', { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     templates = Array.isArray(data) ? data : (data.templates || data.data || []);

@@ -54,7 +54,7 @@ export async function renderCronView({ mountNode, sync }) {
 
   async function loadJobs() {
     try {
-      const resp = await fetch(`${CRON_ADMIN_BASE}/jobs`);
+      const resp = await fetch(`${CRON_ADMIN_BASE}/jobs`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       if (!resp.ok) throw new Error('Failed to fetch cron jobs');
       const data = await resp.json();
       jobs = data.jobs || [];

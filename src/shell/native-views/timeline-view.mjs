@@ -148,7 +148,7 @@ export async function renderTimelineView({ mountNode, api, adapter, stateStore }
 
   // ── Fetch ──────────────────────────────────────────────────────────
   try {
-    const r = await fetch('/api/tasks/all');
+    const r = await fetch('/api/tasks/all', { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     allTasks = normalizeCollection(await r.json(), ['tasks', 'data']);
   } catch (e) {

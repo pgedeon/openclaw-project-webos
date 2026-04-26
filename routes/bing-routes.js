@@ -97,43 +97,43 @@ function registerBingRoutes(router, apiKey) {
     }
   });
 
-  // POST /api/bing/indexnow — Submit via IndexNow protocol
+  // POST /api/bing/indexnow — Submit via IndexNow (proxied to WP plugin)
   router.add('POST', '/api/bing/indexnow', async (req, res) => {
     const body = await parseBody(req);
-    const { host, urls } = body;
+    const { urls } = body;
 
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
       return sendJSON(res, 400, { error: 'urls array required' });
     }
 
-    const siteHost = host || '3dput.com';
-
     try {
-      const resp = await fetch(INDEXNOW_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          host: siteHost,
-          key: apiKey,
-          keyLocation: `https://${siteHost}/${apiKey}.txt`,
-          urlList: urls,
-        }),
-      });
+      // Use the WordPress IndexNow plugin which handles key file management
+      const wpApiBase = process.env.WORDPRESS_API_URL || 'https://3dput.com/wp-json';
+      const wpUser = process.env.WORDPRESS_USER || 'admin';
+      const wpPass = process.env.WORDPRESS_APP_PASS || 'V2W3 GbQC Sbgj eeX7 9klH GHLS';
+      const wpAuth = Buffer.from(`${wpUser}:${wpPass}`).toString('base64');
 
-      const status = resp.status;
-      let message = 'Unknown response';
-      if (status === 200) message = 'URLs submitted successfully';
-      else if (status === 202) message = 'URLs accepted for processing';
-      else if (status === 400) message = 'Invalid request format';
-      else if (status === 403) message = 'Invalid API key';
-      else if (status === 429) message = 'Too many requests';
-      else if (status === 500) message = 'Bing server error';
+      const results = [];
+      for (const url of urls) {
+        const resp = await fetch(`${wpApiBase}/indexnow/v_1.0.3/submitUrl`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${wpAuth}`,
+          },
+          body: JSON.stringify({ url }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        results.push({ url, status: resp.status, error: data.error || '' });
+      }
 
-      sendJSON(res, status <= 202 ? 200 : status, {
-        ok: status <= 202,
-        status,
-        message,
+      const allOk = results.every(r => r.status === 200 && !r.error);
+      const status = allOk ? 200 : 207;
+
+      sendJSON(res, allOk ? 200 : 207, {
+        ok: allOk,
         submitted: urls.length,
+        results,
       });
     } catch (err) {
       sendJSON(res, 500, { error: err.message });

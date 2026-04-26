@@ -142,7 +142,7 @@ export async function renderDiagnosticsView({ mountNode }) {
 
   // ── API ──
   async function api(path, opts = {}) {
-    const res = await fetch(path, { headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, ...opts });
+    const res = await fetch(path, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}`, Accept: 'application/json', 'Content-Type': 'application/json' }, ...opts });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.statusText); }
     return res.json();
   }

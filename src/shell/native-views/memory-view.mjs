@@ -121,10 +121,10 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
   async function loadData() {
     try {
       const [filesResp, statsResp, statusResp, factsResp] = await Promise.all([
-        fetch(`${MEMORY_API_BASE}/list`),
-        fetch(`${MEMORY_API_BASE}/stats`),
-        fetch(`${MEMORY_API_BASE}/status`),
-        fetch(`${MEMORY_API_BASE}/facts`),
+        fetch(`${MEMORY_API_BASE}/list`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }),
+        fetch(`${MEMORY_API_BASE}/stats`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }),
+        fetch(`${MEMORY_API_BASE}/status`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }),
+        fetch(`${MEMORY_API_BASE}/facts`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }),
       ]);
 
       memoryFiles = (await filesResp.json()).files || [];
@@ -133,7 +133,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
       facts = (await factsResp.json()).namespaces || [];
       searchResults = [];
       // Fetch actual fact records
-      const factsListResp = await fetch(`${MEMORY_API_BASE}/facts/list`);
+      const factsListResp = await fetch(`${MEMORY_API_BASE}/facts/list`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       if (factsListResp.ok) {
         factsRecords = (await factsListResp.json()).facts || [];
       }
@@ -152,7 +152,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
 
     content.innerHTML = '<div class="mem-loading">Searching...</div>';
     try {
-      const resp = await fetch(`${MEMORY_API_BASE}/search?q=${encodeURIComponent(query)}`);
+      const resp = await fetch(`${MEMORY_API_BASE}/search?q=${encodeURIComponent(query, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`);
       const data = await resp.json();
       searchResults = data.hits || []; console.log('[MemoryView] searchResults:', searchResults.length);
       renderContent();
@@ -317,7 +317,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
 
     // Refresh facts from API
     try {
-      const resp = await fetch(`${MEMORY_API_BASE}/facts/list`);
+      const resp = await fetch(`${MEMORY_API_BASE}/facts/list`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       if (resp.ok) {
         factsRecords = (await resp.json()).facts || [];
       }
@@ -387,7 +387,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
     const refreshFacts = async () => {
       listContainer.innerHTML = '<div class="mem-loading">Refreshing...</div>';
       try {
-        const resp = await fetch(`${MEMORY_API_BASE}/facts/list`);
+        const resp = await fetch(`${MEMORY_API_BASE}/facts/list`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
         if (resp.ok) {
           factsRecords = (await resp.json()).facts || [];
           renderFactList(listContainer, factsRecords);
@@ -406,7 +406,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
       if (!q) { renderFactList(listContainer, factsRecords); return; }
       listContainer.innerHTML = '<div class="mem-loading">Searching...</div>';
       try {
-        const resp = await fetch(`${MEMORY_API_BASE}/facts/search?query=${encodeURIComponent(q)}`);
+        const resp = await fetch(`${MEMORY_API_BASE}/facts/search?query=${encodeURIComponent(q, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`);
         if (resp.ok) {
           const results = (await resp.json()).facts || [];
           renderFactList(listContainer, results, true);
@@ -583,7 +583,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
   async function openFile(filename) {
     content.innerHTML = '<div class="mem-loading">Loading file...</div>';
     try {
-      const resp = await fetch(`${MEMORY_API_BASE}/file/${encodeURIComponent(filename)}`);
+      const resp = await fetch(`${MEMORY_API_BASE}/file/${encodeURIComponent(filename, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`);
       if (!resp.ok) throw new Error('File not found');
       const data = await resp.json();
 
@@ -621,7 +621,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
         saveStatus.textContent = 'Saving...';
         saveStatus.style.color = 'var(--win11-text-secondary)';
         try {
-          const saveResp = await fetch(`${MEMORY_API_BASE}/file/${encodeURIComponent(filename)}`, {
+          const saveResp = await fetch(`${MEMORY_API_BASE}/file/${encodeURIComponent(filename, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: newContent }),

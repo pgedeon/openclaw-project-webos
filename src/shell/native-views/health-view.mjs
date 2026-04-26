@@ -52,7 +52,7 @@ export async function renderHealthView({ mountNode, api, sync }) {
     try {
       const [h, s] = await Promise.allSettled([
         api.health.check().catch(() => null),
-        fetch('/api/health-status').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/health-status', { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
       healthData = h.status === 'fulfilled' ? h.value : null;
       statusData = s.status === 'fulfilled' ? s.value : null;
