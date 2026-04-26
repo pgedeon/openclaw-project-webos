@@ -76,7 +76,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
   header.className = 'mem-header';
   header.innerHTML = `
     <div class="mem-title">🧠 Memory System</div>
-    <button id="mem-refresh-btn" class="mem-search-btn">Refresh</button>
+    <button id="mem-refresh-btn" class="mem-search-btn" aria-label="Refresh data" >Refresh</button>
   `;
   root.appendChild(header);
 
@@ -201,7 +201,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
     filterBox.className = 'mem-search-box';
     filterBox.innerHTML = `
       <input id="mem-filter" class="mem-search-input" placeholder="Filter files..." value="${escapeHtml(searchQuery)}">
-      <button id="mem-filter-btn" class="mem-search-btn">Filter</button>
+      <button id="mem-filter-btn" class="mem-search-btn" aria-label="Filter" >Filter</button>
       <select id="mem-filter-type" class="mem-search-input" style="flex:0 0 140px;">
         <option value="all">All Types</option>
         <option value="daily">Daily Only</option>
@@ -260,7 +260,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
     searchBox.className = 'mem-search-box';
     searchBox.innerHTML = `
       <input id="mem-search-input" class="mem-search-input" placeholder="Search memory (semantic + full-text)..." value="${escapeHtml(searchQuery)}">
-      <button id="mem-search-btn" class="mem-search-btn">Search</button>
+      <button id="mem-search-btn" class="mem-search-btn" aria-label="Search" >Search</button>
     `;
     content.appendChild(searchBox);
 
@@ -334,8 +334,8 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
         — ${factsRecords.length} fact${factsRecords.length !== 1 ? 's' : ''}
       </div>
       <div style="display:flex;gap:6px;">
-        <button id="mem-facts-add-btn" class="mem-file-close" style="background:var(--win11-accent);color:#fff;border-color:var(--win11-accent);">+ Add Fact</button>
-        <button id="mem-facts-refresh-btn" class="mem-file-close">↻ Refresh</button>
+        <button id="mem-facts-add-btn" class="mem-file-close" style="background:var(--win11-accent);color:#fff;border-color:var(--win11-accent);" aria-label="Add new fact" >+ Add Fact</button>
+        <button id="mem-facts-refresh-btn" class="mem-file-close" aria-label="Refresh data" >↻ Refresh</button>
       </div>
     `;
     content.appendChild(statsRow);
@@ -345,7 +345,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
     searchBox.className = 'mem-search-box';
     searchBox.innerHTML = `
       <input id="mem-facts-search" class="mem-search-input" placeholder="Search facts..." style="flex:1;">
-      <button id="mem-facts-search-btn" class="mem-search-btn">Search</button>
+      <button id="mem-facts-search-btn" class="mem-search-btn" aria-label="Search" >Search</button>
     `;
     content.appendChild(searchBox);
 
@@ -375,8 +375,8 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
       <input id="mf-note" class="mem-fact-input" placeholder="Note (optional)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.85rem;outline:none;">
       <input id="mf-tags" class="mem-fact-input" placeholder="Tags (comma-separated, optional)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.85rem;outline:none;">
       <div style="display:flex;gap:8px;justify-content:flex-end;">
-        <button id="mf-cancel" class="mem-file-close">Cancel</button>
-        <button id="mf-save" class="mem-file-close" style="background:var(--win11-accent);color:#fff;border-color:var(--win11-accent);">Save Fact</button>
+        <button id="mf-cancel" class="mem-file-close" aria-label="Cancel" >Cancel</button>
+        <button id="mf-save" class="mem-file-close" style="background:var(--win11-accent);color:#fff;border-color:var(--win11-accent);" aria-label="Save fact" >Save Fact</button>
       </div>
       <div id="mf-status" style="font-size:0.8rem;min-height:1.2em;"></div>
     `;
@@ -494,7 +494,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
             ${f.note ? `<div style="margin-top:4px;font-size:0.75rem;color:var(--win11-text-secondary);font-style:italic;">${escapeHtml(f.note)}</div>` : ''}
             ${f.tags?.length ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">${f.tags.map(t => `<span style="font-size:0.68rem;padding:1px 6px;border-radius:3px;background:rgba(96,205,255,0.1);color:var(--win11-accent);border:1px solid rgba(96,205,255,0.2);">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
           </div>
-          <button class="mem-fact-delete" data-ns="${escapeHtml(f.namespace)}" data-subject="${escapeHtml(f.subject)}" data-predicate="${escapeHtml(f.predicate)}" style="flex-shrink:0;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--win11-border);background:transparent;color:var(--win11-text-tertiary);cursor:pointer;font-size:0.9rem;opacity:0;transition:opacity 0.15s,background 0.15s;" title="Delete fact">✕</button>
+          <button class="mem-fact-delete" data-ns="${escapeHtml(f.namespace)}" data-subject="${escapeHtml(f.subject)}" data-predicate="${escapeHtml(f.predicate)}" style="flex-shrink:0;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--win11-border);background:transparent;color:var(--win11-text-tertiary);cursor:pointer;font-size:0.9rem;opacity:0;transition:opacity 0.15s,background 0.15s;" title="Delete fact" aria-label="Delete" >✕</button>
         </div>
         <div style="margin-top:4px;font-size:0.68rem;color:var(--win11-text-tertiary);">${f.updated_at ? new Date(f.updated_at).toLocaleString() : ''}${f.source ? ' · ' + escapeHtml(f.source) : ''}</div>
       `;
@@ -597,8 +597,8 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
         <div><strong id="mem-file-title">${escapeHtml(data.name)}</strong> — <span id="mem-file-meta">${data.lines.toLocaleString()} lines, ${formatSize(data.size)}</span></div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="mem-save-status" style="font-size:0.78rem;color:var(--win11-text-secondary);"></span>
-          <button id="mem-save-file" class="mem-file-close" style="background:var(--win11-accent);color:#fff;border-color:var(--win11-accent);">💾 Save</button>
-          <button id="mem-close-file" class="mem-file-close">← Back to list</button>
+          <button id="mem-save-file" class="mem-file-close" style="background:var(--win11-accent);color:#fff;border-color:var(--win11-accent);" aria-label="Save" >💾 Save</button>
+          <button id="mem-close-file" class="mem-file-close" aria-label="Back to list" >← Back to list</button>
         </div>
       `;
       viewer.appendChild(header);

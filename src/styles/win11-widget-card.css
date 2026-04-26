@@ -860,3 +860,28 @@
   background: var(--win11-surface);
   box-sizing: border-box;
 }
+
+/* ── Loading Skeleton ───────────────────────────────────── */
+.widget-host--loading .widget-card {
+  pointer-events: none;
+}
+.widget-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.widget-skeleton__line {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--card-bg, rgba(255,255,255,0.05)) 25%, rgba(255,255,255,0.08) 50%, var(--card-bg, rgba(255,255,255,0.05)) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+.widget-skeleton__line--wide { width: 80%; }
+.widget-skeleton__line--medium { width: 60%; }
+.widget-skeleton__line--narrow { width: 40%; }
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

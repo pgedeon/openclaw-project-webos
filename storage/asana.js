@@ -321,9 +321,9 @@ class AsanaStorage {
     this.pool = new Pool({
       host: config.host || 'localhost',
       port: config.port || 5432,
-      database: config.database || 'openclaw_dashboard',
-      user: config.user || 'openclaw',
-      password: config.password || 'openclaw_password',
+      database: config.database || process.env.POSTGRES_DB || 'mission_control',
+      user: config.user || process.env.POSTGRES_USER || 'postgres',
+      password: config.password || process.env.POSTGRES_PASSWORD || 'postgres',
       max: config.max || 10,
       idleTimeoutMillis: config.idleTimeoutMillis || 30000,
       connectionTimeoutMillis: config.connectionTimeoutMillis || 2000,

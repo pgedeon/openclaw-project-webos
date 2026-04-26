@@ -86,6 +86,7 @@ export class WidgetHost {
     return {
       mountNode,
       data: this.getFilteredData(),
+      isLoading: !this.hasReceivedData(),
       config: this.userConfig,
       helpers: this.shellAPI.helpers || {},
       api: this.shellAPI.api ?? null,
@@ -99,6 +100,10 @@ export class WidgetHost {
   }
 
   performRender({ withCleanup = false } = {}) {
+    // Show loading skeleton if we haven't received data yet
+    if (!this.hasReceivedData()) {
+      this.renderLoading();
+    }
     this.renderSequence = this.renderSequence.then(async () => {
       if (!this.isMounted || !this.context || !this.mountNode) {
         return;
@@ -109,6 +114,7 @@ export class WidgetHost {
       }
 
       try {
+        this.container.classList.remove('widget-host--loading');
         const result = await this.renderFn(this.context);
         this.cleanup = typeof result === 'function' ? result : null;
         this.container.classList.remove('widget-host--failed');
@@ -121,8 +127,32 @@ export class WidgetHost {
     return this.renderSequence;
   }
 
+  renderLoading() {
+    if (!this.mountNode) return;
+    this.container.classList.add('widget-host--loading');
+    this.mountNode.innerHTML = `
+      <div class="widget-card" aria-busy="true" aria-label="Loading \${escapeHtml(this.manifest.label)}">
+        <div class="widget-card__header">
+          <span class="widget-card__title">\${escapeHtml(this.manifest.label)}</span>
+        </div>
+        <div class="widget-skeleton">
+          <div class="widget-skeleton__line widget-skeleton__line--wide"></div>
+          <div class="widget-skeleton__line widget-skeleton__line--medium"></div>
+          <div class="widget-skeleton__line widget-skeleton__line--narrow"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  hasReceivedData() {
+    if (!Array.isArray(this.manifest.dataKeys) || this.manifest.dataKeys.length === 0) return true;
+    const syncData = this.shellAPI.sync?.getData?.() || {};
+    return this.manifest.dataKeys.some(key => syncData[key] != null);
+  }
+
   renderError(error) {
     this.runCleanup();
+    this.container.classList.remove('widget-host--loading');
     this.container.classList.add('widget-host--failed');
 
     if (!this.mountNode) {

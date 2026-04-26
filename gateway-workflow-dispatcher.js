@@ -91,6 +91,12 @@ class GatewayWorkflowDispatcher {
         });
       });
 
+      req.setTimeout(10000, () => {
+        req.destroy(new Error('Request timeout'));
+        this.log.error(`[Dispatcher] Timeout starting queued run ${runId.substring(0, 8)}`);
+        resolve();
+      });
+
       req.on('error', (err) => {
         this.log.error(`[Dispatcher] Error starting queued run ${runId.substring(0, 8)}: ${err.message}`);
         resolve();

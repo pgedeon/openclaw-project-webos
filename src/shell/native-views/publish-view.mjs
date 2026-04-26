@@ -35,7 +35,7 @@ export async function renderPublishView({ mountNode, api, adapter, stateStore, s
           <h2 style="margin:0 0 4px;color:var(--win11-text);font-size:1.2rem;font-weight:700;">📢 Publish Center</h2><span style="font-size:0.7rem;color:var(--win11-accent);opacity:0.7;margin-left:4px;" title="Live data">●</span>
           <p style="margin:0;color:var(--win11-text-secondary);font-size:0.85rem;">Tasks with active workflow runs ready for publishing.</p>
         </div>
-        <button id="puvRefresh" class="puv-btn">↻ Refresh</button>
+        <button id="puvRefresh" class="puv-btn" aria-label="Refresh data" >↻ Refresh</button>
       </div>
       <div id="puvStats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;"></div>
     </div>

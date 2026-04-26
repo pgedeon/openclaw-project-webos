@@ -197,7 +197,7 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
     if (isApproved && !a.runSessionActive) {
       h += '<hr class="apv-divider">';
       h += '<div style="display:flex;justify-content:space-between;align-items:center;">';
-      h += '<button class="apv-btn ghost apv-delete-trigger" data-run-id="' + esc(runId) + '">Cancel</button>';
+      h += '<button class="apv-btn ghost apv-delete-trigger" data-run-id="' + esc(runId) + '" aria-label="Cancel" >Cancel</button>';
       h += '<button class="apv-btn primary apv-execute" data-run-id="' + esc(runId) + '">\u25b6 Execute</button>';
       h += '</div>';
     }

@@ -222,6 +222,12 @@ export function createAPIClient(baseURL = '/api', options = {}) {
     const method = String(init.method || 'GET').toUpperCase();
     const url = normalizePath(baseURL, path);
     const requestInit = { ...init, method };
+    // Inject auth token for API requests
+    const authToken = globalThis.__DASHBOARD_AUTH_TOKEN__;
+    if (authToken && url.startsWith('/api')) {
+      requestInit.headers = new Headers(requestInit.headers || {});
+      requestInit.headers.set('Authorization', `Bearer ${authToken}`);
+    }
     const isDedupable = method === 'GET' && !requestInit.body;
 
     if (isDedupable && inflightGets.has(url)) {

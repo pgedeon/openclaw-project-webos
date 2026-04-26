@@ -913,9 +913,9 @@ class WorkflowRunsAPI {
     this.pool = pool || new Pool({
       host: process.env.POSTGRES_HOST || 'localhost',
       port: process.env.POSTGRES_PORT || 5432,
-      database: process.env.POSTGRES_DB || 'openclaw_dashboard',
-      user: process.env.POSTGRES_USER || 'openclaw',
-      password: process.env.POSTGRES_PASSWORD || 'openclaw_password'
+      database: process.env.POSTGRES_DB || 'mission_control',
+      user: process.env.POSTGRES_USER || 'postgres',
+      password: process.env.POSTGRES_PASSWORD || 'postgres'
     });
     this.tableAvailability = new Map();
   }
@@ -3871,7 +3871,7 @@ IMPORTANT: When you finish this scan run, mark it complete with DETAILED output.
           res.end(JSON.stringify({ error: 'runId and prompt required' }));
           return true;
         }
-        const pool = new Pool({ host: 'localhost', port: 5432, database: 'mission_control', user: process.env.POSTGRES_USER || 'openclaw', password: process.env.POSTGRES_PASSWORD || '' });
+        const pool = new Pool({ host: 'localhost', port: 5432, database: 'mission_control', user: process.env.POSTGRES_USER || 'postgres', password: process.env.POSTGRES_PASSWORD || 'postgres' });
         const runResult = await pool.query('SELECT workflow_type, output_summary, input_payload, status, gateway_session_id FROM workflow_runs WHERE id = $1', [runId]);
         const run = runResult.rows[0];
         await pool.end();

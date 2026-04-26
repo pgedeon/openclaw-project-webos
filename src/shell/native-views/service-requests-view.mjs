@@ -50,7 +50,7 @@ export async function renderServiceRequestsView({ mountNode, api, adapter, state
           <h2 style="margin:0 0 4px;color:var(--win11-text);font-size:1.2rem;font-weight:700;">🧾 Service Requests</h2><span style="font-size:0.7rem;color:var(--win11-accent);opacity:0.7;margin-left:4px;" title="Live data">●</span>
           <p style="margin:0;color:var(--win11-text-secondary);font-size:0.85rem;">Create, route, and track structured requests.</p>
         </div>
-        <button id="srvRefresh" class="srv-btn">↻ Refresh</button>
+        <button id="srvRefresh" class="srv-btn" aria-label="Refresh data" >↻ Refresh</button>
       </div>
       <div id="srvStats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;"></div>
     </div>
@@ -90,8 +90,8 @@ export async function renderServiceRequestsView({ mountNode, api, adapter, state
             <select class="srv-select" id="srvAgent"><option value="">Auto</option></select>
           </div>
           <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:4px;">
-            <button type="reset" class="srv-btn">Reset</button>
-            <button type="submit" class="srv-btn primary">Create</button>
+            <button type="reset" class="srv-btn" aria-label="Reset form" >Reset</button>
+            <button type="submit" class="srv-btn primary" aria-label="Create" >Create</button>
           </div>
         </form>
       </div>

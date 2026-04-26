@@ -14,21 +14,22 @@
       "displayName": "Qwen3.5 9b · lmstudio"
     },
     {
-      "id": "qwen/qwen3-coder-next",
-      "name": "qwen/qwen3-coder-next",
+      "id": "qwen3.6-35b-a3b-apex",
+      "name": "qwen3.6-35b-a3b-apex",
       "provider": "lmstudio",
       "providerBaseUrl": "http://192.168.0.11:1234/v1",
-      "reasoning": false,
+      "reasoning": true,
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "contextWindow": 150000,
-      "maxTokens": 8192,
-      "displayName": "Qwen3 Coder Next · lmstudio"
+      "maxTokens": 20192,
+      "displayName": "qwen3.6-35b-a3b-apex"
     },
     {
-      "id": "zai/glm-4.7-flash",
-      "name": "zai/glm-4.7-flash",
+      "id": "zai/GLM-4.7-flash",
+      "name": "zai/GLM-4.7-flash",
       "provider": "lmstudio",
       "providerBaseUrl": "http://192.168.0.11:1234/v1",
       "reasoning": true,
@@ -37,7 +38,7 @@
       ],
       "contextWindow": 60000,
       "maxTokens": 8192,
-      "displayName": "Glm 4.7 Flash · lmstudio"
+      "displayName": "GLM 4.7 Flash · lmstudio"
     },
     {
       "id": "mistralai/devstral-small-2-2512",
@@ -82,31 +83,30 @@
       "displayName": "Gemini 3 Pro Preview · google-gemini-cli"
     },
     {
-      "id": "moonshotai/kimi-k2.5",
-      "name": "moonshotai/kimi-k2.5",
+      "id": "minimaxai/minimax-m2.7",
+      "name": "minimaxai/minimax-m2.7",
       "provider": "nvidia-nim",
       "providerBaseUrl": "https://integrate.api.nvidia.com/v1",
       "reasoning": false,
       "input": [
-        "text",
-        "image"
+        "text"
       ],
       "contextWindow": 200000,
       "maxTokens": 8192,
-      "displayName": "Kimi K2.5 · nvidia-nim"
+      "displayName": "Minimax M2.7 · nvidia-nim"
     },
     {
-      "id": "stepfun/step-3.5-flash:free",
-      "name": "stepfun/step-3.5-flash:free",
+      "id": "google/gemma-4-31b-it:free",
+      "name": "google/gemma-4-31b-it:free",
       "provider": "openrouter1",
       "providerBaseUrl": "https://openrouter.ai/api/v1",
-      "reasoning": false,
+      "reasoning": true,
       "input": [
         "text"
       ],
-      "contextWindow": 256000,
+      "contextWindow": 131072,
       "maxTokens": 8192,
-      "displayName": "Step 3.5 Flash · openrouter1"
+      "displayName": "Gemma 4 31b It · openrouter1"
     },
     {
       "id": "arcee-ai/trinity-large-preview:free",
@@ -203,18 +203,30 @@
       "displayName": "Hunter Alpha · openrouter1"
     },
     {
-      "id": "openrouter/healer-alpha",
-      "name": "openrouter/healer-alpha",
+      "id": "minimax/minimax-m2.5:free",
+      "name": "minimax/minimax-m2.5:free",
       "provider": "openrouter1",
       "providerBaseUrl": "https://openrouter.ai/api/v1",
       "reasoning": true,
       "input": [
-        "text",
-        "image"
+        "text"
       ],
-      "contextWindow": 262144,
+      "contextWindow": 162144,
       "maxTokens": 65536,
-      "displayName": "Healer Alpha · openrouter1"
+      "displayName": "Minimax M2.5 · openrouter1"
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it:free",
+      "name": "google/gemma-4-26b-a4b-it:free",
+      "provider": "openrouter1",
+      "providerBaseUrl": "https://openrouter.ai/api/v1",
+      "reasoning": false,
+      "input": [
+        "text"
+      ],
+      "contextWindow": null,
+      "maxTokens": null,
+      "displayName": "Gemma 4 26b A4b It · openrouter1"
     },
     {
       "id": "mistralai/mistral-small-3.1-24b-instruct:free",
@@ -230,82 +242,137 @@
       "displayName": "Mistral Small 3.1 24b Instruct · openrouter2"
     },
     {
-      "id": "glm-5.1",
+      "id": "GLM-5.1",
       "name": "GLM-5.1",
       "provider": "zai",
-      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4/",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4",
       "reasoning": true,
       "input": [
         "text"
       ],
       "contextWindow": 200000,
-      "maxTokens": 128000,
-      "displayName": "GLM-5.1 · zai"
+      "maxTokens": 10304,
+      "displayName": "GLM-5.1"
     },
     {
       "id": "GLM-5-Turbo",
       "name": "GLM-5-Turbo",
       "provider": "zai",
-      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4/",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4",
       "reasoning": true,
       "input": [
         "text"
       ],
       "contextWindow": 200000,
-      "maxTokens": 128000,
+      "maxTokens": 10304,
       "displayName": "GLM-5-Turbo"
     },
     {
-      "id": "glm-4.7",
+      "id": "GLM-4.7",
       "name": "GLM-4.7",
       "provider": "zai",
-      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4/",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4",
       "reasoning": true,
       "input": [
         "text"
       ],
       "contextWindow": 128000,
-      "maxTokens": 128000,
-      "displayName": "GLM-4.7 · zai"
+      "maxTokens": 10304,
+      "displayName": "GLM-4.7"
     },
     {
-      "id": "glm-5",
+      "id": "GLM-5",
       "name": "GLM-5",
       "provider": "zai",
-      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4/",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4",
       "reasoning": true,
       "input": [
         "text"
       ],
       "contextWindow": 200000,
-      "maxTokens": 128000,
-      "displayName": "GLM-5 · zai"
+      "maxTokens": 10304,
+      "displayName": "GLM-5"
     },
     {
-      "id": "glm-4.5-air",
+      "id": "GLM-4.5-air",
       "name": "GLM-4.5 Air",
       "provider": "zai",
-      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4/",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4",
       "reasoning": false,
       "input": [
         "text"
       ],
       "contextWindow": 128000,
-      "maxTokens": 98304,
+      "maxTokens": 10304,
       "displayName": "GLM-4.5 Air · zai"
     },
     {
-      "id": "glm-4.5-flash",
+      "id": "GLM-4.5-flash",
       "name": "GLM-4.5 Flash",
       "provider": "zai",
-      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4/",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4",
       "reasoning": false,
       "input": [
         "text"
       ],
       "contextWindow": 128000,
-      "maxTokens": 8192,
+      "maxTokens": 10304,
       "displayName": "GLM-4.5 Flash · zai"
+    },
+    {
+      "id": "GLM-5v-turbo",
+      "name": "GLM-5V-Turbo",
+      "provider": "zai",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "reasoning": true,
+      "input": [
+        "text",
+        "image"
+      ],
+      "contextWindow": 200000,
+      "maxTokens": 10304,
+      "displayName": "GLM-5V-Turbo · zai"
+    },
+    {
+      "id": "GLM-4.6",
+      "name": "GLM-4.6",
+      "provider": "zai",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "reasoning": true,
+      "input": [
+        "text"
+      ],
+      "contextWindow": 128000,
+      "maxTokens": 10304,
+      "displayName": "GLM-4.6"
+    },
+    {
+      "id": "GLM-4.5v",
+      "name": "GLM-4.5V",
+      "provider": "zai",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "reasoning": true,
+      "input": [
+        "text",
+        "image"
+      ],
+      "contextWindow": 128000,
+      "maxTokens": 10304,
+      "displayName": "GLM-4.5V · zai"
+    },
+    {
+      "id": "GLM-4.6v",
+      "name": "GLM-4.6V",
+      "provider": "zai",
+      "providerBaseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "reasoning": true,
+      "input": [
+        "text",
+        "image"
+      ],
+      "contextWindow": 128000,
+      "maxTokens": 10304,
+      "displayName": "GLM-4.6V · zai"
     }
   ],
   "providers": [
@@ -331,20 +398,20 @@
       "id": "openrouter1",
       "baseUrl": "https://openrouter.ai/api/v1",
       "api": "openai-completions",
-      "modelCount": 9
+      "modelCount": 11
     },
     {
       "id": "openrouter2",
       "baseUrl": "https://openrouter.ai/api/v1",
       "api": "openai-completions",
-      "modelCount": 10
+      "modelCount": 12
     },
     {
       "id": "zai",
-      "baseUrl": "https://api.z.ai/api/coding/paas/v4/",
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
       "api": "openai-completions",
-      "modelCount": 6
+      "modelCount": 10
     }
   ],
-  "syncedAt": "2026-04-01T13:25:01.070Z"
+  "syncedAt": "2026-04-26T13:55:01.248Z"
 }

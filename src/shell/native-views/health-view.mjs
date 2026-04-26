@@ -33,7 +33,7 @@ export async function renderHealthView({ mountNode, api, sync }) {
 
   const header = document.createElement('div');
   header.className = 'hv-header';
-  header.innerHTML = `<div class="hv-title">💚 Health Check</div><button id="hv-refresh" class="hv-btn">↻ Refresh</button>`;
+  header.innerHTML = `<div class="hv-title">💚 Health Check</div><button id="hv-refresh" class="hv-btn" aria-label="Refresh data" >↻ Refresh</button>`;
   root.appendChild(header);
 
   const content = document.createElement('div');

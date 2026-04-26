@@ -56,6 +56,24 @@ function getModelChipLabel(modelId) {
   return d.length > 28 ? `${d.slice(0, 25)}…` : d;
 }
 
+function getCanonicalModelRef(model) {
+  if (!model) return '';
+  if (typeof model === 'string') return model.trim();
+  const id = typeof model.id === 'string' ? model.id.trim() : '';
+  const provider = typeof model.provider === 'string' ? model.provider.trim() : '';
+  if (!id) return '';
+  if (!provider || id.toLowerCase().startsWith(`${provider.toLowerCase()}/`)) return id;
+  return `${provider}/${id}`;
+}
+
+function modelRefMatchesSelection(model, selectedId = '') {
+  const selected = typeof selectedId === 'string' ? selectedId.trim() : '';
+  if (!selected) return false;
+  const bareId = typeof model?.id === 'string' ? model.id.trim() : '';
+  const canonicalId = getCanonicalModelRef(model);
+  return selected === bareId || selected === canonicalId;
+}
+
 function buildTaskMetadata(existing = {}, { preferredModel = '' } = {}) {
   const meta = { ...existing };
   const openclaw = { ...(meta.openclaw || {}) };
@@ -352,13 +370,15 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
         const provName = prov.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
         html += `<optgroup label="${escapeHtml(provName)} (${models.length})">`;
         for (const m of models) {
-          html += `<option value="${escapeHtml(m.id)}"${m.id === selectedId ? ' selected' : ''}${m.reasoning ? ' data-reasoning="true"' : ''}>${escapeHtml(m.displayName || getModelDisplayName(m.id))}${m.reasoning ? ' 🧠' : ''}</option>`;
+          const modelRef = getCanonicalModelRef(m);
+          html += `<option value="${escapeHtml(modelRef)}"${modelRefMatchesSelection(m, selectedId) ? ' selected' : ''}${m.reasoning ? ' data-reasoning="true"' : ''}>${escapeHtml(m.displayName || getModelDisplayName(modelRef))}${m.reasoning ? ' 🧠' : ''}</option>`;
         }
         html += '</optgroup>';
       }
     } else {
       for (const m of cachedModels) {
-        html += `<option value="${escapeHtml(m.id)}"${m.id === selectedId ? ' selected' : ''}>${escapeHtml(m.displayName || getModelDisplayName(m.id))}</option>`;
+        const modelRef = getCanonicalModelRef(m);
+        html += `<option value="${escapeHtml(modelRef)}"${modelRefMatchesSelection(m, selectedId) ? ' selected' : ''}>${escapeHtml(m.displayName || getModelDisplayName(modelRef))}</option>`;
       }
     }
     return html;
@@ -379,13 +399,15 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
         const provName = prov.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
         html += `<optgroup label="${escapeHtml(provName)} (${models.length})">`;
         for (const m of models) {
-          html += `<option value="${escapeHtml(m.id)}"${m.reasoning ? ' data-reasoning="true"' : ''}>${escapeHtml(m.displayName || getModelDisplayName(m.id))}${m.reasoning ? ' 🧠' : ''}</option>`;
+          const modelRef = getCanonicalModelRef(m);
+          html += `<option value="${escapeHtml(modelRef)}"${m.reasoning ? ' data-reasoning="true"' : ''}>${escapeHtml(m.displayName || getModelDisplayName(modelRef))}${m.reasoning ? ' 🧠' : ''}</option>`;
         }
         html += '</optgroup>';
       }
     } else {
       for (const m of cachedModels) {
-        html += `<option value="${escapeHtml(m.id)}">${escapeHtml(m.displayName || getModelDisplayName(m.id))}</option>`;
+        const modelRef = getCanonicalModelRef(m);
+        html += `<option value="${escapeHtml(modelRef)}">${escapeHtml(m.displayName || getModelDisplayName(modelRef))}</option>`;
       }
     }
     select.innerHTML = html;

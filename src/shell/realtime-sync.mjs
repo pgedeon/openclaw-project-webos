@@ -399,3 +399,48 @@ export function createRealtimeSync({ api, interval = SYNC_INTERVAL_MS }) {
 }
 
 export default createRealtimeSync;
+
+
+// ── SSE (Server-Sent Events) Integration ──────────────────
+// Connects to the /api/events endpoint for real-time push updates.
+// Falls back gracefully if SSE is unavailable.
+
+let sseSource = null;
+
+export function connectSSE() {
+  const token = globalThis.__DASHBOARD_AUTH_TOKEN__;
+  if (!token || sseSource) return;
+  
+  try {
+    sseSource = new EventSource('/api/events?token=' + encodeURIComponent(token));
+    
+    sseSource.addEventListener('task:changed', () => {
+      console.log('[SSE] task:changed received, triggering refresh');
+      if (typeof globalThis.__realtimeSyncForceRefresh === 'function') {
+        globalThis.__realtimeSyncForceRefresh();
+      }
+    });
+    
+    sseSource.addEventListener('project:changed', () => {
+      console.log('[SSE] project:changed received, triggering refresh');
+      if (typeof globalThis.__realtimeSyncForceRefresh === 'function') {
+        globalThis.__realtimeSyncForceRefresh();
+      }
+    });
+    
+    sseSource.addEventListener('workflow:changed', () => {
+      console.log('[SSE] workflow:changed received, triggering refresh');
+      if (typeof globalThis.__realtimeSyncForceRefresh === 'function') {
+        globalThis.__realtimeSyncForceRefresh();
+      }
+    });
+    
+    sseSource.onerror = () => {
+      // SSE will auto-reconnect, no action needed
+    };
+    
+    console.log('[SSE] Connected to /api/events');
+  } catch (e) {
+    console.warn('[SSE] Failed to connect:', e.message);
+  }
+}

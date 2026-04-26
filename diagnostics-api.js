@@ -47,7 +47,7 @@ function sendJSON(res, status, data) {
   const json = JSON.stringify(data, null, 2);
   res.writeHead(status, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*'
+    'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || '3876')
   });
   res.end(json);
 }

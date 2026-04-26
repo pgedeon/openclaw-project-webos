@@ -28,7 +28,7 @@ const WORKSPACE = process.env.WORKSPACE || '/root/.openclaw/workspace';
 const PORT = process.env.CRON_MANAGER_PORT || 3878;
 
 function sendJSON(res, status, data) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || '3876') });
   res.end(JSON.stringify(data));
 }
 
@@ -153,7 +153,7 @@ function runJob(id) {
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || '3876'),
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     });

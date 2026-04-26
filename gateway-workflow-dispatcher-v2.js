@@ -43,6 +43,7 @@ const SQL = {
     WHERE queue_rank <= GREATEST(max_concurrent - active_count, 0)
     ORDER BY routing_priority DESC, created_at ASC, id ASC
     LIMIT $1
+    FOR UPDATE SKIP LOCKED
   `,
   markDispatched: `
     UPDATE workflow_runs
@@ -277,9 +278,9 @@ function createDefaultPool() {
   return new Pool({
     host: process.env.POSTGRES_HOST || 'localhost',
     port: Number(process.env.POSTGRES_PORT || 5432),
-    database: process.env.POSTGRES_DB || 'openclaw_dashboard',
-    user: process.env.POSTGRES_USER || 'openclaw',
-    password: process.env.POSTGRES_PASSWORD
+    database: process.env.POSTGRES_DB || 'mission_control',
+    user: process.env.POSTGRES_USER || 'postgres',
+    password: process.env.POSTGRES_PASSWORD || 'postgres',
   });
 }
 
@@ -428,7 +429,7 @@ function normalizeStatsRow(row = {}) {
 function sendJSON(res, status, payload) {
   res.writeHead(status, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || '3876'),
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type'
   });

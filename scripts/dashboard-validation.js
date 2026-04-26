@@ -13,9 +13,9 @@ const CONFIG = {
   postgres: {
     host: process.env.POSTGRES_HOST || 'localhost',
     port: parseInt(process.env.POSTGRES_PORT) || 5432,
-    database: process.env.POSTGRES_DB || 'openclaw_dashboard',
-    user: process.env.POSTGRES_USER || 'openclaw',
-    password: process.env.POSTGRES_PASSWORD ,
+    database: process.env.POSTGRES_DB || 'mission_control',
+    user: process.env.POSTGRES_USER || 'postgres',
+    password: process.env.POSTGRES_PASSWORD || 'postgres',
   },
   apiBase: process.env.DASHBOARD_API_BASE || `http://localhost:${process.env.PORT || '3876'}`,
   maxIssues: 100

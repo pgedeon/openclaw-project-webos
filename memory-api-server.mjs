@@ -28,7 +28,7 @@ const UNIFIED_SCRIPT = '/root/.openclaw/workspace/scripts/memory_query_unified.j
 const PORT = process.env.MEMORY_API_PORT || 3879;
 
 function sendJSON(res, status, data) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || '3876') });
   res.end(JSON.stringify(data));
 }
 
@@ -163,7 +163,7 @@ function getMemoryStats() {
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || '3876'),
       'Access-Control-Allow-Methods': 'GET, PUT, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     });

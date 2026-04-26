@@ -49,6 +49,61 @@ const { serviceRequestsAPI } = require('./service-requests-api.js');
 const { orgAPI } = require('./org-api.js');
 const { createDiagnosticsHandler } = require('./diagnostics-api.js');
 
+// ── ROUTER MODULE IMPORTS (Phase 4A) ──────────────────────
+const Router = require('./routes/router');
+const { registerHealthRoutes } = require('./routes/health-routes');
+const { registerTaskRoutes } = require('./routes/task-routes');
+const { registerProjectRoutes } = require('./routes/project-routes');
+const { registerViewRoutes } = require('./routes/view-routes');
+const { registerCronRoutes } = require('./routes/cron-routes');
+const { registerAgentRoutes } = require('./routes/agent-routes');
+const { registerSSERoutes, broadcast } = require('./routes/sse-routes');
+const { registerSessionRoutes } = require('./routes/session-routes');
+const { registerChatRoutes } = require('./routes/chat-routes');
+
+function loadDashboardEnv() {
+  const envPath = path.join(__dirname, '.env');
+
+  if (!fs.existsSync(envPath)) {
+    return;
+  }
+
+  try {
+    const envLines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+
+    for (const rawLine of envLines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) {
+        continue;
+      }
+
+      const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+      if (!match) {
+        continue;
+      }
+
+      const [, key, rawValue] = match;
+      if (process.env[key] !== undefined) {
+        continue;
+      }
+
+      let value = rawValue.trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+
+      process.env[key] = value;
+    }
+  } catch (error) {
+    console.error(`⚠️  Failed to load dashboard .env: ${error.message}`);
+  }
+}
+
+loadDashboardEnv();
+
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
   console.error(`❌ Uncaught Exception: ${err.message}`);
@@ -68,6 +123,7 @@ const GATEWAY_STATUS_STALE_MS = 2 * 60 * 1000;
 const FILESYSTEM_API_SCRIPT = process.env.FILESYSTEM_API_SCRIPT || path.join(DASHBOARD_ROOT, 'filesystem-api-server.mjs');
 const FILESYSTEM_API_ROOT = process.env.OPENCLAW_FS_ROOT || '/root/.openclaw';
 const ASANA_JSON_SNAPSHOT_PATH = process.env.ASANA_JSON_SNAPSHOT_PATH || path.join(WORKSPACE, 'data/asana-db.json');
+const DASHBOARD_AUTH_TOKEN = process.env.DASHBOARD_AUTH_TOKEN || null;
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -100,15 +156,28 @@ function getAsanaStorageMode() {
   return 'postgres';
 }
 
-function getAsanaStorageHealth() {
+async function getAsanaStorageHealth() {
   const mode = getAsanaStorageMode();
   if (mode === 'postgres') {
+    let dbAlive = false;
+    let dbLatencyMs = null;
+    try {
+      if (asanaStorage && asanaStorage.pool) {
+        const start = Date.now();
+        const result = await asanaStorage.pool.query('SELECT 1 AS health_check');
+        dbAlive = result.rows && result.rows.length > 0;
+        dbLatencyMs = Date.now() - start;
+      }
+    } catch (e) {
+      dbAlive = false;
+    }
     return {
       mode,
-      ready: true,
-      databaseHealthy: true,
-      label: 'connected',
-      note: null,
+      ready: dbAlive,
+      databaseHealthy: dbAlive,
+      dbLatencyMs,
+      label: dbAlive ? 'connected' : 'unreachable',
+      note: dbAlive ? null : 'PostgreSQL connection failed health check',
     };
   }
   if (mode === 'json_snapshot') {
@@ -146,9 +215,9 @@ async function initAsanaStorage() {
       asanaStorage = new AsanaStorage({
         host: process.env.POSTGRES_HOST || 'localhost',
         port: parseInt(process.env.POSTGRES_PORT) || 5432,
-        database: process.env.POSTGRES_DB || 'openclaw_dashboard',
-        user: process.env.POSTGRES_USER || 'openclaw',
-        password: process.env.POSTGRES_PASSWORD,
+        database: process.env.POSTGRES_DB || 'mission_control',
+        user: process.env.POSTGRES_USER || 'postgres',
+        password: process.env.POSTGRES_PASSWORD || 'postgres',
       });
       await asanaStorage.init();
       console.log('✅ Asana PostgreSQL storage initialized');
@@ -206,18 +275,25 @@ async function initAsanaStorage() {
 function sendJSON(res, status, data) {
   res.writeHead(status, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': 'http://localhost:' + PORT,
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
   });
   res.end(JSON.stringify(data));
 }
 
 function sendFile(res, filePath) {
-  const fullPath = path.join(WORKSPACE, filePath);
+  // Security: reject obvious traversal patterns before joining
+  if (filePath.includes('..') || filePath.includes('\x00')) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
 
-  // Security: prevent directory traversal
-  if (!fullPath.startsWith(WORKSPACE)) {
+  const fullPath = path.resolve(WORKSPACE, filePath);
+
+  // Security: verify resolved path is within workspace (handles symlinks)
+  if (!fullPath.startsWith(WORKSPACE + path.sep) && fullPath !== WORKSPACE) {
     res.writeHead(403);
     res.end('Forbidden');
     return;
@@ -234,13 +310,20 @@ function sendFile(res, filePath) {
     const mime = MIME_TYPES[ext] || 'application/octet-stream';
     const headers = {
       'Content-Type': mime,
-      'Access-Control-Allow-Origin': '*'
+      'Access-Control-Allow-Origin': 'http://localhost:' + PORT
     };
     
-    // Force clear service worker cache for HTML/JS to prevent stale SW issues
+    // Cache static assets by type
     if (ext === '.html' || ext === '.js' || ext === '.mjs') {
+      // Force clear service worker cache for HTML/JS to prevent stale SW issues
       headers['Clear-Site-Data'] = '"cache"';
       headers['Cache-Control'] = 'no-store, max-age=0';
+    } else if (ext === '.css') {
+      headers['Cache-Control'] = 'public, max-age=3600';
+    } else if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp'].includes(ext)) {
+      headers['Cache-Control'] = 'public, max-age=86400';
+    } else if (['.woff', '.woff2', '.ttf', '.eot'].includes(ext)) {
+      headers['Cache-Control'] = 'public, max-age=604800';
     }
     
     res.writeHead(200, headers);
@@ -248,10 +331,19 @@ function sendFile(res, filePath) {
   });
 }
 
-function parseJSONBody(req) {
+function parseJSONBody(req, maxBytes = 1048576) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => body += chunk);
+    let bodyBytes = 0;
+    req.on('data', chunk => {
+      bodyBytes += chunk.length;
+      if (bodyBytes > maxBytes) {
+        reject(new Error('Request body too large'));
+        req.destroy();
+        return;
+      }
+      body += chunk;
+    });
     req.on('end', () => {
       if (!body) resolve({});
       try {
@@ -473,6 +565,65 @@ async function runCronJob(jobId) {
 }
 
 const diagnosticsHandler = createDiagnosticsHandler();
+
+// ── ROUTER SETUP (Phase 4A) ──────────────────────────────
+const router = new Router();
+registerSSERoutes(router);
+registerSessionRoutes(router);
+
+// ── Gateway client for chat ──────────────────────
+let gatewayClient = null;
+try {
+  const GatewayClient = require('./lib/gateway-client');
+
+  gatewayClient = new GatewayClient({
+    url: process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789',
+    token: process.env.OPENCLAW_GATEWAY_TOKEN || null,
+    password: process.env.OPENCLAW_GATEWAY_PASSWORD || null,
+    onConnected: () => broadcast('gateway:status', { connected: true }),
+    onDisconnected: () => broadcast('gateway:status', { connected: false }),
+  });
+
+  // Extract text from gateway message object
+  function extractGatewayText(message) {
+    if (!message) return '';
+    if (typeof message === 'string') return message;
+    const content = message.content;
+    if (!content) return '';
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content.filter(c => c.type === 'text').map(c => c.text || '').join('');
+    }
+    return '';
+  }
+
+  // Forward chat events to SSE clients
+  gatewayClient.on('chat', (payload) => {
+    console.log('[gateway-chat] event:', JSON.stringify(payload).slice(0, 200));
+    const { sessionKey, runId, state } = payload;
+    if (state === 'delta') {
+      broadcast('session:chat-delta', { sessionKey, runId, text: extractGatewayText(payload.message) });
+    } else if (state === 'final') {
+      broadcast('session:chat-final', { sessionKey, runId, message: payload.message });
+    } else if (state === 'aborted') {
+      broadcast('session:chat-aborted', { sessionKey, runId, message: payload.message || null });
+    } else if (state === 'error') {
+      broadcast('session:chat-error', { sessionKey, runId, error: payload.errorMessage || 'chat error' });
+    }
+  });
+
+  gatewayClient.start();
+} catch (err) {
+  console.error('⚠️  Gateway client not available:', err.message);
+}
+
+registerChatRoutes(router, gatewayClient);
+registerHealthRoutes(router);
+registerCronRoutes(router);
+registerAgentRoutes(router);
+registerTaskRoutes(router);
+registerProjectRoutes(router);
+registerViewRoutes(router);
 const server = http.createServer(async (req, res) => {
   const timestamp = new Date().toISOString();
   const url = req.url.split('?')[0];
@@ -484,15 +635,58 @@ const server = http.createServer(async (req, res) => {
   // Handle CORS preflight
   if (method === 'OPTIONS') {
     res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'http://localhost:' + PORT,
       'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
     });
     res.end();
     return;
   }
 
+
+  // ── AUTH MIDDLEWARE ──────────────────────────────────────
+  // Require Bearer token for all /api/* routes (except /api/health)
+  // when DASHBOARD_AUTH_TOKEN is set in environment
+  // SSE endpoints (/api/events) can also authenticate via ?token= query param
+  if (DASHBOARD_AUTH_TOKEN && url.startsWith('/api/') && url !== '/api/health') {
+    const authHeader = req.headers['authorization'] || '';
+    let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    // SSE fallback: accept token in query string
+    if (!token) {
+      const qs = (req.url || '').split('?')[1] || '';
+      const tokenParam = qs.split('&').find(p => p.startsWith('token='));
+      if (tokenParam) token = decodeURIComponent(tokenParam.split('=')[1]);
+    }
+    // Constant-time comparison to prevent timing attacks
+    const crypto = require('crypto');
+    const tokenMatch = token && DASHBOARD_AUTH_TOKEN &&
+      token.length === DASHBOARD_AUTH_TOKEN.length &&
+      crypto.timingSafeEqual(Buffer.from(token), Buffer.from(DASHBOARD_AUTH_TOKEN));
+    if (!tokenMatch) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized', message: 'Valid Bearer token required' }));
+      return;
+    }
+  }
+
   try {
+    // ── ROUTER DISPATCH (Phase 4A) ─────────────────────────────
+    // Try modular route handlers first; fall through to inline handlers if not matched
+    const routerCtx = {
+      sendJSON,
+      parseJSONBody,
+      asanaStorage,
+      STORAGE_TYPE,
+      PORT,
+      TASKS_FILE,
+      getAsanaStorageHealth,
+      normalizeTaskListProjectId,
+      readGatewayStatusSnapshot,
+      broadcast,
+    };
+    const routerHandled = await router.handle(req, res, url, method, routerCtx);
+    if (routerHandled) return;
+
     // ============================================
     // DIAGNOSTICS API
     // ============================================
@@ -544,855 +738,6 @@ const server = http.createServer(async (req, res) => {
     // ============================================
     // HEALTH & STATS
     // ============================================
-
-    // GET /api/health
-    if (url === '/api/health' && method === 'GET') {
-      const storageHealth = getAsanaStorageHealth();
-      sendJSON(res, 200, {
-        status: storageHealth.ready ? (storageHealth.databaseHealthy ? 'ok' : 'degraded') : 'error',
-        timestamp: new Date().toISOString(),
-        asana_storage: storageHealth.mode,
-        storage_type: STORAGE_TYPE,
-        storage_mode: storageHealth.mode,
-        storage_note: storageHealth.note,
-        port: PORT
-      });
-      return;
-    }
-
-    // GET /api/stats
-    if (url === '/api/stats' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const stats = await asanaStorage.stats();
-      sendJSON(res, 200, stats);
-      return;
-    }
-
-
-    // ============================================
-    // CITATION QUEUE API
-    // ============================================
-
-    // GET /api/citation-queue/status
-    if (url === '/api/citation-queue/status' && method === 'GET') {
-      try {
-        const { execSync } = require('child_process');
-        const result = execSync(
-          'python3 /root/.openclaw/workspace/affiliate-editorial/scripts/citation_queue.py --action status 2>/dev/null',
-          { encoding: 'utf-8', timeout: 5000 }
-        );
-        const data = JSON.parse(result);
-        sendJSON(res, 200, {
-          success: true,
-          ...data,
-          timestamp: new Date().toISOString()
-        });
-      } catch (err) {
-        console.error('[CitationQueue] Failed to get status:', err.message);
-        sendJSON(res, 500, { error: 'Failed to get citation queue status', details: err.message });
-      }
-      return;
-    }
-
-    // ============================================
-    // CRON API
-    // ============================================
-
-    // GET /api/cron/jobs
-    if (url === '/api/cron/jobs' && method === 'GET') {
-      try {
-        const jobs = await listCronJobs();
-        sendJSON(res, 200, { jobs });
-      } catch (err) {
-        console.error('[Cron] Failed to list jobs:', err);
-        sendJSON(res, 500, { error: 'Failed to list cron jobs' });
-      }
-      return;
-    }
-
-    // GET /api/cron/jobs/:id/runs
-    if (url.match(/^\/api\/cron\/jobs\/([^/]+)\/runs$/) && method === 'GET') {
-      const id = url.split('/')[4];
-      try {
-        const runs = await getCronJobRuns(id, 10);
-        sendJSON(res, 200, { runs });
-      } catch (err) {
-        console.error(`[Cron] Failed to get runs for ${id}:`, err);
-        sendJSON(res, 500, { error: 'Failed to get job runs' });
-      }
-      return;
-    }
-
-    // POST /api/cron/jobs/:id/run
-    if (url.match(/^\/api\/cron\/jobs\/([^/]+)\/run$/) && method === 'POST') {
-      const id = url.split('/')[4];
-      try {
-        await runCronJob(id);
-        sendJSON(res, 202, { success: true, message: 'Job started' });
-      } catch (err) {
-        console.error(`[Cron] Failed to run job ${id}:`, err);
-        sendJSON(res, 500, { error: 'Failed to start job' });
-      }
-      return;
-    }
-
-    // ============================================
-    // AGENTS API
-    // ============================================
-
-    // GET /api/agents - list available agents
-    if (url === '/api/agents' && method === 'GET') {
-      // Return agents from metrics API which has the right format
-      // The Operations page expects { agents: [...] } with heartbeat data
-      if (asanaStorage && asanaStorage.pool) {
-        try {
-          const { buildMetricsPayloads } = require('./metrics-api.js');
-          const payloads = await buildMetricsPayloads({
-            sendJSON,
-            asanaStorage,
-            pool: asanaStorage.pool
-          }, { days: 1 });
-          const agents = (payloads.agentsPayload || []).map(a => ({
-            id: a.agentId,
-            name: a.displayName,
-            status: a.status || 'idle',
-            lastHeartbeat: a.lastHeartbeat,
-            department: a.department?.name
-          }));
-          sendJSON(res, 200, { agents });
-          return;
-        } catch (err) {
-          console.error('/api/agents error:', err.message);
-        }
-      }
-      sendJSON(res, 200, { agents: [] });
-      return;
-    }
-
-    // ============================================
-    // PROJECTS API
-    // ============================================
-
-    // GET /api/projects
-    if (url === '/api/projects' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const projects = await asanaStorage.listProjects(query);
-      sendJSON(res, 200, projects);
-      return;
-    }
-    // GET /api/projects/default
-    if (url === '/api/projects/default' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const filters = {};
-      if (query.has('status')) filters.status = query.get('status');
-      try {
-        const project = await asanaStorage.getDefaultProject(filters);
-        if (!project) {
-          sendJSON(res, 404, { error: 'No default project found' });
-          return;
-        }
-        sendJSON(res, 200, project);
-      } catch (err) {
-        sendJSON(res, 500, { error: err.message });
-      }
-      return;
-    }
-
-
-    // GET /api/projects/:id
-    if (url.match(/^\/api\/projects\/[^/]+$/) && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const project = await asanaStorage.getProject(id);
-        sendJSON(res, 200, project);
-      } catch (err) {
-        sendJSON(res, 404, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/projects
-    if (url === '/api/projects' && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      try {
-        const data = await parseJSONBody(req);
-        const required = ['name'];
-        for (const field of required) {
-          if (!data[field]) {
-            sendJSON(res, 400, { error: `Missing required field: ${field}` });
-            return;
-          }
-        }
-        const project = await asanaStorage.createProject(data);
-        sendJSON(res, 201, project);
-      } catch (e) {
-        sendJSON(res, 400, { error: e.message });
-      }
-      return;
-    }
-
-    // PATCH /api/projects/:id
-    if (url.match(/^\/api\/projects\/[^/]+$/) && method === 'PATCH') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const data = await parseJSONBody(req);
-        const project = await asanaStorage.updateProject(id, data);
-        sendJSON(res, 200, project);
-      } catch (err) {
-        const status = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, status, { error: err.message });
-      }
-      return;
-    }
-
-    // DELETE /api/projects/:id
-    if (url.match(/^\/api\/projects\/[^/]+$/) && method === 'DELETE') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        await asanaStorage.archiveProject(id);
-        sendJSON(res, 200, { deleted: true, id });
-      } catch (err) {
-        const status = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, status, { error: err.message });
-      }
-      return;
-    }
-
-    // ============================================
-    // TASKS API
-    // ============================================
-
-    // GET /api/tasks/all (new endpoint to avoid conflict with legacy /api/tasks)
-    if (url === '/api/tasks/all' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const projectId = normalizeTaskListProjectId(query.get('project_id'));
-      const includeGraph = query.get('includeGraph') === 'true';
-      const includeArchived = query.get('include_archived') === 'true';
-      const includeDeleted = query.get('include_deleted') === 'true';
-      const includeChildProjects = query.get('include_child_projects') === 'true';
-      const depth = parseInt(query.get('depth')) || undefined;
-      const updatedSince = query.get('updated_since') || undefined;
-
-      let tasks;
-      if (projectId) {
-        tasks = await asanaStorage.listTasks(projectId, {
-          depth,
-          include_archived: includeArchived,
-          include_deleted: includeDeleted,
-          include_child_projects: includeChildProjects,
-          updated_since: updatedSince
-        });
-      } else {
-        tasks = await asanaStorage.listAllTasks({
-          include_archived: includeArchived,
-          include_deleted: includeDeleted,
-          updated_since: updatedSince
-        });
-      }
-      sendJSON(res, 200, tasks);
-      return;
-    }
-
-    // GET /api/tasks/:id
-    if (url.match(/^\/api\/tasks\/[^/]+$/) && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const includeGraph = query.get('includeGraph') === 'true';
-      const includeArchived = query.get('include_archived') === 'true';
-      const includeDeleted = query.get('include_deleted') === 'true';
-      try {
-        const task = await asanaStorage.getTask(id, {
-          includeGraph,
-          include_archived: includeArchived,
-          include_deleted: includeDeleted
-        });
-        sendJSON(res, 200, task);
-      } catch (err) {
-        const status = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, status, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/tasks
-    if (url === '/api/tasks' && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      try {
-        const data = await parseJSONBody(req);
-        const required = ['project_id', 'title'];
-        for (const field of required) {
-          if (!data[field]) {
-            const errMsg = `Missing required field: ${field}`;
-            console.log('[task-server]', errMsg);
-            sendJSON(res, 400, { error: errMsg });
-            return;
-          }
-        }
-        const task = await asanaStorage.createTask(data);
-        console.log('[task-server] Task created:', task.id);
-        sendJSON(res, 201, task);
-      } catch (e) {
-        console.error('[task-server] Error creating task:', e);
-        sendJSON(res, 400, { error: e.message });
-      }
-      return;
-    }
-
-    // PATCH /api/tasks/:id
-    if (url.match(/^\/api\/tasks\/[^/]+$/) && method === 'PATCH') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const data = await parseJSONBody(req);
-        // Detailed debug logging
-        console.log(`[TaskServer] PATCH /api/tasks/${id} received data:`, JSON.stringify(data, null, 2));
-        const task = await asanaStorage.updateTask(id, data);
-        console.log(`[TaskServer] PATCH /api/tasks/${id} succeeded, updated fields:`, Object.keys(data).join(', '));
-        sendJSON(res, 200, task);
-      } catch (err) {
-        // Capture full error details including stack for debugging
-        console.error(`[TaskServer] PATCH /api/tasks/${id} failed`);
-        console.error(`[TaskServer] Error message: ${err.message}`);
-        console.error(`[TaskServer] Error stack:`, err.stack);
-        const status = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, status, { error: err.message });
-      }
-      return;
-    }
-
-    // DELETE /api/tasks/:id
-    if (url.match(/^\/api\/tasks\/[^/]+$/) && method === 'DELETE') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const result = await asanaStorage.deleteTask(id);
-        sendJSON(res, 200, result);
-      } catch (err) {
-        const status = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, status, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/tasks/:id/archive
-    if (url.match(/^\/api\/tasks\/[^/]+\/archive$/) && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const result = await asanaStorage.archiveTask(id);
-        sendJSON(res, 200, result);
-      } catch (err) {
-        const status = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, status, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/tasks/:id/restore
-    if (url.match(/^\/api\/tasks\/[^/]+\/restore$/) && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const result = await asanaStorage.restoreTask(id);
-        sendJSON(res, 200, result);
-      } catch (err) {
-        const status = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, status, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/tasks/:id/move
-    if (url.match(/^\/api\/tasks\/[^/]+\/move$/) && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const { status } = await parseJSONBody(req);
-        if (!status) {
-          sendJSON(res, 400, { error: 'Missing status field' });
-          return;
-        }
-        const task = await asanaStorage.moveTask(id, status);
-        sendJSON(res, 200, task);
-      } catch (err) {
-        const statusCode = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, statusCode, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/tasks/:id/dependencies
-    if (url.match(/^\/api\/tasks\/[^/]+\/dependencies$/) && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const { add = [], remove = [] } = await parseJSONBody(req);
-        let deps = await asanaStorage.getDependencies(id);
-
-        for (const depId of add) {
-          if (!deps.includes(depId)) {
-            await asanaStorage.addDependency(id, depId);
-          }
-        }
-
-        for (const depId of remove) {
-          await asanaStorage.removeDependency(id, depId);
-        }
-
-        const updatedDeps = await asanaStorage.getDependencies(id);
-        sendJSON(res, 200, { dependencies: updatedDeps });
-      } catch (err) {
-        const statusCode = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, statusCode, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/tasks/:id/subtasks
-    if (url.match(/^\/api\/tasks\/[^/]+\/subtasks$/) && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const parentId = url.split('/')[3];
-      try {
-        const { task_id } = await parseJSONBody(req);
-        if (!task_id) {
-          sendJSON(res, 400, { error: 'Missing task_id field' });
-          return;
-        }
-        const result = await asanaStorage.addSubtask(parentId, task_id);
-        sendJSON(res, 200, result);
-      } catch (err) {
-        const statusCode = err.message.includes('not found') || err.message.includes('Circular') ? 400 : 404;
-        sendJSON(res, statusCode, { error: err.message });
-      }
-      return;
-    }
-
-    // GET /api/tasks/:id/history
-    if (url.match(/^\/api\/tasks\/[^/]+\/history$/) && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const taskId = url.split('/')[3];
-      try {
-        const history = await asanaStorage.getAuditLog(taskId, 100);
-        sendJSON(res, 200, { task_id: taskId, history });
-      } catch (err) {
-        const statusCode = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, statusCode, { error: err.message });
-      }
-      return;
-    }
-
-    // ============================================
-    // VIEWS API
-    // ============================================
-
-    // SAVED VIEWS CRUD
-
-    // GET /api/views?project_id=X
-    if (url === '/api/views' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const projectId = query.get('project_id');
-      if (!projectId) {
-        sendJSON(res, 400, { error: 'project_id query parameter required' });
-        return;
-      }
-      try {
-        const views = await asanaStorage.listSavedViews(projectId);
-        sendJSON(res, 200, views);
-      } catch (err) {
-        sendJSON(res, 500, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/views
-    if (url === '/api/views' && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      try {
-        const data = await parseJSONBody(req);
-        const required = ['project_id', 'name', 'filters', 'created_by'];
-        for (const field of required) {
-          if (data[field] === undefined) {
-            sendJSON(res, 400, { error: `Missing required field: ${field}` });
-            return;
-          }
-        }
-        const view = await asanaStorage.createSavedView(
-          data.project_id,
-          data.name,
-          data.filters,
-          data.sort || null,
-          data.created_by
-        );
-        sendJSON(res, 201, view);
-      } catch (e) {
-        sendJSON(res, 400, { error: e.message });
-      }
-      return;
-    }
-
-    // GET /api/views/:id (exclude built-in views: board, timeline, agent)
-    if (url.match(/^\/api\/views\/(?!board$|timeline$|agent$)[^/]+$/) && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const view = await asanaStorage.getSavedView(id);
-        if (!view) {
-          sendJSON(res, 404, { error: 'Saved view not found' });
-          return;
-        }
-        sendJSON(res, 200, view);
-      } catch (err) {
-        sendJSON(res, 500, { error: err.message });
-      }
-      return;
-    }
-
-    // PATCH /api/views/:id (exclude built-in views: board, timeline, agent)
-    if (url.match(/^\/api\/views\/(?!board$|timeline$|agent$)[^/]+$/) && method === 'PATCH') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const data = await parseJSONBody(req);
-        // Only allow updating name, filters, sort
-        const updates = {};
-        if (data.name !== undefined) updates.name = data.name;
-        if (data.filters !== undefined) updates.filters = data.filters;
-        if (data.sort !== undefined) updates.sort = data.sort;
-        const view = await asanaStorage.updateSavedView(id, updates);
-        sendJSON(res, 200, view);
-      } catch (err) {
-        const status = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, status, { error: err.message });
-      }
-      return;
-    }
-
-    // DELETE /api/views/:id (exclude built-in views: board, timeline, agent)
-    if (url.match(/^\/api\/views\/(?!board$|timeline$|agent$)[^/]+$/) && method === 'DELETE') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const id = url.split('/')[3];
-      try {
-        const deleted = await asanaStorage.deleteSavedView(id);
-        if (!deleted) {
-          sendJSON(res, 404, { error: 'Saved view not found' });
-          return;
-        }
-        sendJSON(res, 200, { deleted: true, id });
-      } catch (err) {
-        sendJSON(res, 500, { error: err.message });
-      }
-      return;
-    }
-
-    // ============================================
-    // BUILT-IN VIEWS (board, timeline, agent)
-    // ============================================
-
-    // GET /api/views/board
-    if (url === '/api/views/board' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const projectId = query.get('project_id');
-      if (!projectId) {
-        sendJSON(res, 400, { error: 'project_id query parameter required' });
-        return;
-      }
-      try {
-        const board = await asanaStorage.getBoardView(projectId);
-        sendJSON(res, 200, board);
-      } catch (err) {
-        sendJSON(res, 404, { error: err.message });
-      }
-      return;
-    }
-
-    // GET /api/views/timeline
-    if (url === '/api/views/timeline' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const projectId = query.get('project_id');
-      if (!projectId) {
-        sendJSON(res, 400, { error: 'project_id query parameter required' });
-        return;
-      }
-      try {
-        const timeline = await asanaStorage.getTimelineView(
-          projectId,
-          query.get('start'),
-          query.get('end')
-        );
-        sendJSON(res, 200, timeline);
-      } catch (err) {
-        sendJSON(res, 404, { error: err.message });
-      }
-      return;
-    }
-
-    // GET /api/views/agent
-    if (url === '/api/views/agent' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const agentName = query.get('agent_name');
-      if (!agentName) {
-        sendJSON(res, 400, { error: 'agent_name query parameter required' });
-        return;
-      }
-      try {
-        const page = parseInt(query.get('page')) || 1;
-        const limit = parseInt(query.get('limit')) || 50;
-        const queue = await asanaStorage.getAgentQueue(agentName, ['ready', 'in_progress'], { page, limit });
-        sendJSON(res, 200, { agent: agentName, tasks: queue.tasks, pagination: queue.pagination });
-      } catch (err) {
-        const statusCode = err.message.includes('not found') ? 404 : 500;
-        sendJSON(res, statusCode, { error: err.message });
-      }
-      return;
-    }
-
-    // ============================================
-    // AGENT EXECUTION API
-    // ============================================
-
-    // POST /api/agent/claim
-    if (url === '/api/agent/claim' && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      try {
-        const { task_id, agent_name } = await parseJSONBody(req);
-        if (!task_id || !agent_name) {
-          sendJSON(res, 400, { error: 'task_id and agent_name required' });
-          return;
-        }
-        const result = await asanaStorage.claimTask(task_id, agent_name);
-        sendJSON(res, 200, result);
-      } catch (err) {
-        const statusCode = err.message.includes('locked') ? 409 : 404;
-        sendJSON(res, statusCode, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/agent/release
-    if (url === '/api/agent/release' && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      try {
-        const { task_id } = await parseJSONBody(req);
-        if (!task_id) {
-          sendJSON(res, 400, { error: 'task_id required' });
-          return;
-        }
-        const result = await asanaStorage.releaseTask(task_id);
-        sendJSON(res, 200, result);
-      } catch (err) {
-        const statusCode = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, statusCode, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/agents/heartbeat
-    if (url === '/api/agents/heartbeat' && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      try {
-        const { agent_name, status = 'online' } = await parseJSONBody(req);
-        if (!agent_name) {
-          sendJSON(res, 400, { error: 'agent_name required' });
-          return;
-        }
-        await asanaStorage.recordAgentHeartbeat(agent_name, status);
-        sendJSON(res, 200, { ok: true });
-      } catch (err) {
-        sendJSON(res, 500, { error: err.message });
-      }
-      return;
-    }
-
-    // GET /api/agents/status
-    if (url === '/api/agents/status' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      try {
-        const statuses = await asanaStorage.listAgentStatuses();
-        sendJSON(res, 200, { agents: statuses });
-      } catch (err) {
-        sendJSON(res, 500, { error: err.message });
-      }
-      return;
-    }
-
-    // POST /api/tasks/:id/retry
-    if (url.startsWith('/api/tasks/') && url.endsWith('/retry') && method === 'POST') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      try {
-        const parts = url.split('/');
-        const taskId = parts[3];
-        if (!taskId) {
-          sendJSON(res, 400, { error: 'task_id required in URL' });
-          return;
-        }
-        const result = await asanaStorage.retryTask(taskId);
-        // Fetch updated task
-        const task = await asanaStorage.getTask(taskId);
-        sendJSON(res, 200, { ...result, task });
-      } catch (err) {
-        const statusCode = err.message.includes('not found') ? 404 : 400;
-        sendJSON(res, statusCode, { error: err.message });
-      }
-      return;
-    }
-
-    // GET /api/lead-handoffs - Activity feed with task/project context
-    if (url === '/api/lead-handoffs' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const actionFilter = query.get('action'); // comma-separated: claim,release,update,move,create,delete,archive
-      const actorFilter = query.get('actor');
-      const projectFilter = query.get('project_id');
-      const limit = Math.max(1, Math.min(200, parseInt(query.get('limit'), 10) || 50));
-      const offset = Math.max(0, parseInt(query.get('offset'), 10) || 0);
-      try {
-        const result = await asanaStorage.getLeadHandoffs({ actionFilter, actorFilter, projectFilter, limit, offset });
-        sendJSON(res, 200, result);
-      } catch (err) {
-        sendJSON(res, 500, { error: err.message });
-      }
-      return;
-    }
-
-        // GET /api/audit - query audit log with optional filters
-    if (url === '/api/audit' && method === 'GET') {
-      if (!asanaStorage) {
-        sendJSON(res, 503, { error: 'Asana storage not initialized' });
-        return;
-      }
-      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-      const filters = {};
-      if (query.has('task_id')) filters.task_id = query.get('task_id');
-      if (query.has('q')) filters.q = query.get('q');
-      if (query.has('actor')) filters.actor = query.get('actor');
-      if (query.has('action')) filters.action = query.get('action');
-      if (query.has('start_date')) filters.start_date = query.get('start_date');
-      if (query.has('end_date')) filters.end_date = query.get('end_date');
-      if (query.has('entity_type')) filters.entity_type = query.get('entity_type');
-      if (query.has('governance_only')) filters.governance_only = query.get('governance_only') === 'true';
-      const limit = Math.max(1, parseInt(query.get('limit'), 10) || 100);
-      const offset = Math.max(0, parseInt(query.get('offset'), 10) || 0);
-      try {
-        const result = await asanaStorage.queryAuditLog(filters, limit, offset);
-        if (Array.isArray(result)) {
-          sendJSON(res, 200, { logs: result, total: result.length, limit, offset });
-        } else {
-          sendJSON(res, 200, { logs: result.logs || [], total: result.total || 0, limit, offset });
-        }
-      } catch (err) {
-        sendJSON(res, 500, { error: err.message });
-      }
-      return;
-    }
-
-    // ============================================
     // ORG API (Agents, Departments)
     // ============================================
     
@@ -1411,7 +756,7 @@ const server = http.createServer(async (req, res) => {
     if (url === '/api/health-status' && method === 'GET') {
       try {
         const gatewaySnapshot = readGatewayStatusSnapshot();
-        const storageHealth = getAsanaStorageHealth();
+        const storageHealth = await getAsanaStorageHealth();
         const databaseHealthy = storageHealth.databaseHealthy;
         const gatewayHealthy = gatewaySnapshot.healthy;
         const overallStatus = databaseHealthy && gatewayHealthy
@@ -1589,7 +934,19 @@ const server = http.createServer(async (req, res) => {
 
     // Serve webos desktop at root
     if (url === '/') {
-      sendFile(res, 'dashboard/index.html');
+      // Serve dashboard with auth token injected
+      if (DASHBOARD_AUTH_TOKEN) {
+        const fs = require('fs');
+        const htmlPath = path.join(WORKSPACE, 'dashboard/index.html');
+        fs.readFile(htmlPath, 'utf8', (err, html) => {
+          if (err) { res.writeHead(404); res.end('Not Found'); return; }
+          const injected = html.replace('</head>', `  <script>globalThis.__DASHBOARD_AUTH_TOKEN__="${DASHBOARD_AUTH_TOKEN}";</script>\n</head>`);
+          res.writeHead(200, { 'Content-Type': 'text/html', 'Clear-Site-Data': '"cache"', 'Cache-Control': 'no-store' });
+          res.end(injected);
+        });
+      } else {
+        sendFile(res, 'dashboard/index.html');
+      }
       return;
     }
 
@@ -1603,8 +960,14 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Security: refuse to bind 0.0.0.0 without auth token
+if (!DASHBOARD_AUTH_TOKEN && process.env.REQUIRE_AUTH !== 'false') {
+  console.error('❌ FATAL: DASHBOARD_AUTH_TOKEN is not set. Server binds to 0.0.0.0 — set a token or export REQUIRE_AUTH=false to override.');
+  process.exit(1);
+}
+
 server.listen(PORT, '0.0.0.0', async () => {
-  console.log(`📋 Task Server running at http://0.0.0.0:${PORT}`);
+  console.log(`📋 Task Server running at http://localhost:${PORT}`);
   console.log(`   Dashboard: http://localhost:${PORT}/`);
   console.log(`   Legacy API: http://localhost:${PORT}/api/tasks (markdown)`);
   console.log(`   New API: http://localhost:${PORT}/api/projects`);
@@ -1613,7 +976,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   console.log(`   Health: http://localhost:${PORT}/api/health`);
   console.log(`   Task file: ${TASKS_FILE}`);
   console.log(`   Storage type: ${STORAGE_TYPE}`);
-  console.log(`   Accessible from network interfaces`);
+  console.log(`   Accessible from local network (auth required)`);
 
   // Initialize Asana storage
   await initAsanaStorage();
@@ -1624,3 +987,25 @@ server.listen(PORT, '0.0.0.0', async () => {
   }
   process.exit(1);
 });
+
+// Graceful shutdown
+function gracefulShutdown(signal) {
+  console.log(`\n Received ${signal}, shutting down gracefully...`);
+  server.close(() => {
+    if (asanaStorage && asanaStorage.pool) {
+      asanaStorage.pool.end().then(() => {
+        console.log(' Database pool drained');
+        process.exit(0);
+      }).catch(() => process.exit(1));
+    } else {
+      process.exit(0);
+    }
+  });
+  // Force exit after 10s if connections don't close
+  setTimeout(() => {
+    console.error(' Forcing shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

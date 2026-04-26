@@ -834,7 +834,7 @@ async function persistDepartmentDailyMetrics(context, metricDateInput = new Date
   const snapshots = [];
 
   for (const department of payloads.departmentsPayload) {
-    if (!department?.departmentId) continue;
+    if (!department?.departmentId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(department.departmentId)) continue;
 
     const snapshot = {
       metricDate,

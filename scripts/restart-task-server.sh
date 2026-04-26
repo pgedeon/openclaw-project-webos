@@ -5,8 +5,47 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_WORKSPACE_ROOT="$(cd "$REPO_ROOT/.." && pwd)"
+DASHBOARD_ENV_FILE="${DASHBOARD_ENV_FILE:-$REPO_ROOT/.env}"
 
 cd "$REPO_ROOT"
+
+load_env_file_if_unset() {
+  local env_file="$1"
+  local raw_line=""
+  local line=""
+  local key=""
+  local value=""
+
+  if [ ! -f "$env_file" ]; then
+    return 0
+  fi
+
+  while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+    line="${raw_line#"${raw_line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+
+    if [ -z "$line" ] || [[ "$line" == \#* ]]; then
+      continue
+    fi
+
+    if [[ "$line" =~ ^(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      key="${BASH_REMATCH[2]}"
+      value="${BASH_REMATCH[3]}"
+
+      if [ -n "${!key+x}" ]; then
+        continue
+      fi
+
+      if [[ "$value" =~ ^\".*\"$ ]] || [[ "$value" =~ ^\'.*\'$ ]]; then
+        value="${value:1:${#value}-2}"
+      fi
+
+      export "$key=$value"
+    fi
+  done < "$env_file"
+}
+
+load_env_file_if_unset "$DASHBOARD_ENV_FILE"
 
 PORT="${PORT:-3876}"
 HOST="${HOST:-127.0.0.1}"
