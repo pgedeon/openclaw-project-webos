@@ -60,6 +60,7 @@ const { registerAgentRoutes } = require('./routes/agent-routes');
 const { registerSSERoutes, broadcast } = require('./routes/sse-routes');
 const { registerSessionRoutes } = require('./routes/session-routes');
 const { registerChatRoutes } = require('./routes/chat-routes');
+const { registerBingRoutes } = require('./routes/bing-routes');
 
 function loadDashboardEnv() {
   const envPath = path.join(__dirname, '.env');
@@ -618,6 +619,10 @@ try {
 }
 
 registerChatRoutes(router, gatewayClient);
+
+// ── Bing Webmaster ──────────────────────────────
+const BING_API_KEY = process.env.BING_WEBMASTER_API_KEY || null;
+registerBingRoutes(router, BING_API_KEY);
 registerHealthRoutes(router);
 registerCronRoutes(router);
 registerAgentRoutes(router);
