@@ -250,7 +250,7 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
       const input = document.createElement('input');
       input.className = 'cp-input';
       input.dataset.key = key;
-      input.type = fieldSchema.type === 'password' ? 'password' : fieldSchema.type === 'color' ? 'color' : 'text';
+      input.type = fieldSchema.type === 'password' ? 'password' : (fieldSchema.type === 'color' || key === 'accentColor') ? 'color' : 'text';
       input.value = fieldSchema.type === 'password' ? '' : String(currentValue ?? '');
       if (fieldSchema.type === 'password') input.placeholder = '••••••••';
       input.addEventListener('input', () => {
