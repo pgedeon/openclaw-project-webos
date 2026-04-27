@@ -1,5 +1,10 @@
 /**
  * Settings routes — Control Panel API
+ *
+ * Phase 2 additions:
+ *   - Rate limiting on writes (10 writes/min)
+ *   - Changelog endpoint (GET /api/settings/changelog)
+ *   - Graceful restart endpoint (POST /api/settings/restart)
  */
 
 function sendJSON(res, status, data) {
@@ -18,6 +23,25 @@ function parseBody(req) {
 }
 
 function registerSettingsRoutes(router, settingsStore, deps) {
+
+  // ── Rate limiter: 10 write operations per 60 seconds ──
+  const writeTimestamps = [];
+  const WRITE_LIMIT = 10;
+  const WRITE_WINDOW_MS = 60 * 1000;
+
+  function checkRateLimit() {
+    const now = Date.now();
+    // Prune old entries
+    while (writeTimestamps.length > 0 && writeTimestamps[0] < now - WRITE_WINDOW_MS) {
+      writeTimestamps.shift();
+    }
+    if (writeTimestamps.length >= WRITE_LIMIT) {
+      const oldest = writeTimestamps[0];
+      const waitSecs = Math.ceil((oldest + WRITE_WINDOW_MS - now) / 1000);
+      throw new Error(`Rate limit reached (${WRITE_LIMIT} writes/min). Try again in ${waitSecs}s.`);
+    }
+    writeTimestamps.push(now);
+  }
 
   // ── Specific routes FIRST ──
 
@@ -52,6 +76,15 @@ function registerSettingsRoutes(router, settingsStore, deps) {
 
   router.add('GET', '/api/settings/restart-required', async (req, res) => {
     sendJSON(res, 200, settingsStore.isRestartRequired());
+  });
+
+  router.add('GET', '/api/settings/changelog', async (req, res) => {
+    try {
+      const log = settingsStore.getChangeLog();
+      sendJSON(res, 200, { ok: true, changelog: log });
+    } catch (err) {
+      sendJSON(res, 500, { error: err.message });
+    }
   });
 
   router.add('POST', '/api/settings/test-db', async (req, res) => {
@@ -93,6 +126,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
 
   router.add('POST', '/api/settings/import', async (req, res) => {
     try {
+      checkRateLimit();
       const body = await parseBody(req);
       if (!body.settings || typeof body.settings !== 'object') {
         return sendJSON(res, 400, { error: 'settings object required' });
@@ -100,7 +134,8 @@ function registerSettingsRoutes(router, settingsStore, deps) {
       const results = settingsStore.importSettings(body.settings);
       sendJSON(res, 200, { ok: true, imported: results.length, ...settingsStore.isRestartRequired() });
     } catch (err) {
-      sendJSON(res, 400, { error: err.message });
+      const status = err.message.includes('Rate limit') ? 429 : 400;
+      sendJSON(res, status, { error: err.message });
     }
   });
 
@@ -113,16 +148,37 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
+  router.add('POST', '/api/settings/restart', async (req, res) => {
+    try {
+      const body = await parseBody(req);
+      const confirm = body.confirm;
+      if (confirm !== 'restart') {
+        return sendJSON(res, 400, { error: 'Body must include { "confirm": "restart" }' });
+      }
+      // Respond before shutting down
+      sendJSON(res, 200, { ok: true, message: 'Restarting server...' });
+      // Graceful restart: close server, let process manager restart it
+      setTimeout(() => {
+        console.log('⚙️ Settings-triggered graceful restart');
+        process.emit('SIGTERM');
+      }, 500);
+    } catch (err) {
+      sendJSON(res, 500, { error: err.message });
+    }
+  });
+
   // ── Parameterized routes AFTER specific routes ──
 
   router.add('PUT', '/api/settings/key/:key', async (req, res, ctx, params) => {
     try {
+      checkRateLimit();
       const body = await parseBody(req);
       if (body.value === undefined) return sendJSON(res, 400, { error: 'value required' });
       const result = settingsStore.set(params.key, body.value);
       sendJSON(res, 200, { ok: true, ...result, ...settingsStore.isRestartRequired() });
     } catch (err) {
-      sendJSON(res, 400, { error: err.message });
+      const status = err.message.includes('Rate limit') ? 429 : 400;
+      sendJSON(res, status, { error: err.message });
     }
   });
 
@@ -140,11 +196,13 @@ function registerSettingsRoutes(router, settingsStore, deps) {
 
   router.add('PUT', '/api/settings/:category', async (req, res, ctx, params) => {
     try {
+      checkRateLimit();
       const body = await parseBody(req);
       const results = settingsStore.setCategory(params.category, body);
       sendJSON(res, 200, { ok: true, updated: results, ...settingsStore.isRestartRequired() });
     } catch (err) {
-      sendJSON(res, 400, { error: err.message });
+      const status = err.message.includes('Rate limit') ? 429 : 400;
+      sendJSON(res, status, { error: err.message });
     }
   });
 

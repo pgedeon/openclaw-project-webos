@@ -1,7 +1,12 @@
 /**
  * Settings / Control Panel View
  *
- * Tabbed interface for configuring all OpenClaw Desktop settings.
+ * Phase 2 additions:
+ *   - Save & Restart button (writes + triggers graceful restart)
+ *   - Import settings from JSON file
+ *   - Unsaved changes warning when switching tabs
+ *   - Changelog display (last 20 changes)
+ *   - Unsaved indicator in tab badge
  */
 
 import { ensureNativeRoot, escapeHtml } from './helpers.mjs';
@@ -31,6 +36,8 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
   let restartRequired = false;
   let pendingKeys = [];
   let dirty = {};
+  let changelog = [];
+  let saveInProgress = false;
 
   // ── Styles ─────────────────────────────────────
   const style = document.createElement('style');
@@ -50,6 +57,11 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
     .cp-tab:hover { background:var(--win11-surface-active, rgba(255,255,255,0.04)); }
     .cp-tab.active { background:rgba(96,205,255,0.08); border-left-color:var(--win11-accent); color:var(--win11-accent); }
     .cp-tab-icon { font-size:1rem; width:20px; text-align:center; }
+    .cp-dirty-dot {
+      width:7px; height:7px; border-radius:50%; background:#eab308;
+      margin-left:auto; flex-shrink:0; display:none;
+    }
+    .cp-dirty-dot.visible { display:block; }
     .cp-content { flex:1; overflow-y:auto; padding:20px 24px; }
     .cp-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
     .cp-title { font-size:1.05rem; font-weight:600; }
@@ -95,6 +107,7 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
     .cp-btn-primary { background:var(--win11-accent); color:#fff; }
     .cp-btn-secondary { background:var(--win11-surface-active); color:var(--win11-text); border:1px solid var(--win11-border); }
     .cp-btn-danger { background:#ef4444; color:#fff; }
+    .cp-btn-warn { background:#f59e0b; color:#fff; }
     .cp-btn-row { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
     .cp-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; font-size:0.72rem; }
     .cp-badge-ok { background:rgba(34,197,94,0.15); color:#22c55e; }
@@ -111,6 +124,7 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
     }
     .cp-toast-ok { background:rgba(34,197,94,0.9); color:#fff; }
     .cp-toast-err { background:rgba(239,68,68,0.9); color:#fff; }
+    .cp-toast-warn { background:rgba(234,179,8,0.9); color:#fff; }
     @keyframes cp-fade-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
     .cp-select {
       padding:7px 12px; border-radius:5px; border:1px solid var(--win11-border);
@@ -120,6 +134,27 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
     .cp-select:focus { outline:none; border-color:var(--win11-accent); }
     .cp-spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--win11-border); border-top-color:var(--win11-accent); border-radius:50%; animation:cp-spin 0.6s linear infinite; }
     @keyframes cp-spin { to { transform:rotate(360deg); } }
+    .cp-changelog { font-size:0.75rem; }
+    .cp-changelog-entry {
+      padding:6px 0; border-bottom:1px solid var(--win11-border);
+      display:flex; gap:10px; align-items:flex-start;
+    }
+    .cp-changelog-time { color:var(--win11-text-tertiary); white-space:nowrap; min-width:70px; }
+    .cp-changelog-key { color:var(--win11-accent); font-weight:500; }
+    .cp-changelog-val { color:var(--win11-text-secondary); }
+    .cp-confirm-overlay {
+      position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:99998;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .cp-confirm-dialog {
+      background:var(--win11-surface-solid, #16213e);
+      border:1px solid var(--win11-border); border-radius:10px;
+      padding:24px; max-width:380px; width:90%; text-align:center;
+    }
+    .cp-confirm-dialog h3 { font-size:1rem; margin-bottom:8px; }
+    .cp-confirm-dialog p { font-size:0.82rem; color:var(--win11-text-secondary); margin-bottom:16px; }
+    .cp-confirm-dialog .cp-btn-row { justify-content:center; }
+    .cp-file-input { display:none; }
   `;
   mountNode.appendChild(style);
 
@@ -137,8 +172,18 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
     const tab = document.createElement('div');
     tab.className = `cp-tab${cat === activeTab ? ' active' : ''}`;
     tab.dataset.category = cat;
-    tab.innerHTML = `<span class="cp-tab-icon">${meta.icon}</span><span>${meta.label}</span>`;
-    tab.addEventListener('click', () => switchTab(cat));
+    tab.innerHTML = `<span class="cp-tab-icon">${meta.icon}</span><span>${meta.label}</span><span class="cp-dirty-dot" id="cp-dirty-${cat}"></span>`;
+    tab.addEventListener('click', () => {
+      if (Object.keys(dirty).length > 0) {
+        showConfirmDialog(
+          'Unsaved Changes',
+          'You have unsaved changes on this tab. Discard them and switch?',
+          () => { dirty = {}; updateDirtyDots(); switchTab(cat); }
+        );
+      } else {
+        switchTab(cat);
+      }
+    });
     sidebar.appendChild(tab);
   }
 
@@ -150,6 +195,15 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
   layout.appendChild(sidebar);
   layout.appendChild(content);
   mountNode.appendChild(layout);
+
+  // ── Hidden file input for import ──
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.json';
+  fileInput.className = 'cp-file-input';
+  fileInput.id = 'cp-import-file';
+  fileInput.addEventListener('change', handleImportFile);
+  mountNode.appendChild(fileInput);
 
   // ── Helpers ────────────────────────────────────
 
@@ -189,6 +243,38 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
     setTimeout(() => toast.remove(), 3000);
   }
 
+  function showConfirmDialog(title, message, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'cp-confirm-overlay';
+    overlay.innerHTML = `
+      <div class="cp-confirm-dialog">
+        <h3>${escapeHtml(title)}</h3>
+        <p>${escapeHtml(message)}</p>
+        <div class="cp-btn-row">
+          <button class="cp-btn cp-btn-secondary" id="cp-confirm-cancel">Cancel</button>
+          <button class="cp-btn cp-btn-primary" id="cp-confirm-ok">Confirm</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#cp-confirm-cancel').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#cp-confirm-ok').addEventListener('click', () => {
+      overlay.remove();
+      onConfirm();
+    });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  }
+
+  function updateDirtyDots() {
+    for (const cat of CATEGORY_ORDER) {
+      const dot = document.getElementById(`cp-dirty-${cat}`);
+      if (dot) {
+        const hasCatDirty = Object.keys(dirty).some(k => schema[k] && schema[k].category === cat);
+        dot.classList.toggle('visible', hasCatDirty);
+      }
+    }
+  }
+
   function switchTab(cat) {
     activeTab = cat;
     document.querySelectorAll('.cp-tab').forEach(t => {
@@ -220,6 +306,7 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
         toggle.classList.toggle('on', newVal);
         dirty[key] = newVal;
         renderRestartBanner();
+        updateDirtyDots();
       });
 
       const status = document.createElement('span');
@@ -244,6 +331,7 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
         dirty[key] = select.value;
         select.classList.add('dirty');
         renderRestartBanner();
+        updateDirtyDots();
       });
       wrap.appendChild(select);
     } else {
@@ -257,6 +345,7 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
         dirty[key] = input.value;
         input.classList.add('dirty');
         renderRestartBanner();
+        updateDirtyDots();
       });
       wrap.appendChild(input);
     }
@@ -297,6 +386,7 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
     if (!el) return;
     el.innerHTML = '';
     dirty = {};
+    updateDirtyDots();
 
     if (activeTab === 'system') {
       renderSystemTab(el);
@@ -333,16 +423,26 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
 
     const saveBtn = document.createElement('button');
     saveBtn.className = 'cp-btn cp-btn-primary';
-    saveBtn.textContent = 'Save Changes';
+    saveBtn.textContent = '💾 Save Changes';
     saveBtn.addEventListener('click', saveSettings);
 
     const resetBtn = document.createElement('button');
     resetBtn.className = 'cp-btn cp-btn-secondary';
-    resetBtn.textContent = 'Reset';
-    resetBtn.addEventListener('click', () => { dirty = {}; renderContent(); });
+    resetBtn.textContent = '↩ Reset';
+    resetBtn.addEventListener('click', () => { dirty = {}; updateDirtyDots(); renderContent(); });
 
     btnRow.appendChild(saveBtn);
     btnRow.appendChild(resetBtn);
+
+    // Save & Restart button for tabs with non-hot-reload settings
+    const hasNonHotReload = Object.entries(catSettings).some(([, s]) => !s.hotReload);
+    if (hasNonHotReload) {
+      const saveRestartBtn = document.createElement('button');
+      saveRestartBtn.className = 'cp-btn cp-btn-warn';
+      saveRestartBtn.textContent = '💾 Save & Restart';
+      saveRestartBtn.addEventListener('click', saveAndRestart);
+      btnRow.appendChild(saveRestartBtn);
+    }
 
     // Test buttons for specific tabs
     if (activeTab === 'database') {
@@ -364,6 +464,34 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
     }
 
     el.appendChild(btnRow);
+
+    // Changelog for this category
+    const catChanges = changelog.filter(c => c.schema === activeTab);
+    if (catChanges.length > 0) {
+      const clGroup = document.createElement('div');
+      clGroup.className = 'cp-group';
+      clGroup.style.marginTop = '20px';
+
+      const clTitle = document.createElement('div');
+      clTitle.className = 'cp-group-title';
+      clTitle.textContent = `📋 Recent Changes (${catChanges.length})`;
+      clGroup.appendChild(clTitle);
+
+      const clList = document.createElement('div');
+      clList.className = 'cp-changelog';
+      catChanges.slice(0, 10).forEach(entry => {
+        const row = document.createElement('div');
+        row.className = 'cp-changelog-entry';
+        row.innerHTML = `
+          <span class="cp-changelog-time">${escapeHtml(entry.time ? entry.time.slice(11, 19) : '—')}</span>
+          <span class="cp-changelog-key">${escapeHtml(entry.key)}</span>
+          <span class="cp-changelog-val">${escapeHtml(String(entry.oldValue ?? ''))} → ${escapeHtml(String(entry.newValue ?? ''))}</span>
+        `;
+        clList.appendChild(row);
+      });
+      clGroup.appendChild(clList);
+      el.appendChild(clGroup);
+    }
   }
 
   function renderSystemTab(el) {
@@ -432,12 +560,31 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
 
       <div class="cp-btn-row">
         <button class="cp-btn cp-btn-secondary" id="cp-export">📦 Export Settings</button>
+        <button class="cp-btn cp-btn-secondary" id="cp-import">📥 Import Settings</button>
         <button class="cp-btn cp-btn-secondary" id="cp-reload-settings">🔄 Reload from Disk</button>
       </div>
+
+      ${changelog.length > 0 ? `
+      <div class="cp-group" style="margin-top:16px;">
+        <div class="cp-group-title">📋 All Recent Changes (${changelog.length})</div>
+        <div class="cp-changelog">
+          ${changelog.slice(0, 20).map(entry => `
+            <div class="cp-changelog-entry">
+              <span class="cp-changelog-time">${escapeHtml(entry.time ? entry.time.slice(0, 16) : '—')}</span>
+              <span class="cp-changelog-key">${escapeHtml(entry.key)}</span>
+              <span class="cp-changelog-val">${escapeHtml(String(entry.oldValue ?? ''))} → ${escapeHtml(String(entry.newValue ?? ''))}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
     `;
 
     document.getElementById('cp-refresh-sys')?.addEventListener('click', loadSystemInfo);
     document.getElementById('cp-export')?.addEventListener('click', exportSettings);
+    document.getElementById('cp-import')?.addEventListener('click', () => {
+      fileInput.click();
+    });
     document.getElementById('cp-reload-settings')?.addEventListener('click', reloadSettings);
   }
 
@@ -449,11 +596,16 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
       return;
     }
 
+    if (saveInProgress) return;
+    saveInProgress = true;
+
     try {
       const result = await apiPut(`/api/settings/${activeTab}`, dirty);
       dirty = {};
+      updateDirtyDots();
+      await loadChangelog();
       if (result.restartRequired) {
-        showToast('Saved! Restart required for some changes.', 'err');
+        showToast('Saved! Restart required for some changes.', 'warn');
       } else {
         showToast('Settings saved!', 'ok');
       }
@@ -461,8 +613,93 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
       await loadSettings();
       renderContent();
     } catch (err) {
-      showToast(`Save failed: ${err.message}`, 'err');
+      if (err.message.includes('429') || err.message.includes('Rate limit')) {
+        showToast('Rate limited — slow down!', 'err');
+      } else {
+        showToast(`Save failed: ${err.message}`, 'err');
+      }
+    } finally {
+      saveInProgress = false;
     }
+  }
+
+  async function saveAndRestart() {
+    if (Object.keys(dirty).length === 0) {
+      showToast('No changes to save', 'ok');
+      return;
+    }
+
+    showConfirmDialog(
+      'Save & Restart Server',
+      'This will save your changes and restart the server. All active connections will be temporarily interrupted. Continue?',
+      async () => {
+        try {
+          // First save
+          const result = await apiPut(`/api/settings/${activeTab}`, dirty);
+          dirty = {};
+          updateDirtyDots();
+
+          if (result.restartRequired) {
+            // Server restart needed — trigger it
+            showToast('Saving and restarting...', 'warn');
+            await apiPost('/api/settings/restart', { confirm: 'restart' });
+            // Page will go unresponsive — that's expected
+            setTimeout(() => {
+              showToast('Restart triggered. If page doesn\'t reload, refresh manually.', 'warn');
+            }, 2000);
+          } else {
+            showToast('Saved! No restart needed (all changes are hot-reloadable).', 'ok');
+            await loadSettings();
+            renderContent();
+          }
+        } catch (err) {
+          showToast(`Failed: ${err.message}`, 'err');
+        }
+      }
+    );
+  }
+
+  async function handleImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    showConfirmDialog(
+      'Import Settings',
+      `Import settings from "${file.name}"? This will overwrite existing values. Passwords in the import file will be applied.`,
+      async () => {
+        try {
+          const text = await file.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch {
+            showToast('Invalid JSON file', 'err');
+            return;
+          }
+
+          // Accept both { settings: {...} } and bare { ... }
+          const settings = data.settings || data;
+          if (typeof settings !== 'object') {
+            showToast('Invalid settings format', 'err');
+            return;
+          }
+
+          const result = await apiPost('/api/settings/import', { settings });
+          if (result.ok) {
+            showToast(`Imported ${result.imported} settings${result.restartRequired ? '. Restart required.' : ''}`, result.restartRequired ? 'warn' : 'ok');
+            await loadSettings();
+            await loadChangelog();
+            renderContent();
+          } else {
+            showToast(`Import failed: ${result.error}`, 'err');
+          }
+        } catch (err) {
+          showToast(`Import error: ${err.message}`, 'err');
+        }
+        // Reset file input
+        fileInput.value = '';
+      }
+    );
   }
 
   async function testDatabase() {
@@ -562,9 +799,19 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
     }
   }
 
+  async function loadChangelog() {
+    try {
+      const resp = await apiGet('/api/settings/changelog');
+      changelog = resp.changelog || [];
+    } catch {
+      changelog = [];
+    }
+  }
+
   // ── Initialize ─────────────────────────────────
   await loadSettings();
   await loadSystemInfo();
+  await loadChangelog();
   renderContent();
 }
 
