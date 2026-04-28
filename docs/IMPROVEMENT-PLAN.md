@@ -96,7 +96,7 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 - `src/offline/sync-manager.mjs` — create/update/delete/archive/restore queue
 - `board-view.mjs` already does optimistic status moves
 
-- [ ] **OPT-1:** Create `src/shell/mutation-manager.mjs` — `mutate({ key, optimisticApply, request, rollback, onSuccess })`
+- [x] **OPT-1:** Create `src/shell/mutation-manager.mjs` — `mutate({ key, optimisticApply, request, rollback, onSuccess })`
 - [ ] **OPT-2:** Update `sync-manager.mjs` — generic queue items with `{ method, url, body, entityType }`
 - [ ] **OPT-3:** Fix `SyncManager.syncAll()` — use `/api/tasks/all` (also tracked as QW-2)
 - [ ] **OPT-4:** Set intentional conflict default — document whether server-wins or client-wins

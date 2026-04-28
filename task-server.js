@@ -584,10 +584,19 @@ let gatewayClient = null;
 try {
   const GatewayClient = require('./lib/gateway-client');
 
+  // Read gateway password from openclaw.json if not set in env
+  let gatewayPassword = process.env.OPENCLAW_GATEWAY_PASSWORD || null;
+  if (!gatewayPassword) {
+    try {
+      const ocConfig = JSON.parse(require('fs').readFileSync(require('path').join(require('os').homedir(), '.openclaw', 'openclaw.json'), 'utf8'));
+      gatewayPassword = ocConfig?.gateway?.auth?.password || null;
+    } catch (_) { /* config not readable */ }
+  }
+
   gatewayClient = new GatewayClient({
     url: process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789',
     token: process.env.OPENCLAW_GATEWAY_TOKEN || null,
-    password: process.env.OPENCLAW_GATEWAY_PASSWORD || null,
+    password: gatewayPassword,
     onConnected: () => broadcast('gateway:status', { connected: true }),
     onDisconnected: () => broadcast('gateway:status', { connected: false }),
   });
