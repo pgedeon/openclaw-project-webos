@@ -5,6 +5,20 @@ const { URL } = require('url');
 const { broadcast } = require('./sse-routes');
 
 function registerTaskRoutes(router) {
+  // Snapshot helper — uses ctx from route handler scope
+  async function _snapshot(pool, taskId, action, actor = 'dashboard') {
+    try {
+      if (!pool) return;
+      const r = await pool.query('SELECT row_to_json(t) as state FROM tasks t WHERE id = $1', [taskId]);
+      if (r.rows[0]?.state) {
+        await pool.query(
+          `INSERT INTO state_snapshots (entity_type, entity_id, action, state, actor) VALUES ('task', $1, $2, $3, $4)`,
+          [taskId, action, JSON.stringify(r.rows[0].state), actor]
+        );
+      }
+    } catch (_) {}
+  }
+
   // GET /api/tasks — legacy read tasks.md
   router.add('GET', '/api/tasks', async (req, res, ctx) => {
     const fs = require('fs');
@@ -35,6 +49,7 @@ function registerTaskRoutes(router) {
         const task = await ctx.asanaStorage.createTask(data);
         console.log('[task-server] Task created:', task.id);
         broadcast('task:changed', { action: 'create', task });
+        await _snapshot(ctx.asanaStorage?.pool, task.id, 'create');
         ctx.sendJSON(res, 201, task);
       } catch (e) {
         console.error('[task-server] Error creating task:', e);
@@ -174,6 +189,7 @@ function registerTaskRoutes(router) {
     try {
       const result = await ctx.asanaStorage.archiveTask(id);
       broadcast('task:changed', { action: 'archive', taskId: id });
+      await _snapshot(ctx.asanaStorage?.pool, id, 'archive');
       ctx.sendJSON(res, 200, result);
     } catch (err) {
       const status = err.message.includes('not found') ? 404 : 400;
@@ -192,6 +208,7 @@ function registerTaskRoutes(router) {
     try {
       const result = await ctx.asanaStorage.restoreTask(id);
       broadcast('task:changed', { action: 'restore', taskId: id });
+      await _snapshot(ctx.asanaStorage?.pool, id, 'restore');
       ctx.sendJSON(res, 200, result);
     } catch (err) {
       const status = err.message.includes('not found') ? 404 : 400;
@@ -215,6 +232,7 @@ function registerTaskRoutes(router) {
       }
       const task = await ctx.asanaStorage.moveTask(id, status);
       broadcast('task:changed', { action: 'move', task });
+      await _snapshot(ctx.asanaStorage?.pool, id, 'move');
       ctx.sendJSON(res, 200, task);
     } catch (err) {
       const statusCode = err.message.includes('not found') ? 404 : 400;
