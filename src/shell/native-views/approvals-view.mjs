@@ -1,5 +1,7 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
+import { mutate } from '../mutation-manager.mjs';
+
 export async function renderApprovalsView({ mountNode, api, adapter, stateStore, sync }) {
   ensureNativeRoot(mountNode);
   mountNode.innerHTML = '';
@@ -314,17 +316,17 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
       const runId = confirmYes.dataset.runId;
       confirmYes.disabled = true;
       confirmYes.textContent = 'Deleting...';
-      try {
-        const resp = await fetch('/api/workflow-runs/' + runId, { method: 'DELETE' }, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
-        if (resp.ok) {
-          showNotice('Deleted.', 'success');
-          await loadApprovals();
-        } else {
-          showNotice('Failed to delete.', 'error');
-        }
-      } catch (err) {
-        showNotice('Failed: ' + err.message, 'error');
-      }
+      const result = await mutate({
+        key: `approval-delete-${runId}`,
+        optimisticApply: () => { confirmYes.textContent = 'Deleted'; },
+        request: async () => {
+          const resp = await fetch('/api/workflow-runs/' + runId, { method: 'DELETE', headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
+          if (!resp.ok) throw new Error('Delete failed');
+          return resp.json();
+        },
+        onSuccess: () => { showNotice('Deleted.', 'success'); loadApprovals(); },
+        onError: (err) => { showNotice('Failed: ' + err.message, 'error'); confirmYes.disabled = false; },
+      });
       return;
     }
 
@@ -387,11 +389,17 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
       if (!runId) return;
       execBtn.disabled = true;
       execBtn.textContent = '\u23f3 Starting...';
-      try {
-        await fetch('/api/workflow-runs/' + runId + '/start', { method: 'POST' }, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
-        showNotice('Run started.', 'success');
-        setTimeout(() => loadApprovals(), 2000);
-      } catch (err) { showNotice('Failed: ' + err.message, 'error'); execBtn.disabled = false; execBtn.textContent = '\u25b6 Execute'; }
+      const result = await mutate({
+        key: `approval-exec-${runId}`,
+        optimisticApply: () => { execBtn.textContent = 'Starting...'; },
+        request: async () => {
+          const resp = await fetch('/api/workflow-runs/' + runId + '/start', { method: 'POST', headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
+          if (!resp.ok) throw new Error('Start failed');
+          return {};
+        },
+        onSuccess: () => { showNotice('Run started.', 'success'); setTimeout(() => loadApprovals(), 2000); },
+        onError: (err) => { showNotice('Failed: ' + err.message, 'error'); execBtn.disabled = false; execBtn.textContent = '\u25b6 Execute'; },
+      });
       return;
     }
   });

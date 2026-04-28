@@ -279,23 +279,6 @@ const server = createServer(async (req, res) => {
       }
     }
 
-    // POST /api/memory/file/:name — create a new memory file
-    if (urlPath.startsWith('/api/memory/file/') && method === 'POST') {
-      try {
-        const name = decodeURIComponent(urlPath.replace('/api/memory/file/', ''));
-        const safeName = validateMemoryPath(name);
-        const filePath = join(MEMORY_DIR, safeName);
-        if (existsSync(filePath)) return sendJSON(res, 409, { error: 'File already exists', name: safeName });
-        const body = await parseBody(req);
-        const fileContent = typeof body.content === 'string' ? body.content : `# ${safeName.replace(/\.md$/, '')}\n\n`;
-        writeFileSync(filePath, fileContent, 'utf8');
-        const stat = statSync(filePath);
-        return sendJSON(res, 201, { name: safeName, created: true, size: stat.size });
-      } catch (e) {
-        return sendJSON(res, 400, { error: e.message });
-      }
-    }
-
     // POST /api/memory/file/:name/append — append content to a memory file
     if (urlPath.startsWith('/api/memory/file/') && urlPath.endsWith('/append') && method === 'POST') {
       try {
@@ -310,6 +293,23 @@ const server = createServer(async (req, res) => {
         writeFileSync(filePath, existing + separator + body.content + '\n', 'utf8');
         const stat = statSync(filePath);
         return sendJSON(res, 200, { name: safeName, appended: true, size: stat.size });
+      } catch (e) {
+        return sendJSON(res, 400, { error: e.message });
+      }
+    }
+
+    // POST /api/memory/file/:name — create a new memory file
+    if (urlPath.startsWith('/api/memory/file/') && method === 'POST') {
+      try {
+        const name = decodeURIComponent(urlPath.replace('/api/memory/file/', ''));
+        const safeName = validateMemoryPath(name);
+        const filePath = join(MEMORY_DIR, safeName);
+        if (existsSync(filePath)) return sendJSON(res, 409, { error: 'File already exists', name: safeName });
+        const body = await parseBody(req);
+        const fileContent = typeof body.content === 'string' ? body.content : `# ${safeName.replace(/\.md$/, '')}\n\n`;
+        writeFileSync(filePath, fileContent, 'utf8');
+        const stat = statSync(filePath);
+        return sendJSON(res, 201, { name: safeName, created: true, size: stat.size });
       } catch (e) {
         return sendJSON(res, 400, { error: e.message });
       }
@@ -334,8 +334,9 @@ const server = createServer(async (req, res) => {
     if (urlPath === '/api/memory/context' && method === 'GET') {
       try {
         const files = listMemoryFiles();
-        const scope = url.searchParams.get('scope') || 'all';
-        const limit = parseInt(url.searchParams.get('limit') || '5', 10);
+        const parsedUrl = new URL(req.url, 'http://localhost');
+        const scope = parsedUrl.searchParams.get('scope') || 'all';
+        const limit = parseInt(parsedUrl.searchParams.get('limit') || '5', 10);
         
         // Priority: behavior.md first, then today's note, then most recent
         const sorted = [...files].sort((a, b) => {

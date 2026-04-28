@@ -126,6 +126,8 @@ const relativeAge = (dateStr) => {
 };
 
 // ── Main render ──────────────────────────────────────────────────────
+import { mutate } from '../mutation-manager.mjs';
+
 export async function renderBoardView({ mountNode, api, adapter, stateStore }) {
   ensureNativeRoot(mountNode, 'kanban-board');
   injectCSS();
@@ -516,31 +518,43 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore }) {
   }
 
   async function moveTask(taskId, newStatus) {
-    // Optimistic
     const task = findTask(taskId);
     if (!task) return;
     const oldStatus = task.status;
-    if (boardData.columns[oldStatus]) {
-      boardData.columns[oldStatus] = boardData.columns[oldStatus].filter(t => t.id !== taskId);
-    }
-    if (!boardData.columns[newStatus]) boardData.columns[newStatus] = [];
-    task.status = newStatus;
-    boardData.columns[newStatus].push(task);
-    closeDetail();
-    draw();
 
-    try {
-      const r = await fetch(`/api/tasks/${taskId}/move`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
-      });
-      if (!r.ok) throw new Error(await r.text());
-      showToast(`Moved to ${newStatus.replace(/_/g, ' ')}`, false);
-    } catch (e) {
-      showToast(`Move failed: ${e.message}`, true);
-      await loadBoard();
-    }
+    const result = await mutate({
+      key: `task-${taskId}-move`,
+      optimisticApply: () => {
+        if (boardData.columns[oldStatus]) {
+          boardData.columns[oldStatus] = boardData.columns[oldStatus].filter(t => t.id !== taskId);
+        }
+        if (!boardData.columns[newStatus]) boardData.columns[newStatus] = [];
+        task.status = newStatus;
+        boardData.columns[newStatus].push(task);
+        closeDetail();
+        draw();
+      },
+      request: async () => {
+        const r = await fetch(`/api/tasks/${taskId}/move`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus })
+        });
+        if (!r.ok) throw new Error(await r.text());
+        return r.json();
+      },
+      rollback: () => {
+        if (boardData.columns[newStatus]) {
+          boardData.columns[newStatus] = boardData.columns[newStatus].filter(t => t.id !== taskId);
+        }
+        task.status = oldStatus;
+        if (!boardData.columns[oldStatus]) boardData.columns[oldStatus] = [];
+        boardData.columns[oldStatus].push(task);
+        draw();
+      },
+      onSuccess: () => showToast(`Moved to ${newStatus.replace(/_/g, ' ')}`, false),
+      onError: (err) => { showToast(`Move failed: ${err.message}`, true); loadBoard(); },
+    });
   }
 
   function findTask(id) {

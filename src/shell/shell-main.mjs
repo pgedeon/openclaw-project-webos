@@ -11,6 +11,7 @@ import {
 import { createAPIClient } from './api-client.mjs';
 import { createViewState } from './view-state.mjs';
 import { createRealtimeSync } from './realtime-sync.mjs';
+import { setOnlineStatus } from './mutation-manager.mjs';
 import { WidgetRegistry } from './widgets/widget-registry.mjs';
 import { WidgetPanel } from './widgets/widget-panel.mjs';
 
