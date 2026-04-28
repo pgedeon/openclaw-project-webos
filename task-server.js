@@ -649,6 +649,7 @@ registerAgentRoutes(router);
 registerTaskRoutes(router);
 registerProjectRoutes(router);
 registerViewRoutes(router);
+registerMemoryRoutes(router);
 const server = http.createServer(async (req, res) => {
   const timestamp = new Date().toISOString();
   const url = req.url.split('?')[0];

@@ -71,17 +71,17 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 - `memory-api-server.mjs` on port 3879: list, read, write, search, facts, status, stats
 - `src/shell/native-views/memory-view.mjs`: file browser, editor, search, facts
 
-- [ ] **MEM-1:** Add `routes/memory-routes.js` — proxy `/api/memory/*` through `task-server.js`
-- [ ] **MEM-2:** Add `POST /api/memory/file/:name` — create new `.md` file
-- [ ] **MEM-3:** Add `POST /api/memory/file/:name/append` — append to existing file
-- [ ] **MEM-4:** Add `DELETE /api/memory/file/:name` — delete memory file
-- [ ] **MEM-5:** Add `GET /api/memory/context` — assembled prompt context for agent injection
-- [ ] **MEM-6:** Add `validateMemoryPath(name)` — safe subpath handling
-- [ ] **MEM-7:** Update `memory-view.mjs` — use `api.memory` instead of absolute `http://127.0.0.1:3879`
-- [ ] **MEM-8:** Update `memory-view.mjs` — add create, append, delete actions with confirmation
-- [ ] **MEM-9:** Update `memory-view.mjs` — add context preview tab
-- [ ] **MEM-10:** Update `docs/api-reference-complete.md` with actual memory routes
-- [ ] **MEM-11:** Add `docs/memory-system.md`
+- [x] **MEM-1:** Add `routes/memory-routes.js` — proxy `/api/memory/*` through `task-server.js`
+- [x] **MEM-2:** Add `POST /api/memory/file/:name` — create new `.md` file
+- [x] **MEM-3:** Add `POST /api/memory/file/:name/append` — append to existing file
+- [x] **MEM-4:** Add `DELETE /api/memory/file/:name` — delete memory file
+- [x] **MEM-5:** Add `GET /api/memory/context` — assembled prompt context for agent injection
+- [x] **MEM-6:** Add `validateMemoryPath(name)` — safe subpath handling
+- [x] **MEM-7:** Update `memory-view.mjs` — use `api.memory` instead of absolute `http://127.0.0.1:3879`
+- [x] **MEM-8:** Update `memory-view.mjs` — add create, append, delete actions with confirmation
+- [x] **MEM-9:** Update `memory-view.mjs` — add context preview tab
+- [x] **MEM-10:** Update `docs/api-reference-complete.md` with actual memory routes
+- [x] **MEM-11:** Add `docs/memory-system.md`
 
 **Complexity:** M | **Dependencies:** DOC corrections, QW-4
 

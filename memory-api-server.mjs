@@ -135,6 +135,14 @@ function getMemoryStatus() {
     .then(({ stdout }) => JSON.parse(stdout));
 }
 
+function validateMemoryPath(name) {
+  const safe = basename(name);
+  if (!safe.endsWith('.md')) throw new Error('Only .md files are allowed');
+  if (safe.startsWith('.')) throw new Error('Hidden files not allowed');
+  return safe;
+}
+
+
 function getMemoryStats() {
   const files = listMemoryFiles();
   const daily = files.filter(f => f.isDaily);
@@ -270,6 +278,97 @@ const server = createServer(async (req, res) => {
         return sendJSON(res, 500, { error: e.message });
       }
     }
+
+    // POST /api/memory/file/:name — create a new memory file
+    if (urlPath.startsWith('/api/memory/file/') && method === 'POST') {
+      try {
+        const name = decodeURIComponent(urlPath.replace('/api/memory/file/', ''));
+        const safeName = validateMemoryPath(name);
+        const filePath = join(MEMORY_DIR, safeName);
+        if (existsSync(filePath)) return sendJSON(res, 409, { error: 'File already exists', name: safeName });
+        const body = await parseBody(req);
+        const fileContent = typeof body.content === 'string' ? body.content : `# ${safeName.replace(/\.md$/, '')}\n\n`;
+        writeFileSync(filePath, fileContent, 'utf8');
+        const stat = statSync(filePath);
+        return sendJSON(res, 201, { name: safeName, created: true, size: stat.size });
+      } catch (e) {
+        return sendJSON(res, 400, { error: e.message });
+      }
+    }
+
+    // POST /api/memory/file/:name/append — append content to a memory file
+    if (urlPath.startsWith('/api/memory/file/') && urlPath.endsWith('/append') && method === 'POST') {
+      try {
+        const rawName = urlPath.replace('/api/memory/file/', '').replace('/append', '');
+        const safeName = validateMemoryPath(decodeURIComponent(rawName));
+        const filePath = join(MEMORY_DIR, safeName);
+        if (!existsSync(filePath)) return sendJSON(res, 404, { error: 'File not found' });
+        const body = await parseBody(req);
+        if (typeof body.content !== 'string') return sendJSON(res, 400, { error: 'Missing content field' });
+        const existing = readFileSync(filePath, 'utf8');
+        const separator = existing.endsWith('\n') ? '' : '\n';
+        writeFileSync(filePath, existing + separator + body.content + '\n', 'utf8');
+        const stat = statSync(filePath);
+        return sendJSON(res, 200, { name: safeName, appended: true, size: stat.size });
+      } catch (e) {
+        return sendJSON(res, 400, { error: e.message });
+      }
+    }
+
+    // DELETE /api/memory/file/:name — delete a memory file
+    if (urlPath.startsWith('/api/memory/file/') && method === 'DELETE') {
+      try {
+        const name = decodeURIComponent(urlPath.replace('/api/memory/file/', ''));
+        const safeName = validateMemoryPath(name);
+        const filePath = join(MEMORY_DIR, safeName);
+        if (!existsSync(filePath)) return sendJSON(res, 404, { error: 'File not found' });
+        const { unlinkSync } = await import('fs');
+        unlinkSync(filePath);
+        return sendJSON(res, 200, { name: safeName, deleted: true });
+      } catch (e) {
+        return sendJSON(res, 400, { error: e.message });
+      }
+    }
+
+    // GET /api/memory/context — assembled prompt context from memory files
+    if (urlPath === '/api/memory/context' && method === 'GET') {
+      try {
+        const files = listMemoryFiles();
+        const scope = url.searchParams.get('scope') || 'all';
+        const limit = parseInt(url.searchParams.get('limit') || '5', 10);
+        
+        // Priority: behavior.md first, then today's note, then most recent
+        const sorted = [...files].sort((a, b) => {
+          if (a.name === 'behavior.md') return -1;
+          if (b.name === 'behavior.md') return 1;
+          if (a.isDaily && !b.isDaily) return -1;
+          if (!a.isDaily && b.isDaily) return 1;
+          return b.modified - a.modified;
+        });
+
+        const selected = sorted.slice(0, limit);
+        const sections = [];
+        for (const f of selected) {
+          const content = readFileSync(join(MEMORY_DIR, f.name), 'utf8');
+          sections.push(`--- Memory: ${f.name} ---\n${content.substring(0, 2000)}`);
+        }
+
+        const rootContent = existsSync(MEMORY_ROOT) ? readFileSync(MEMORY_ROOT, 'utf8') : null;
+        if (rootContent) {
+          sections.unshift(`--- MEMORY.md (root) ---\n${rootContent.substring(0, 3000)}`);
+        }
+
+        return sendJSON(res, 200, {
+          context: sections.join('\n\n'),
+          files: selected.map(f => f.name),
+          totalFiles: files.length,
+          includedFiles: selected.length + (rootContent ? 1 : 0),
+        });
+      } catch (e) {
+        return sendJSON(res, 500, { error: e.message });
+      }
+    }
+
 
     sendJSON(res, 404, { error: 'Not found' });
   } catch (err) {

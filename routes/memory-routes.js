@@ -11,7 +11,7 @@ const MEMORY_PORT = parseInt(process.env.MEMORY_API_PORT || '3879', 10);
 const MEMORY_HOST = '127.0.0.1';
 
 function proxyToMemory(req, res, urlPath) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const proxyReq = http.request(
       {
         hostname: MEMORY_HOST,
@@ -24,7 +24,6 @@ function proxyToMemory(req, res, urlPath) {
         },
       },
       (proxyRes) => {
-        // Inject CORS header for dashboard origin
         proxyRes.headers['access-control-allow-origin'] =
           `http://localhost:${process.env.PORT || 3876}`;
         res.writeHead(proxyRes.statusCode, proxyRes.headers);
@@ -40,14 +39,18 @@ function proxyToMemory(req, res, urlPath) {
       resolve(true);
     });
 
-    // Pipe request body through
     req.pipe(proxyReq, { end: true });
   });
 }
 
+function qs(req) {
+  return (req.url || '').split('?')[1] || '';
+}
+
 function registerMemoryRoutes(router) {
-  // GET /api/memory/*
-  router.add('GET', '/api/memory/list', async (req, res, ctx) => {
+  // ── GET routes ──────────────────────────────────────────
+
+  router.add('GET', '/api/memory/list', async (req, res) => {
     return proxyToMemory(req, res, '/api/memory/list');
   });
 
@@ -55,49 +58,66 @@ function registerMemoryRoutes(router) {
     return proxyToMemory(req, res, `/api/memory/file/${params.name}`);
   });
 
-  router.add('GET', '/api/memory/root', async (req, res, ctx) => {
+  router.add('GET', '/api/memory/root', async (req, res) => {
     return proxyToMemory(req, res, '/api/memory/root');
   });
 
-  router.add('GET', '/api/memory/search', async (req, res, ctx) => {
-    const qs = (req.url || '').split('?')[1] || '';
-    return proxyToMemory(req, res, `/api/memory/search?${qs}`);
+  router.add('GET', '/api/memory/search', async (req, res) => {
+    return proxyToMemory(req, res, `/api/memory/search?${qs(req)}`);
   });
 
-  router.add('GET', '/api/memory/facts', async (req, res, ctx) => {
+  router.add('GET', '/api/memory/facts', async (req, res) => {
     return proxyToMemory(req, res, '/api/memory/facts');
   });
 
-  router.add('GET', '/api/memory/facts/list', async (req, res, ctx) => {
-    const qs = (req.url || '').split('?')[1] || '';
-    return proxyToMemory(req, res, `/api/memory/facts/list?${qs}`);
+  router.add('GET', '/api/memory/facts/list', async (req, res) => {
+    return proxyToMemory(req, res, `/api/memory/facts/list?${qs(req)}`);
   });
 
-  router.add('GET', '/api/memory/facts/search', async (req, res, ctx) => {
-    const qs = (req.url || '').split('?')[1] || '';
-    return proxyToMemory(req, res, `/api/memory/facts/search?${qs}`);
+  router.add('GET', '/api/memory/facts/search', async (req, res) => {
+    return proxyToMemory(req, res, `/api/memory/facts/search?${qs(req)}`);
   });
 
-  router.add('GET', '/api/memory/status', async (req, res, ctx) => {
+  router.add('GET', '/api/memory/status', async (req, res) => {
     return proxyToMemory(req, res, '/api/memory/status');
   });
 
-  router.add('GET', '/api/memory/stats', async (req, res, ctx) => {
+  router.add('GET', '/api/memory/stats', async (req, res) => {
     return proxyToMemory(req, res, '/api/memory/stats');
   });
 
-  // PUT /api/memory/file/:name
+  // GET /api/memory/context — assembled prompt context
+  router.add('GET', '/api/memory/context', async (req, res) => {
+    return proxyToMemory(req, res, `/api/memory/context?${qs(req)}`);
+  });
+
+  // ── PUT routes ──────────────────────────────────────────
+
   router.add('PUT', '/api/memory/file/:name', async (req, res, ctx, params) => {
     return proxyToMemory(req, res, `/api/memory/file/${params.name}`);
   });
 
-  // POST /api/memory/facts
-  router.add('POST', '/api/memory/facts', async (req, res, ctx) => {
+  // ── POST routes (more specific patterns first) ──────────
+
+  router.add('POST', '/api/memory/file/:name/append', async (req, res, ctx, params) => {
+    return proxyToMemory(req, res, `/api/memory/file/${params.name}/append`);
+  });
+
+  router.add('POST', '/api/memory/file/:name', async (req, res, ctx, params) => {
+    return proxyToMemory(req, res, `/api/memory/file/${params.name}`);
+  });
+
+  router.add('POST', '/api/memory/facts', async (req, res) => {
     return proxyToMemory(req, res, '/api/memory/facts');
   });
 
-  // DELETE /api/memory/facts
-  router.add('DELETE', '/api/memory/facts', async (req, res, ctx) => {
+  // ── DELETE routes ───────────────────────────────────────
+
+  router.add('DELETE', '/api/memory/file/:name', async (req, res, ctx, params) => {
+    return proxyToMemory(req, res, `/api/memory/file/${params.name}`);
+  });
+
+  router.add('DELETE', '/api/memory/facts', async (req, res) => {
     return proxyToMemory(req, res, '/api/memory/facts');
   });
 }

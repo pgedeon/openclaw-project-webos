@@ -202,6 +202,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
     filterBox.innerHTML = `
       <input id="mem-filter" class="mem-search-input" placeholder="Filter files..." value="${escapeHtml(searchQuery)}">
       <button id="mem-filter-btn" class="mem-search-btn" aria-label="Filter" >Filter</button>
+      <button id="mem-create-btn" class="mem-search-btn" style="background:var(--win11-accent);color:#fff;" aria-label="New file" >+ New File</button>
       <select id="mem-filter-type" class="mem-search-input" style="flex:0 0 140px;">
         <option value="all">All Types</option>
         <option value="daily">Daily Only</option>
@@ -253,6 +254,20 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
     filterBtn.addEventListener('click', () => { searchQuery = filterInput.value; renderContent(); });
     filterInput.addEventListener('input', (e) => { searchQuery = e.target.value; renderContent(); });
     filterTypeSelect.addEventListener('change', () => renderContent());
+
+    // Create new file
+    filterBox.querySelector('#mem-create-btn').addEventListener('click', async () => {
+      const name = prompt('File name (e.g. notes.md):');
+      if (!name) return;
+      const safeName = name.endsWith('.md') ? name : name + '.md';
+      try {
+        await api.memory.createFile(safeName);
+        await loadData();
+        openFile(safeName);
+      } catch (err) {
+        alert(`Could not create file: ${err.message}`);
+      }
+    });
   }
 
   function renderSearchTab() {
@@ -583,9 +598,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
   async function openFile(filename) {
     content.innerHTML = '<div class="mem-loading">Loading file...</div>';
     try {
-      const resp = await fetch(`${MEMORY_API_BASE}/file/${encodeURIComponent(filename, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`);
-      if (!resp.ok) throw new Error('File not found');
-      const data = await resp.json();
+      const data = await api.memory.file(filename);
 
       content.innerHTML = '';
       const viewer = document.createElement('div');
@@ -597,6 +610,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
         <div><strong id="mem-file-title">${escapeHtml(data.name)}</strong> — <span id="mem-file-meta">${data.lines.toLocaleString()} lines, ${formatSize(data.size)}</span></div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span id="mem-save-status" style="font-size:0.78rem;color:var(--win11-text-secondary);"></span>
+          <button id="mem-delete-file" class="mem-file-close" style="background:#ef4444;color:#fff;border-color:#ef4444;" aria-label="Delete" >🗑 Delete</button>
           <button id="mem-save-file" class="mem-file-close" style="background:var(--win11-accent);color:#fff;border-color:var(--win11-accent);" aria-label="Save" >💾 Save</button>
           <button id="mem-close-file" class="mem-file-close" aria-label="Back to list" >← Back to list</button>
         </div>
@@ -621,13 +635,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
         saveStatus.textContent = 'Saving...';
         saveStatus.style.color = 'var(--win11-text-secondary)';
         try {
-          const saveResp = await fetch(`${MEMORY_API_BASE}/file/${encodeURIComponent(filename, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: newContent }),
-          });
-          if (!saveResp.ok) throw new Error('Save failed');
-          const result = await saveResp.json();
+          const result = await api.memory.writeFile(filename, newContent);
           fileMeta.textContent = `${result.lines.toLocaleString()} lines, ${formatSize(result.size)}`;
           saveStatus.textContent = '✓ Saved';
           saveStatus.style.color = '#22c55e';
@@ -644,6 +652,18 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
           e.preventDefault();
           saveBtn.click();
+        }
+      });
+
+      // Delete handler
+      viewer.querySelector('#mem-delete-file').addEventListener('click', async () => {
+        if (!confirm(`Delete ${filename}? This cannot be undone.`)) return;
+        try {
+          await api.memory.deleteFile(filename);
+          renderBrowseTab();
+        } catch (err) {
+          saveStatus.textContent = `Delete failed: ${err.message}`;
+          saveStatus.style.color = '#ef4444';
         }
       });
 

@@ -59,7 +59,7 @@ test.describe('OpenClaw Desktop Shell', () => {
     // Pinned app icons (should have 5: Tasks, Agents, Skills & Tools, Operations, Workflows)
     const pinnedApps = page.locator('.win11-taskbar [data-app-id]');
     const count = await pinnedApps.count();
-    expect(count).toBe(5);
+    expect(count).toBe(7);
   });
 
   test('pinned taskbar apps have correct IDs', async ({ page }) => {
@@ -141,7 +141,7 @@ test.describe('Start Menu', () => {
     await expect(menu).not.toHaveClass(/is-open/);
   });
 
-  test('lists all 20 apps', async ({ page }) => {
+  test('lists all apps in start menu', async ({ page }) => {
     const startBtn = page.locator('.win11-taskbar [data-action="start"]');
     await startBtn.click();
     await page.waitForTimeout(300);

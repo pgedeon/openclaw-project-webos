@@ -551,6 +551,18 @@ export function createAPIClient(baseURL = '/api', options = {}) {
       stats() {
         return request('/memory/stats');
       },
+      createFile(name, content) {
+        return jsonRequest(`/memory/file/${encodeURIComponent(name)}`, { method: 'POST', body: { content } });
+      },
+      appendFile(name, content) {
+        return jsonRequest(`/memory/file/${encodeURIComponent(name)}/append`, { method: 'POST', body: { content } });
+      },
+      deleteFile(name) {
+        return jsonRequest(`/memory/file/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      },
+      context(params = {}) {
+        return request(pathWithQuery('/memory/context', params));
+      },
     },
     settings: {
       list(category) {

@@ -136,6 +136,19 @@ function registerHealthRoutes(router) {
     }
     return true;
   });
+
+  // GET /api/auth/self — returns current auth mode and actor info
+  // Excluded from token auth in task-server.js middleware
+  router.add('GET', '/api/auth/self', async (req, res, ctx) => {
+    const hasToken = !!(process.env.DASHBOARD_AUTH_TOKEN);
+    ctx.sendJSON(res, 200, {
+      mode: hasToken ? 'token' : 'none',
+      actor: 'dashboard-operator',
+      role: 'operator',
+      authenticated: true,
+    });
+    return true;
+  });
 }
 
 module.exports = { registerHealthRoutes };
