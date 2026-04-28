@@ -1,0 +1,1612 @@
+# Supplementary API Reference
+
+> This document covers all server-side APIs **not** included in the main
+> [api.md](api.md). Refer to that file for task, project, agent, cron, audit,
+> and saved-views endpoints on the primary task server (port 3876).
+
+## Table of Contents
+
+- [Microservice Ports](#microservice-ports)
+- [Cron Manager API (Port 3878)](#cron-manager-api-port-3878)
+  - [GET /health](#get-health)
+  - [GET /jobs](#get-jobs)
+  - [GET /jobs/:id/runs](#get-jobsidruns)
+  - [POST /jobs/:id/run](#post-jobsidrun)
+  - [GET /runs](#get-runs)
+  - [DELETE /runs/:runId](#delete-runsrunid)
+  - [GET /status](#get-status)
+  - [POST /guard/acknowledge](#post-guardacknowledge)
+- [Memory API (Port 3879)](#memory-api-port-3879)
+  - [GET /api/memory/list](#get-apimemorylist)
+  - [GET /api/memory/read](#get-apimemoryread)
+  - [POST /api/memory/write](#post-apimemorywrite)
+  - [POST /api/memory/search](#post-apimemorysearch)
+  - [GET /api/memory/facts](#get-apimemoryfacts)
+  - [POST /api/memory/summarize](#post-apimemorysummarize)
+  - [POST /api/memory/unified-query](#post-apimemoryunified-query)
+- [Filesystem API (Port 3880)](#filesystem-api-port-3880)
+  - [GET /api/fs/ls](#get-apifsls)
+  - [GET /api/fs/read](#get-apifsread)
+  - [POST /api/fs/write](#post-apifswrite)
+  - [POST /api/fs/mkdir](#post-apifsmkdir)
+  - [DELETE /api/fs/rm](#delete-apifsrm)
+  - [GET /api/fs/search](#get-apifssearch)
+  - [GET /api/fs/tree](#get-apifstree)
+  - [GET /api/fs/info](#get-apifsinfo)
+- [Organization API](#organization-api)
+  - [GET /api/org/summary](#get-apiorgsummary)
+  - [GET /api/org/departments](#get-apiorgdepartments)
+  - [GET /api/org/agents](#get-apiorgagents)
+  - [GET /api/org/agents/:id](#get-apiorgagentsid)
+- [Service Catalog API](#service-catalog-api)
+  - [GET /api/services](#get-apiservices)
+  - [GET /api/services/:id](#get-apiservicesid)
+  - [POST /api/services](#post-apiservices)
+  - [PATCH /api/services/:id](#patch-apiservicesid)
+  - [DELETE /api/services/:id](#delete-apiservicesid)
+- [Service Requests API](#service-requests-api)
+  - [GET /api/service-requests](#get-apiservice-requests)
+  - [GET /api/service-requests/:id](#get-apiservice-requestsid)
+  - [POST /api/service-requests](#post-apiservice-requests)
+  - [PATCH /api/service-requests/:id](#patch-apiservice-requestsid)
+- [Model Catalog API](#model-catalog-api)
+  - [GET /api/catalog/models](#get-apicatalogmodels)
+  - [GET /api/catalog/providers](#get-apicatalogproviders)
+  - [GET /api/catalog/refresh](#get-apicatalogrefresh)
+- [Metrics API](#metrics-api)
+  - [GET /api/metrics/summary](#get-apimetricssummary)
+  - [GET /api/metrics/department/:slug](#get-apimetricsdepartmentslug)
+  - [GET /api/metrics/trends](#get-apimetricstrends)
+- [Diagnostics API](#diagnostics-api)
+  - [GET /api/diagnostics/info](#get-apidiagnosticsinfo)
+  - [GET /api/diagnostics/state](#get-apidiagnosticsstate)
+  - [POST /api/diagnostics/check](#post-apidiagnosticscheck)
+  - [POST /api/diagnostics/guard](#post-apidiagnosticsguard)
+- [Workflow Runs API](#workflow-runs-api)
+  - [GET /api/workflow-runs](#get-apiworkflow-runs)
+  - [POST /api/workflow-runs](#post-apiworkflow-runs)
+  - [GET /api/workflow-runs/:id](#get-apiworkflow-runsid)
+  - [PATCH /api/workflow-runs/:id](#patch-apiworkflow-runsid)
+  - [DELETE /api/workflow-runs/:id](#delete-apiworkflow-runsid)
+  - [POST /api/workflow-runs/:id/start](#post-apiworkflow-runsidstart)
+  - [POST /api/workflow-runs/:id/heartbeat](#post-apiworkflow-runsidheartbeat)
+  - [POST /api/workflow-runs/:id/complete](#post-apiworkflow-runsidcomplete)
+  - [POST /api/workflow-runs/:id/fail](#post-apiworkflow-runsidfail)
+  - [POST /api/workflow-runs/:id/step](#post-apiworkflow-runsidstep)
+  - [POST /api/workflow-runs/:id/cancel](#post-apiworkflow-runsidcancel)
+  - [POST /api/workflow-runs/:id/pause](#post-apiworkflow-runsidpause)
+  - [POST /api/workflow-runs/:id/resume](#post-apiworkflow-runsidresume)
+  - [POST /api/workflow-runs/:id/escalate](#post-apiworkflow-runsidescalate)
+  - [POST /api/workflow-runs/:id/reassign](#post-apiworkflow-runsidreassign)
+  - [POST /api/workflow-runs/:id/override-failure](#post-apiworkflow-runsidoverride-failure)
+  - [POST /api/workflow-runs/:id/bind-session](#post-apiworkflow-runsidbind-session)
+  - [POST /api/workflow-runs/:id/unbind-session](#post-apiworkflow-runsidunbind-session)
+  - [GET /api/workflow-runs/:id/artifacts](#get-apiworkflow-runsidartifacts)
+  - [POST /api/workflow-runs/:id/artifacts](#post-apiworkflow-runsidartifacts)
+  - [GET /api/workflow-runs/:id/approvals](#get-apiworkflow-runsidapprovals)
+  - [POST /api/workflow-runs/:id/approvals](#post-apiworkflow-runsidapprovals)
+  - [GET /api/workflow-runs/stuck](#get-apiworkflow-runsstuck)
+  - [GET /api/workflow-runs/active](#get-apiworkflow-runsactive)
+  - [POST /api/workflow-runs/cleanup-timeouts](#post-apiworkflow-runscleanup-timeouts)
+- [Workflow Templates API](#workflow-templates-api)
+  - [GET /api/workflow-templates](#get-apiworkflow-templates)
+  - [GET /api/workflow-templates/:name](#get-apiworkflow-templatesname)
+  - [POST /api/workflow-templates](#post-apiworkflow-templates)
+  - [PATCH /api/workflow-templates/:name](#patch-apiworkflow-templatesname)
+- [Approvals API](#approvals-api)
+  - [GET /api/approvals](#get-apiapprovals)
+  - [GET /api/approvals/pending](#get-apiapprovalspending)
+  - [PATCH /api/approvals/:id](#patch-apiapprovalsid)
+  - [POST /api/approvals/:id/escalate](#post-apiapprovalidescalate)
+- [Artifacts API](#artifacts-api)
+  - [GET /api/artifacts](#get-apiartifacts)
+  - [PATCH /api/artifacts/:id](#patch-apiartifactsid)
+  - [DELETE /api/artifacts/:id](#delete-apiartifactsid)
+- [Blockers API](#blockers-api)
+  - [GET /api/blockers](#get-apiblockers)
+  - [GET /api/blockers/summary](#get-apiblockerssummary)
+- [Sessions API](#sessions-api)
+  - [GET /api/sessions/active](#get-apisessionsactive)
+  - [POST /api/sessions/:id/heartbeat](#post-apisessionsidheartbeat)
+- [System Scan API](#system-scan-api)
+  - [POST /api/system-scan/run](#post-apisystem-scanrun)
+  - [POST /api/system-scan/followup](#post-apisystem-scanfollowup)
+- [Governance Module (Library)](#governance-module-library)
+
+---
+
+## Microservice Ports
+
+| Service | Default Port | File | Protocol |
+|---|---|---|---|
+| Task Server (primary) | 3876 | `task-server.js` | HTTP REST |
+| Cron Manager | 3878 | `cron-manager-server.mjs` | HTTP REST |
+| Memory API | 3879 | `memory-api-server.mjs` | HTTP REST |
+| Filesystem API | 3880 | `filesystem-api-server.mjs` | HTTP REST |
+
+All JSON APIs accept and return `Content-Type: application/json` unless noted.
+
+---
+
+## Cron Manager API (Port 3878)
+
+The cron manager monitors the `~/.openclaw/workspace/crontab` file and executes
+scheduled jobs. It also provides a REST API for inspecting job runs.
+
+### `GET /health`
+
+Health check for the cron manager process.
+
+**Response** `200`:
+
+```json
+{ "status": "ok", "uptime": 12345 }
+```
+
+### `GET /jobs`
+
+List all defined cron jobs from the crontab file.
+
+**Query parameters**: None
+
+**Response** `200`:
+
+```json
+{
+  "jobs": [
+    {
+      "id": "gateway-status-sync",
+      "schedule": "*/30 * * * * *",
+      "command": "node sync-gateway-status.mjs",
+      "enabled": true
+    }
+  ]
+}
+```
+
+### `GET /jobs/:id/runs`
+
+Get recent execution runs for a specific cron job.
+
+**Path parameters**: `id` — cron job identifier
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `limit` | number | 20 | Max runs to return |
+
+**Response** `200`:
+
+```json
+{
+  "runs": [
+    {
+      "id": "run-uuid",
+      "jobId": "gateway-status-sync",
+      "startedAt": "2026-03-15T10:30:00Z",
+      "finishedAt": "2026-03-15T10:30:02Z",
+      "status": "success",
+      "output": "Synced 5 agents"
+    }
+  ]
+}
+```
+
+### `POST /jobs/:id/run`
+
+Manually trigger a cron job run.
+
+**Response** `200`:
+
+```json
+{ "triggered": true, "runId": "run-uuid" }
+```
+
+### `GET /runs`
+
+List recent cron job runs across all jobs.
+
+**Response** `200`:
+
+```json
+{
+  "runs": [ ... ]
+}
+```
+
+### `DELETE /runs/:runId`
+
+Delete a specific run record.
+
+**Response** `200`:
+
+```json
+{ "deleted": true }
+```
+
+### `GET /status`
+
+Get the overall status of the cron manager.
+
+**Response** `200`:
+
+```json
+{
+  "status": "running",
+  "totalJobs": 5,
+  "activeJobs": 5,
+  "lastTick": "2026-03-15T10:30:00Z"
+}
+```
+
+### `POST /guard/acknowledge`
+
+Acknowledge the cron guard state (used by diagnostic system to reset the guard
+lock file at `/tmp/openclaw-heartbeat-cron-guard-state.json`).
+
+**Response** `200`:
+
+```json
+{ "acknowledged": true }
+```
+
+---
+
+## Memory API (Port 3879)
+
+The memory API provides access to the agent memory system — reading and writing
+memory files, querying facts from the facts database, and running semantic
+searches via the unified query script.
+
+### `GET /api/memory/list`
+
+List memory files in the agent workspace.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `dir` | string | — | Subdirectory to list |
+| `pattern` | string | — | Glob pattern to filter files |
+
+**Response** `200`:
+
+```json
+{
+  "files": [
+    { "name": "2026-03-15.md", "size": 2048, "modified": "2026-03-15T10:00:00Z" }
+  ]
+}
+```
+
+### `GET /api/memory/read`
+
+Read a memory file's contents.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `path` | string | — | Relative path within memory directory |
+
+**Response** `200`:
+
+```json
+{
+  "path": "2026-03-15.md",
+  "content": "# March 15\n...",
+  "size": 2048
+}
+```
+
+### `POST /api/memory/write`
+
+Write content to a memory file.
+
+**Body**:
+
+```json
+{
+  "path": "2026-03-15.md",
+  "content": "# March 15\nNew content here..."
+}
+```
+
+**Response** `200`:
+
+```json
+{ "saved": true, "path": "2026-03-15.md" }
+```
+
+### `POST /api/memory/search`
+
+Search memory files using the unified query script
+(`scripts/memory_query_unified.js`).
+
+**Body**:
+
+```json
+{
+  "query": "agent preferences",
+  "limit": 10
+}
+```
+
+**Response** `200`:
+
+```json
+{
+  "results": [
+    { "path": "2026-03-14.md", "score": 0.85, "excerpt": "..." }
+  ]
+}
+```
+
+### `GET /api/memory/facts`
+
+Query the facts database via `scripts/facts_db.py`.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `q` | string | — | Fact query string |
+| `category` | string | — | Fact category filter |
+
+**Response** `200`:
+
+```json
+{
+  "facts": [
+    { "id": 1, "key": "timezone", "value": "Europe/Berlin", "category": "preferences" }
+  ]
+}
+```
+
+### `POST /api/memory/summarize`
+
+Summarize recent memory entries.
+
+**Body**:
+
+```json
+{
+  "days": 7,
+  "maxTokens": 500
+}
+```
+
+**Response** `200`:
+
+```json
+{
+  "summary": "Over the last 7 days: worked on dashboard docs, fixed cron bug...",
+  "entriesReviewed": 7
+}
+```
+
+### `POST /api/memory/unified-query`
+
+Run a unified query combining facts, file search, and semantic memory
+retrieval.
+
+**Body**:
+
+```json
+{
+  "query": "What was decided about the cron timeout?",
+  "sources": ["facts", "files", "semantic"],
+  "limit": 5
+}
+```
+
+**Response** `200`:
+
+```json
+{
+  "results": [
+    { "source": "files", "path": "2026-03-15.md", "excerpt": "...", "score": 0.92 }
+  ]
+}
+```
+
+---
+
+## Filesystem API (Port 3880)
+
+The filesystem API provides controlled access to files within the
+`OPENCLAW_FS_ROOT` directory (default: `/root/.openclaw`). It enforces size
+limits, blocks sensitive file extensions, and redacts secrets from responses.
+
+**Security controls**:
+- Max file read/write size: 2 MB (`MAX_FILE_BYTES`)
+- Protected extensions blocked from read/write: `.pem`, `.key`, `.crt`, `.p12`
+- Secret regex pattern `\b([A-Z0-9_]*?(?:API_KEY|SECRET|PASSWORD|TOKEN)[A-Z0-9_]*)\s*=` redacts values
+- Max search results: 50
+
+### `GET /api/fs/ls`
+
+List directory contents.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `path` | string | `/` | Directory path relative to FS root |
+
+**Response** `200`:
+
+```json
+{
+  "path": "/workspace/main",
+  "entries": [
+    { "name": "AGENTS.md", "type": "file", "size": 2048, "modified": "..." },
+    { "name": "memory", "type": "directory" }
+  ]
+}
+```
+
+### `GET /api/fs/read`
+
+Read a file's contents (max 2 MB).
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `path` | string | — | File path relative to FS root |
+| `encoding` | string | `utf8` | File encoding |
+
+**Response** `200`:
+
+```json
+{
+  "path": "workspace/main/AGENTS.md",
+  "content": "# AGENTS.md\n...",
+  "size": 2048,
+  "encoding": "utf8"
+}
+```
+
+**Error responses**:
+- `400` — missing path, path outside root, protected extension
+- `404` — file not found
+- `413` — file exceeds 2 MB limit
+
+### `POST /api/fs/write`
+
+Write content to a file (max 2 MB body).
+
+**Body**:
+
+```json
+{
+  "path": "workspace/main/test.txt",
+  "content": "Hello world",
+  "encoding": "utf8"
+}
+```
+
+**Response** `200`:
+
+```json
+{ "saved": true, "path": "workspace/main/test.txt", "size": 11 }
+```
+
+### `POST /api/fs/mkdir`
+
+Create a directory (recursive).
+
+**Body**:
+
+```json
+{ "path": "workspace/main/memory/archive" }
+```
+
+**Response** `200`:
+
+```json
+{ "created": true, "path": "workspace/main/memory/archive" }
+```
+
+### `DELETE /api/fs/rm`
+
+Remove a file or empty directory.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `path` | string | — | Path to remove relative to FS root |
+
+**Response** `200`:
+
+```json
+{ "removed": true, "path": "workspace/main/test.txt" }
+```
+
+### `GET /api/fs/search`
+
+Search for files matching a pattern.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `pattern` | string | — | Glob or substring pattern |
+| `path` | string | `/` | Root directory to search from |
+| `maxResults` | number | 50 | Maximum results (capped at 50) |
+
+**Response** `200`:
+
+```json
+{
+  "results": [
+    { "path": "workspace/main/AGENTS.md", "type": "file", "size": 2048 }
+  ],
+  "total": 1
+}
+```
+
+### `GET /api/fs/tree`
+
+Get a recursive tree view of a directory.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `path` | string | `/` | Root directory |
+| `depth` | number | 3 | Maximum depth |
+
+**Response** `200`:
+
+```json
+{
+  "tree": [
+    { "name": "AGENTS.md", "type": "file", "size": 2048 },
+    { "name": "memory", "type": "directory", "children": [ ... ] }
+  ]
+}
+```
+
+### `GET /api/fs/info`
+
+Get file/directory metadata.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `path` | string | — | Path relative to FS root |
+
+**Response** `200`:
+
+```json
+{
+  "path": "workspace/main/AGENTS.md",
+  "type": "file",
+  "size": 2048,
+  "created": "2026-01-01T00:00:00Z",
+  "modified": "2026-03-15T10:00:00Z"
+}
+```
+
+---
+
+## Organization API
+
+The org API serves as the single source of truth for department and agent
+metadata. It falls back to the bootstrap data in `org-bootstrap.js` when the
+database tables are unavailable.
+
+### `GET /api/org/summary`
+
+Get a summary of the organization — department counts, agent counts, and
+quick stats.
+
+**Response** `200`:
+
+```json
+{
+  "totalDepartments": 9,
+  "totalAgents": 42,
+  "liveSummary": {
+    "totalAgents": 42,
+    "onlineAgents": 5,
+    "offlineAgents": 37
+  },
+  "departments": [ ... ]
+}
+```
+
+### `GET /api/org/departments`
+
+List all departments.
+
+**Response** `200`:
+
+```json
+{
+  "departments": [
+    {
+      "slug": "core-platform",
+      "name": "Core Platform",
+      "description": "Primary orchestration, repair, and core coding agents.",
+      "color": "#6366f1",
+      "icon": "cpu",
+      "sortOrder": 10,
+      "agentCount": 3,
+      "onlineCount": 1
+    }
+  ]
+}
+```
+
+### `GET /api/org/agents`
+
+List all agent profiles.
+
+**Response** `200`:
+
+```json
+{
+  "agents": [
+    {
+      "agentId": "main",
+      "displayName": "Main Agent",
+      "departmentSlug": "core-platform",
+      "role": "orchestrator",
+      "capabilities": ["orchestration", "coding", "analysis", "memory"],
+      "status": "online"
+    }
+  ]
+}
+```
+
+### `GET /api/org/agents/:id`
+
+Get a single agent's profile by ID.
+
+**Response** `200`:
+
+```json
+{
+  "agentId": "main",
+  "displayName": "Main Agent",
+  "departmentSlug": "core-platform",
+  "role": "orchestrator",
+  "capabilities": ["orchestration", "coding", "analysis", "memory"]
+}
+```
+
+**Error responses**: `404` — agent not found.
+
+---
+
+## Service Catalog API
+
+The service catalog defines available services offered by departments. Services
+can be linked to workflow templates and tracked via service requests.
+
+### `GET /api/services`
+
+List all services, optionally filtered.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `department_id` | string | — | Filter by department UUID |
+| `active` | boolean | — | Filter by active status |
+| `search` | string | — | Text search on name/description |
+
+**Response** `200`:
+
+```json
+{
+  "services": [
+    {
+      "id": "uuid",
+      "slug": "content-publishing",
+      "name": "Content Publishing",
+      "description": "End-to-end content creation and publishing.",
+      "department_id": "dept-uuid",
+      "category": "content",
+      "is_active": true,
+      "tags": ["publishing", "wordpress"],
+      "metadata": {}
+    }
+  ]
+}
+```
+
+### `GET /api/services/:id`
+
+Get a single service by UUID.
+
+### `POST /api/services`
+
+Create a new service entry.
+
+**Body**:
+
+```json
+{
+  "name": "Bug Fixing",
+  "slug": "bug-fixing",
+  "description": "Triage, investigate, fix, and verify bugs.",
+  "department_id": "dept-uuid",
+  "category": "engineering"
+}
+```
+
+**Response**: `201` with the created service.
+
+### `PATCH /api/services/:id`
+
+Update a service. Accepts partial fields.
+
+### `DELETE /api/services/:id`
+
+Soft-delete (deactivate) a service. **Response**: `200`.
+
+---
+
+## Service Requests API
+
+Service requests track incoming requests for services. Each request is routed to
+a department and optionally assigned to a specific agent.
+
+### `GET /api/service-requests`
+
+List service requests.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `status` | string | — | Filter by status (`open`, `in_progress`, `completed`, `cancelled`) |
+| `priority` | string | — | Filter by priority (`low`, `medium`, `high`, `critical`) |
+| `service_id` | string | — | Filter by service UUID |
+| `department_id` | string | — | Filter by target department |
+| `limit` | number | 50 | Pagination limit |
+| `offset` | number | 0 | Pagination offset |
+
+**Response** `200`:
+
+```json
+{
+  "requests": [
+    {
+      "id": "uuid",
+      "title": "Add comparison table to review",
+      "service_id": "svc-uuid",
+      "target_department_id": "dept-uuid",
+      "target_agent_id": "affiliate-editorial",
+      "status": "open",
+      "priority": "medium",
+      "created_at": "2026-03-15T10:00:00Z"
+    }
+  ],
+  "total": 15
+}
+```
+
+### `GET /api/service-requests/:id`
+
+Get a single service request by UUID.
+
+### `POST /api/service-requests`
+
+Create a new service request.
+
+**Body**:
+
+```json
+{
+  "title": "Add comparison table",
+  "description": "Add a 3-column comparison table to the product review.",
+  "service_id": "svc-uuid",
+  "target_department_id": "dept-uuid",
+  "priority": "medium"
+}
+```
+
+**Response**: `201` with the created request.
+
+### `PATCH /api/service-requests/:id`
+
+Update a service request (change status, priority, assignment, etc.).
+
+---
+
+## Model Catalog API
+
+The model catalog provides information about available AI models and their
+providers, sourced from `~/.openclaw/openclaw.json`.
+
+### `GET /api/catalog/models`
+
+List all available models.
+
+**Response** `200`:
+
+```json
+{
+  "models": [
+    {
+      "id": "gpt-4o",
+      "name": "GPT-4o",
+      "provider": "openai",
+      "reasoning": false,
+      "contextWindow": 128000,
+      "maxTokens": 16384,
+      "displayName": "GPT-4o · openai"
+    }
+  ]
+}
+```
+
+### `GET /api/catalog/providers`
+
+List all model providers.
+
+**Response** `200`:
+
+```json
+{
+  "providers": [
+    {
+      "id": "openai",
+      "baseUrl": "https://api.openai.com/v1",
+      "api": "openai-completions",
+      "modelCount": 5
+    }
+  ]
+}
+```
+
+### `GET /api/catalog/refresh`
+
+Force a re-read of the OpenClaw config file and refresh the catalog. Triggered
+automatically via `sync-models-catalog.js` on a file-watch interval or on
+demand.
+
+**Response** `200`:
+
+```json
+{
+  "models": 12,
+  "providers": 3,
+  "syncedAt": "2026-03-15T10:30:00Z"
+}
+```
+
+---
+
+## Metrics API
+
+The metrics API provides aggregated statistics and trend data.
+
+### `GET /api/metrics/summary`
+
+Get dashboard-wide summary metrics.
+
+**Response** `200`:
+
+```json
+{
+  "tasks": { "total": 150, "completed": 80, "active": 20, "blocked": 5 },
+  "workflowRuns": { "total": 40, "active": 3, "completed": 35, "failed": 2 },
+  "agents": { "total": 42, "online": 5 },
+  "departments": { "total": 9 },
+  "approvals": { "pending": 2, "total": 10 }
+}
+```
+
+### `GET /api/metrics/department/:slug`
+
+Get metrics scoped to a specific department.
+
+**Path parameters**: `slug` — department slug (e.g., `content-publishing`)
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `days` | number | 7 | Lookback period in days |
+
+**Response** `200`:
+
+```json
+{
+  "department": "content-publishing",
+  "tasks": { "total": 30, "completed": 20 },
+  "agents": { "total": 12, "online": 2 },
+  "dailyMetrics": [
+    { "date": "2026-03-15", "completed": 5, "created": 2 }
+  ]
+}
+```
+
+### `GET /api/metrics/trends`
+
+Get time-series trend data.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `metric` | string | `tasks_completed` | Metric to trend |
+| `days` | number | 30 | Lookback period |
+| `granularity` | string | `day` | `day` or `week` |
+
+**Response** `200`:
+
+```json
+{
+  "metric": "tasks_completed",
+  "granularity": "day",
+  "data": [
+    { "date": "2026-03-15", "value": 5 },
+    { "date": "2026-03-16", "value": 8 }
+  ]
+}
+```
+
+---
+
+## Diagnostics API
+
+The diagnostics API provides system health introspection and the cron guard
+mechanism.
+
+### `GET /api/diagnostics/info`
+
+Get system diagnostic information — runtime versions, uptime, environment.
+
+**Response** `200`:
+
+```json
+{
+  "nodeVersion": "v22.22.0",
+  "platform": "linux",
+  "uptime": 86400,
+  "memoryUsage": { "rss": "128MB", "heapUsed": "64MB" },
+  "openclawVersion": "1.0.0"
+}
+```
+
+### `GET /api/diagnostics/state`
+
+Get the current diagnostics state, including cron guard status.
+
+**Response** `200`:
+
+```json
+{
+  "cronGuard": {
+    "stateFile": "/tmp/openclaw-heartbeat-cron-guard-state.json",
+    "lastGuardAt": "2026-03-15T10:00:00Z",
+    "acknowledged": false
+  },
+  "lastCheckAt": "2026-03-15T10:30:00Z"
+}
+```
+
+### `POST /api/diagnostics/check`
+
+Run a diagnostic check suite and return results.
+
+**Body** (optional):
+
+```json
+{
+  "checks": ["database", "api", "cron", "filesystem"]
+}
+```
+
+**Response** `200`:
+
+```json
+{
+  "checks": [
+    { "name": "database", "status": "ok", "latencyMs": 5 },
+    { "name": "api", "status": "ok", "latencyMs": 2 },
+    { "name": "cron", "status": "warning", "message": "Guard not acknowledged" }
+  ],
+  "overall": "degraded"
+}
+```
+
+### `POST /api/diagnostics/guard`
+
+Update the cron guard state.
+
+**Body**:
+
+```json
+{
+  "action": "acknowledge",
+  "reason": "Manual check passed"
+}
+```
+
+**Response** `200`:
+
+```json
+{ "status": "acknowledged", "updatedAt": "2026-03-15T10:30:00Z" }
+```
+
+---
+
+## Workflow Runs API
+
+Workflow runs track execution instances of workflow templates. These endpoints
+are served from `workflow-runs-api.js` on the primary task server (port 3876).
+
+### `GET /api/workflow-runs`
+
+List workflow runs with optional filters.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `status` | string | — | Filter by status |
+| `workflow_type` | string | — | Filter by workflow type |
+| `owner_agent_id` | string | — | Filter by owner agent |
+| `department_id` | string | — | Filter by department |
+| `limit` | number | 50 | Pagination limit |
+| `offset` | number | 0 | Pagination offset |
+| `sort` | string | `created_at` | Sort field |
+| `order` | string | `desc` | Sort direction |
+
+**Response** `200`:
+
+```json
+{
+  "runs": [
+    {
+      "id": "uuid",
+      "workflow_type": "citation-improvement",
+      "status": "running",
+      "owner_agent_id": "affiliate-editorial",
+      "input_payload": { ... },
+      "current_step": "fact_checking",
+      "started_at": "2026-03-15T10:00:00Z",
+      "created_at": "2026-03-15T10:00:00Z"
+    }
+  ],
+  "total": 25
+}
+```
+
+### `POST /api/workflow-runs`
+
+Create a new workflow run.
+
+**Body**:
+
+```json
+{
+  "workflow_type": "citation-improvement",
+  "owner_agent_id": "affiliate-editorial",
+  "input_payload": {
+    "title": "Best espresso machines 2026",
+    "article_url": "https://example.com/best-espresso"
+  },
+  "department_id": "dept-uuid",
+  "run_priority": "medium"
+}
+```
+
+**Response** `201` with the created run.
+
+### `GET /api/workflow-runs/:id`
+
+Get a workflow run with its steps.
+
+**Response** `200`:
+
+```json
+{
+  "run": { ... },
+  "steps": [
+    {
+      "id": "uuid",
+      "workflow_run_id": "run-uuid",
+      "step_name": "fetch_article",
+      "status": "completed",
+      "started_at": "...",
+      "finished_at": "...",
+      "output_summary": { ... }
+    }
+  ]
+}
+```
+
+### `PATCH /api/workflow-runs/:id`
+
+Update a workflow run (partial fields).
+
+### `DELETE /api/workflow-runs/:id`
+
+Cancel and delete a workflow run.
+
+**Response** `200`:
+
+```json
+{ "deleted": true, "id": "uuid" }
+```
+
+### `POST /api/workflow-runs/:id/start`
+
+Start (begin execution of) a workflow run.
+
+### `POST /api/workflow-runs/:id/heartbeat`
+
+Record a heartbeat to indicate the run is still alive.
+
+**Body**:
+
+```json
+{
+  "current_step": "fact_checking",
+  "progress": 0.5,
+  "message": "Processing citation 3 of 7"
+}
+```
+
+### `POST /api/workflow-runs/:id/complete`
+
+Mark a workflow run as completed.
+
+**Body**:
+
+```json
+{
+  "summary": "Added 5 citations and comparison table",
+  "published_url": "https://...",
+  "draft_url": "https://...",
+  "image_url": "https://..."
+}
+```
+
+Top-level string values (e.g., `published_url`, `draft_url`) are automatically
+captured as workflow artifacts.
+
+### `POST /api/workflow-runs/:id/fail`
+
+Mark a workflow run as failed.
+
+**Body**:
+
+```json
+{
+  "error": "WordPress API returned 500",
+  "step": "publishing"
+}
+```
+
+### `POST /api/workflow-runs/:id/step`
+
+Update the current step of a workflow run.
+
+**Body**:
+
+```json
+{
+  "step_name": "fact_checking",
+  "status": "in_progress"
+}
+```
+
+### `POST /api/workflow-runs/:id/cancel`
+
+Cancel a running workflow run. Requires governance authorization.
+
+### `POST /api/workflow-runs/:id/pause`
+
+Pause a running workflow run. Records `paused_at`, `paused_by`, and `pause_reason`.
+
+**Body**:
+
+```json
+{ "reason": "Awaiting external dependency" }
+```
+
+### `POST /api/workflow-runs/:id/resume`
+
+Resume a paused workflow run. Records `resumed_at` and `resumed_by`.
+
+### `POST /api/workflow-runs/:id/escalate`
+
+Escalate a workflow run to a higher-level agent or operator.
+
+**Body**:
+
+```json
+{
+  "escalated_to": "dashboard-operator",
+  "reason": "Requires human decision on pricing data"
+}
+```
+
+### `POST /api/workflow-runs/:id/reassign`
+
+Reassign a workflow run to a different agent.
+
+**Body**:
+
+```json
+{
+  "new_owner": "bug-fix_fixer",
+  "reason": "Rerouting to specialist"
+}
+```
+
+### `POST /api/workflow-runs/:id/override-failure`
+
+Override a failed run status, resetting it to allow re-execution.
+
+**Body**:
+
+```json
+{
+  "reason": "External API issue resolved, retrying"
+}
+```
+
+### `POST /api/workflow-runs/:id/bind-session`
+
+Bind a gateway session to a workflow run (sets `gateway_session_id` and
+`gateway_session_active = true`).
+
+**Body**:
+
+```json
+{
+  "sessionId": "wf-uuid-pid12345"
+}
+```
+
+### `POST /api/workflow-runs/:id/unbind-session`
+
+Unbind the gateway session from a run (sets `gateway_session_active = false`).
+
+### `GET /api/workflow-runs/:id/artifacts`
+
+List artifacts associated with a workflow run.
+
+### `POST /api/workflow-runs/:id/artifacts`
+
+Create an artifact for a workflow run.
+
+**Body**:
+
+```json
+{
+  "artifact_type": "url",
+  "name": "Published Article",
+  "value": "https://example.com/article",
+  "metadata": {}
+}
+```
+
+### `GET /api/workflow-runs/:id/approvals`
+
+List approvals for a workflow run.
+
+### `POST /api/workflow-runs/:id/approvals`
+
+Create an approval gate for a workflow run step.
+
+**Body**:
+
+```json
+{
+  "step_name": "operator_review",
+  "approver_id": "dashboard-operator",
+  "requested_by": "system-improvement-scan",
+  "approval_type": "improvement_suggestion",
+  "metadata": {
+    "category": "performance",
+    "priority": "medium",
+    "action_prompt": "Add caching to reduce API latency by ~40%"
+  },
+  "required_note": false
+}
+```
+
+### `GET /api/workflow-runs/stuck`
+
+List workflow runs that appear stuck (running but no heartbeat for a configurable
+threshold).
+
+### `GET /api/workflow-runs/active`
+
+List currently active (running/in-progress) workflow runs.
+
+### `POST /api/workflow-runs/cleanup-timeouts`
+
+Cleanup zombie sessions — marks runs as timed out if their gateway sessions are
+no longer active.
+
+---
+
+## Workflow Templates API
+
+### `GET /api/workflow-templates`
+
+List all workflow templates.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `department_id` | string | — | Filter by department |
+| `ui_category` | string | — | Filter by UI category |
+
+**Response** `200`:
+
+```json
+{
+  "templates": [
+    {
+      "name": "citation-improvement",
+      "display_name": "Citation Improvement",
+      "description": "Add/improve citations on affiliate articles",
+      "steps": ["fetch", "analyze", "fact_check", "update", "publish"],
+      "department_id": "dept-uuid",
+      "ui_category": "content"
+    }
+  ]
+}
+```
+
+### `GET /api/workflow-templates/:name`
+
+Get a single template by name.
+
+### `POST /api/workflow-templates`
+
+Create a new workflow template.
+
+### `PATCH /api/workflow-templates/:name`
+
+Update an existing workflow template.
+
+---
+
+## Approvals API
+
+### `GET /api/approvals`
+
+List all approvals.
+
+### `GET /api/approvals/pending`
+
+List pending approvals, optionally filtered by approver.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `approver_id` | string | — | Filter by approver |
+| `limit` | number | 50 | Max results |
+
+**Response** `200`:
+
+```json
+{
+  "approvals": [
+    {
+      "id": "uuid",
+      "workflow_run_id": "run-uuid",
+      "step_name": "operator_review",
+      "status": "pending",
+      "approver_id": "dashboard-operator",
+      "approval_type": "improvement_suggestion",
+      "created_at": "2026-03-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+### `PATCH /api/approvals/:id`
+
+Decide on an approval (approve or reject).
+
+**Body**:
+
+```json
+{
+  "decision": "approved",
+  "decided_by": "dashboard-operator",
+  "note": "Looks good, proceed"
+}
+```
+
+### `POST /api/approvals/:id/escalate`
+
+Escalate an approval to another approver.
+
+**Body**:
+
+```json
+{
+  "escalated_to": "main",
+  "reason": "Requires orchestrator review"
+}
+```
+
+---
+
+## Artifacts API
+
+### `GET /api/artifacts`
+
+List artifacts across all workflow runs.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `workflow_run_id` | string | — | Filter by run |
+| `artifact_type` | string | — | Filter by type (`url`, `file`, `text`) |
+| `status` | string | — | Filter by status |
+
+### `PATCH /api/artifacts/:id`
+
+Update an artifact's metadata or status.
+
+### `DELETE /api/artifacts/:id`
+
+Delete an artifact.
+
+---
+
+## Blockers API
+
+### `GET /api/blockers`
+
+List current blockers across tasks and workflow runs.
+
+**Response** `200`:
+
+```json
+{
+  "blockers": [
+    {
+      "id": "uuid",
+      "sourceType": "task",
+      "sourceId": "task-uuid",
+      "blockerType": "dependency",
+      "description": "Waiting on task ABC",
+      "severity": "medium",
+      "createdAt": "2026-03-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+### `GET /api/blockers/summary`
+
+Get a summary of blockers grouped by type.
+
+**Response** `200`:
+
+```json
+{
+  "total": 5,
+  "byType": [
+    { "blockerType": "dependency", "count": 3, "severity": "medium" },
+    { "blockerType": "external_api", "count": 2, "severity": "high" }
+  ]
+}
+```
+
+---
+
+## Sessions API
+
+### `GET /api/sessions/active`
+
+List currently active gateway sessions associated with workflow runs.
+
+### `POST /api/sessions/:id/heartbeat`
+
+Record a heartbeat for a session, keeping it marked as active.
+
+---
+
+## System Scan API
+
+### `POST /api/system-scan/run`
+
+Queue a system improvement scan — creates a workflow run that spawns an agent
+to analyze the current system state and create approval-gated suggestions.
+
+**Body** (optional):
+
+```json
+{
+  "scan_areas": ["performance", "reliability", "documentation"],
+  "max_suggestions": 10
+}
+```
+
+**Response** `201`:
+
+```json
+{
+  "workflowRunId": "uuid",
+  "status": "queued",
+  "message": "System improvement scan queued"
+}
+```
+
+### `POST /api/system-scan/followup`
+
+Inject a follow-up message into an existing scan run's agent session.
+
+**Body**:
+
+```json
+{
+  "run_id": "run-uuid",
+  "message": "Focus on the cron timeout issues specifically"
+}
+```
+
+---
+
+## Governance Module (Library)
+
+`governance.js` is a **library module**, not a standalone API server. It is
+imported by the workflow-runs-api and other server modules to enforce
+authorization policies on workflow actions.
+
+### Actions and Rules
+
+| Action | Allowed Roles | Allowed Capabilities | Assigned Approver |
+|---|---|---|---|
+| `launch_workflow` | orchestrator, pipeline, specialist, operator | orchestration, automation, workflows, quality, auditing | — |
+| `approve` | orchestrator, operator | quality, auditing, management | ✅ |
+| `reject` | orchestrator, operator | quality, auditing, management | ✅ |
+| `cancel_run` | orchestrator, operator | orchestration, management | — |
+| `override_failure` | orchestrator, operator | orchestration, management, repair, diagnostics | — |
+| `reassign_owner` | orchestrator, operator, pipeline | orchestration, management | — |
+| `escalate_run` | orchestrator, operator, pipeline | orchestration, management | — |
+| `escalate_approval` | orchestrator, operator, pipeline | orchestration, management, quality, auditing | — |
+| `pause_run` | orchestrator, operator, pipeline | orchestration, management | — |
+| `resume_run` | orchestrator, operator, pipeline | orchestration, management | — |
+
+### Actor Resolution
+
+The `normalizeActorContext()` function resolves actors into a standardized
+context:
+
+1. **System actors** (`system`, `dashboard-operator`, `openclaw`) → full
+   operator privileges.
+2. **Pattern match** (`ops-*`, `*-operator`, `*-controller`, `*-director`) →
+   operator role.
+3. **Database/Bootstrap profile** → role and capabilities from the profile.
+4. **Unknown actors** → `external` role, no capabilities.
+
+### Usage
+
+```js
+const { evaluateGovernanceAction, buildGovernancePolicySummary } = require('./governance.js');
+
+// Check if an actor can perform an action
+const result = evaluateGovernanceAction('approve', { id: 'main' });
+// { allowed: true, actor: { id: 'main', role: 'orchestrator', ... }, policy: { ... } }
+
+// Get policy summary for UI display
+const summary = buildGovernancePolicySummary(['approve', 'cancel_run', 'escalate_run']);
+// [{ action: 'approve', label: 'Approve', roles: [...], capabilities: [...] }, ...]
+```
