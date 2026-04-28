@@ -5,14 +5,17 @@
  * diffs, and point-in-time snapshots.
  */
 
-function registerHistoryRoutes(router, pool) {
+function registerHistoryRoutes(router, deps) {
+  const getPool = () => deps?.pool || deps;
+  const _ensurePool = (res, ctx) => { if (!getPool()) { ctx.sendJSON(res, 503, { error: "Database not available (running in JSON snapshot mode)" }); return false; } return true; };
 
   // GET /api/history/:taskId — full history for a task
   router.add('GET', '/api/history/:taskId', async (req, res, ctx, params) => {
+      if (!_ensurePool(res, ctx)) return;
     try {
       const { taskId } = params;
       const limit = Math.min(parseInt(req.url?.split('limit=')[1]?.split('&')[0] || '50', 10), 200);
-      const result = await pool.query(
+      const result = await getPool().query(
         `SELECT id, actor, action, old_value, new_value, timestamp
          FROM audit_log WHERE task_id = $1
          ORDER BY timestamp DESC LIMIT $2`,
@@ -37,6 +40,7 @@ function registerHistoryRoutes(router, pool) {
 
   // GET /api/history/:taskId/snapshot?at=ISO_TIMESTAMP — point-in-time state
   router.add('GET', '/api/history/:taskId/snapshot', async (req, res, ctx, params) => {
+      if (!_ensurePool(res, ctx)) return;
     try {
       const { taskId } = params;
       const atParam = req.url?.split('at=')[1]?.split('&')[0];
@@ -46,7 +50,7 @@ function registerHistoryRoutes(router, pool) {
       const at = decodeURIComponent(atParam);
 
       // Get the latest audit entry before the given timestamp
-      const result = await pool.query(
+      const result = await getPool().query(
         `SELECT new_value FROM audit_log
          WHERE task_id = $1 AND timestamp <= $2
          ORDER BY timestamp DESC LIMIT 1`,
@@ -55,7 +59,7 @@ function registerHistoryRoutes(router, pool) {
 
       if (result.rows.length === 0) {
         // Fall back to current task state
-        const taskResult = await pool.query(
+        const taskResult = await getPool().query(
           `SELECT * FROM tasks WHERE id = $1`, [taskId]
         );
         if (taskResult.rows.length === 0) {
@@ -72,6 +76,7 @@ function registerHistoryRoutes(router, pool) {
 
   // GET /api/history/:taskId/diff?from=ISO&to=ISO — diff between two points
   router.add('GET', '/api/history/:taskId/diff', async (req, res, ctx, params) => {
+      if (!_ensurePool(res, ctx)) return;
     try {
       const { taskId } = params;
       const urlStr = req.url || '';
@@ -83,11 +88,11 @@ function registerHistoryRoutes(router, pool) {
       }
 
       const [fromResult, toResult] = await Promise.all([
-        pool.query(
+        getPool().query(
           `SELECT new_value FROM audit_log WHERE task_id = $1 AND timestamp <= $2 ORDER BY timestamp DESC LIMIT 1`,
           [taskId, decodeURIComponent(from)]
         ),
-        pool.query(
+        getPool().query(
           `SELECT new_value FROM audit_log WHERE task_id = $1 AND timestamp <= $2 ORDER BY timestamp DESC LIMIT 1`,
           [taskId, decodeURIComponent(to)]
         ),
@@ -115,6 +120,7 @@ function registerHistoryRoutes(router, pool) {
 
   // GET /api/history — recent changes across all tasks
   router.add('GET', '/api/history', async (req, res, ctx) => {
+      if (!_ensurePool(res, ctx)) return;
     try {
       const urlStr = req.url || '';
       const limit = Math.min(parseInt(urlStr.split('limit=')[1]?.split('&')[0] || '30', 10), 100);
@@ -142,7 +148,7 @@ function registerHistoryRoutes(router, pool) {
       query += ` ORDER BY a.timestamp DESC LIMIT $1`;
       params.unshift(limit);
 
-      const result = await pool.query(query, params);
+      const result = await getPool().query(query, params);
       ctx.sendJSON(res, 200, { entries: result.rows, total: result.rows.length });
     } catch (err) {
       ctx.sendJSON(res, 500, { error: err.message });

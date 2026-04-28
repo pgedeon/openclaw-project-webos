@@ -5,11 +5,16 @@
  * as a JSON bundle and re-importing it.
  */
 
-function registerExportRoutes(router, pool, settingsStore) {
+function registerExportRoutes(router, deps, settingsStore) {
+  const getPool = () => deps?.pool || deps;
+  const _ensurePool = (res, ctx) => { if (!getPool()) { ctx.sendJSON(res, 503, { error: 'Database not available (running in JSON snapshot mode)' }); return false; } return true; };
 
   // GET /api/export — export everything as a JSON bundle
   router.add('GET', '/api/export', async (req, res, ctx) => {
     try {
+      if (!_ensurePool(res, ctx)) return;
+      if (!_ensurePool(res, ctx)) return;
+      const pool = getPool();
       const [projects, tasks, workflows, audit] = await Promise.all([
         pool.query('SELECT * FROM projects ORDER BY created_at'),
         pool.query('SELECT * FROM tasks ORDER BY created_at'),
@@ -67,7 +72,10 @@ function registerExportRoutes(router, pool, settingsStore) {
 
   // POST /api/import — import a bundle
   router.add('POST', '/api/import', async (req, res, ctx) => {
-    const client = await pool.connect();
+    if (!_ensurePool(res, ctx)) return;
+      if (!_ensurePool(res, ctx)) return;
+      const pool = getPool();
+      const client = await pool.connect();
     try {
       let body;
       try {

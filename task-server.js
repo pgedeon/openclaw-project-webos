@@ -661,8 +661,8 @@ registerTaskRoutes(router);
 registerProjectRoutes(router);
 registerViewRoutes(router);
 registerMemoryRoutes(router);
-registerHistoryRoutes(router, asanaStorage.pool);
-registerExportRoutes(router, asanaStorage.pool, settingsStore);
+registerHistoryRoutes(router, settingsDeps);
+registerExportRoutes(router, settingsDeps, settingsStore);
 const server = http.createServer(async (req, res) => {
   const timestamp = new Date().toISOString();
   const url = req.url.split('?')[0];
