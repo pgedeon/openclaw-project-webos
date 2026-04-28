@@ -13,7 +13,7 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 |-------|-------|------|--------|
 | P0 — Doc Corrections | 5 | 5/5 | ✅ Done |
 | P0 — Quick Wins | 7 | 7/7 | ✅ Done |
-| P0 — Hierarchical Docs | 1 | 0/1 | 🔲 Not started |
+| P0 — Hierarchical Docs | 1 | 1/1 | ✅ Done |
 | P1 — Features | 4 | 0/4 | 🔲 Not started |
 | P2 — Features | 2 | 0/2 | 🔲 Not started |
 | P3 — Deferred | 2 | — | ⏸️ On hold |
@@ -50,16 +50,16 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 
 > Every source directory that owns code also owns a documentation contract.
 
-- [ ] **HIER-1:** Create root `AGENTS.md` — project-wide constraints (no build step, vanilla JS, route registration, migration rules)
-- [ ] **HIER-2:** Create `src/shell/AGENTS.md` — shell module contracts
-- [ ] **HIER-3:** Create `src/shell/native-views/AGENTS.md` — view conventions and registry
-- [ ] **HIER-4:** Create `src/shell/widgets/AGENTS.md` — widget system contracts
-- [ ] **HIER-5:** Create `src/offline/AGENTS.md` — offline layer contracts
-- [ ] **HIER-6:** Create `routes/AGENTS.md` — route conventions
-- [ ] **HIER-7:** Create `storage/AGENTS.md` — storage layer contracts
-- [ ] **HIER-8:** Create `schema/AGENTS.md` — migration rules
-- [ ] **HIER-9:** Create `scripts/AGENTS.md` — operational script contracts
-- [ ] **HIER-10:** Update `README.md` and `DEVELOPER_GUIDE.md` to reference the hierarchy
+- [x] **HIER-1:** Create root `AGENTS.md` — project-wide constraints (no build step, vanilla JS, route registration, migration rules)
+- [x] **HIER-2:** Create `src/shell/AGENTS.md` — shell module contracts
+- [x] **HIER-3:** Create `src/shell/native-views/AGENTS.md` — view conventions and registry
+- [x] **HIER-4:** Create `src/shell/widgets/AGENTS.md` — widget system contracts
+- [x] **HIER-5:** Create `src/offline/AGENTS.md` — offline layer contracts
+- [x] **HIER-6:** Create `routes/AGENTS.md` — route conventions
+- [x] **HIER-7:** Create `storage/AGENTS.md` — storage layer contracts
+- [x] **HIER-8:** Create `schema/AGENTS.md` — migration rules
+- [x] **HIER-9:** Create `scripts/AGENTS.md` — operational script contracts
+- [x] **HIER-10:** Update `README.md` and `DEVELOPER_GUIDE.md` to reference the hierarchy
 
 ---
 
