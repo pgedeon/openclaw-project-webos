@@ -18,21 +18,27 @@
   - [POST /guard/acknowledge](#post-guardacknowledge)
 - [Memory API (Port 3879)](#memory-api-port-3879)
   - [GET /api/memory/list](#get-apimemorylist)
-  - [GET /api/memory/read](#get-apimemoryread)
-  - [POST /api/memory/write](#post-apimemorywrite)
-  - [POST /api/memory/search](#post-apimemorysearch)
+  - [GET /api/memory/file/:name](#get-apimemoryfilename)
+  - [PUT /api/memory/file/:name](#put-apimemoryfilename)
+  - [GET /api/memory/root](#get-apimemoryroot)
+  - [GET /api/memory/search](#get-apimemorysearch)
   - [GET /api/memory/facts](#get-apimemoryfacts)
-  - [POST /api/memory/summarize](#post-apimemorysummarize)
-  - [POST /api/memory/unified-query](#post-apimemoryunified-query)
+  - [GET /api/memory/facts/list](#get-apimemoryfactslist)
+  - [POST /api/memory/facts](#post-apimemoryfacts)
+  - [DELETE /api/memory/facts](#delete-apimemoryfacts)
+  - [GET /api/memory/facts/search](#get-apimemoryfactssearch)
+  - [GET /api/memory/status](#get-apimemorystatus)
+  - [GET /api/memory/stats](#get-apimemorystats)
 - [Filesystem API (Port 3880)](#filesystem-api-port-3880)
-  - [GET /api/fs/ls](#get-apifsls)
-  - [GET /api/fs/read](#get-apifsread)
-  - [POST /api/fs/write](#post-apifswrite)
+  - [GET /api/fs/list](#get-apifslist)
+  - [GET /api/fs/file](#get-apifsfile)
+  - [PUT /api/fs/file](#put-apifsfile)
+  - [POST /api/fs/file](#post-apifsfile)
   - [POST /api/fs/mkdir](#post-apifsmkdir)
-  - [DELETE /api/fs/rm](#delete-apifsrm)
+  - [POST /api/fs/rename](#post-apifsrename)
+  - [DELETE /api/fs/path](#delete-apifspath)
   - [GET /api/fs/search](#get-apifssearch)
-  - [GET /api/fs/tree](#get-apifstree)
-  - [GET /api/fs/info](#get-apifsinfo)
+  - [GET /api/fs/stat](#get-apifsstat)
 - [Organization API](#organization-api)
   - [GET /api/org/summary](#get-apiorgsummary)
   - [GET /api/org/departments](#get-apiorgdepartments)
@@ -263,151 +269,198 @@ searches via the unified query script.
 
 List memory files in the agent workspace.
 
-**Query parameters**:
-
-| Param | Type | Default | Description |
-|---|---|---|---|
-| `dir` | string | — | Subdirectory to list |
-| `pattern` | string | — | Glob pattern to filter files |
-
 **Response** `200`:
 
 ```json
 {
   "files": [
-    { "name": "2026-03-15.md", "size": 2048, "modified": "2026-03-15T10:00:00Z" }
+    {
+      "name": "2026-03-15.md",
+      "title": "March 15",
+      "size": 2048,
+      "lines": 42,
+      "modified": "2026-03-15T10:00:00Z",
+      "isDaily": true,
+      "isSpecialized": false
+    }
   ]
 }
 ```
 
-### `GET /api/memory/read`
+### `GET /api/memory/file/:name`
 
-Read a memory file's contents.
+Read a specific memory file by name.
+
+**URL parameters**:
+
+| Param | Type | Description |
+|---|---|---|
+| `name` | string | Memory file name (e.g. `2026-03-15.md`) |
+
+**Response** `200`:
+
+```json
+{
+  "name": "2026-03-15.md",
+  "content": "# March 15\n...",
+  "size": 2048,
+  "lines": 42
+}
+```
+
+### `PUT /api/memory/file/:name`
+
+Write content to an existing memory file.
+
+**URL parameters**:
+
+| Param | Type | Description |
+|---|---|---|
+| `name` | string | Memory file name to update |
+
+**Body**:
+
+```json
+{ "content": "# March 15\nUpdated content..." }
+```
+
+**Response** `200`:
+
+```json
+{ "saved": true, "name": "2026-03-15.md", "size": 256 }
+```
+
+### `GET /api/memory/root`
+
+Read the main MEMORY.md file.
+
+**Response** `200`:
+
+```json
+{
+  "name": "MEMORY.md",
+  "content": "# Long-Term Memory\n...",
+  "size": 4096
+}
+```
+
+### `GET /api/memory/search`
+
+Search memory files using the unified query script (`scripts/memory_query_unified.js`).
 
 **Query parameters**:
 
 | Param | Type | Default | Description |
 |---|---|---|---|
-| `path` | string | — | Relative path within memory directory |
-
-**Response** `200`:
-
-```json
-{
-  "path": "2026-03-15.md",
-  "content": "# March 15\n...",
-  "size": 2048
-}
-```
-
-### `POST /api/memory/write`
-
-Write content to a memory file.
-
-**Body**:
-
-```json
-{
-  "path": "2026-03-15.md",
-  "content": "# March 15\nNew content here..."
-}
-```
-
-**Response** `200`:
-
-```json
-{ "saved": true, "path": "2026-03-15.md" }
-```
-
-### `POST /api/memory/search`
-
-Search memory files using the unified query script
-(`scripts/memory_query_unified.js`).
-
-**Body**:
-
-```json
-{
-  "query": "agent preferences",
-  "limit": 10
-}
-```
+| `q` | string | — | Search query |
 
 **Response** `200`:
 
 ```json
 {
   "results": [
-    { "path": "2026-03-14.md", "score": 0.85, "excerpt": "..." }
+    { "source": "memory/2026-03-15.md", "score": 0.85, "text": "..." }
   ]
 }
 ```
 
 ### `GET /api/memory/facts`
 
-Query the facts database via `scripts/facts_db.py`.
+Get aggregated facts statistics across all namespaces.
+
+**Response** `200`:
+
+```json
+{
+  "namespaces": [
+    { "name": "general", "fact_count": 42 }
+  ]
+}
+```
+
+### `GET /api/memory/facts/list`
+
+List facts, optionally filtered by namespace.
 
 **Query parameters**:
 
 | Param | Type | Default | Description |
 |---|---|---|---|
-| `q` | string | — | Fact query string |
-| `category` | string | — | Fact category filter |
+| `namespace` | string | — | Filter by namespace |
 
 **Response** `200`:
 
 ```json
 {
   "facts": [
-    { "id": 1, "key": "timezone", "value": "Europe/Berlin", "category": "preferences" }
+    { "key": "preference.theme", "value": "dark", "namespace": "general" }
   ]
 }
 ```
 
-### `POST /api/memory/summarize`
+### `POST /api/memory/facts`
 
-Summarize recent memory entries.
+Create or update a fact.
 
 **Body**:
 
 ```json
 {
-  "days": 7,
-  "maxTokens": 500
+  "key": "preference.theme",
+  "value": "dark",
+  "namespace": "general"
 }
 ```
 
-**Response** `200`:
+### `DELETE /api/memory/facts`
 
-```json
-{
-  "summary": "Over the last 7 days: worked on dashboard docs, fixed cron bug...",
-  "entriesReviewed": 7
-}
-```
-
-### `POST /api/memory/unified-query`
-
-Run a unified query combining facts, file search, and semantic memory
-retrieval.
+Delete a fact.
 
 **Body**:
 
 ```json
-{
-  "query": "What was decided about the cron timeout?",
-  "sources": ["facts", "files", "semantic"],
-  "limit": 5
-}
+{ "key": "preference.theme", "namespace": "general" }
 ```
+
+### `GET /api/memory/facts/search`
+
+Search facts by key or value.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `query` | string | — | Search query |
+| `namespace` | string | — | Filter by namespace |
+
+### `GET /api/memory/status`
+
+Memory system status (index health, embeddings, etc.).
 
 **Response** `200`:
 
 ```json
 {
-  "results": [
-    { "source": "files", "path": "2026-03-15.md", "excerpt": "...", "score": 0.92 }
-  ]
+  "status": "ok",
+  "memoryDir": "/root/.openclaw/workspace/main/memory",
+  "fileCount": 15,
+  "indexReady": true
+}
+```
+
+### `GET /api/memory/stats`
+
+Aggregate memory statistics.
+
+**Response** `200`:
+
+```json
+{
+  "totalFiles": 15,
+  "totalSize": 45056,
+  "totalLines": 890,
+  "dailyNotes": 12,
+  "specializedFiles": 3
 }
 ```
 
@@ -422,10 +475,10 @@ limits, blocks sensitive file extensions, and redacts secrets from responses.
 **Security controls**:
 - Max file read/write size: 2 MB (`MAX_FILE_BYTES`)
 - Protected extensions blocked from read/write: `.pem`, `.key`, `.crt`, `.p12`
-- Secret regex pattern `\b([A-Z0-9_]*?(?:API_KEY|SECRET|PASSWORD|TOKEN)[A-Z0-9_]*)\s*=` redacts values
+- Secret regex pattern redacts values in responses
 - Max search results: 50
 
-### `GET /api/fs/ls`
+### `GET /api/fs/list`
 
 List directory contents.
 
@@ -447,7 +500,7 @@ List directory contents.
 }
 ```
 
-### `GET /api/fs/read`
+### `GET /api/fs/file`
 
 Read a file's contents (max 2 MB).
 
@@ -456,7 +509,6 @@ Read a file's contents (max 2 MB).
 | Param | Type | Default | Description |
 |---|---|---|---|
 | `path` | string | — | File path relative to FS root |
-| `encoding` | string | `utf8` | File encoding |
 
 **Response** `200`:
 
@@ -464,8 +516,7 @@ Read a file's contents (max 2 MB).
 {
   "path": "workspace/main/AGENTS.md",
   "content": "# AGENTS.md\n...",
-  "size": 2048,
-  "encoding": "utf8"
+  "size": 2048
 }
 ```
 
@@ -474,7 +525,7 @@ Read a file's contents (max 2 MB).
 - `404` — file not found
 - `413` — file exceeds 2 MB limit
 
-### `POST /api/fs/write`
+### `PUT /api/fs/file`
 
 Write content to a file (max 2 MB body).
 
@@ -483,8 +534,7 @@ Write content to a file (max 2 MB body).
 ```json
 {
   "path": "workspace/main/test.txt",
-  "content": "Hello world",
-  "encoding": "utf8"
+  "content": "Hello world"
 }
 ```
 
@@ -492,6 +542,19 @@ Write content to a file (max 2 MB body).
 
 ```json
 { "saved": true, "path": "workspace/main/test.txt", "size": 11 }
+```
+
+### `POST /api/fs/file`
+
+Append content to a file or create with content.
+
+**Body**:
+
+```json
+{
+  "path": "workspace/main/test.txt",
+  "content": "Appended line"
+}
 ```
 
 ### `POST /api/fs/mkdir`
@@ -510,7 +573,17 @@ Create a directory (recursive).
 { "created": true, "path": "workspace/main/memory/archive" }
 ```
 
-### `DELETE /api/fs/rm`
+### `POST /api/fs/rename`
+
+Rename or move a file/directory.
+
+**Body**:
+
+```json
+{ "oldPath": "workspace/main/old.txt", "newPath": "workspace/main/new.txt" }
+```
+
+### `DELETE /api/fs/path`
 
 Remove a file or empty directory.
 
@@ -534,9 +607,8 @@ Search for files matching a pattern.
 
 | Param | Type | Default | Description |
 |---|---|---|---|
-| `pattern` | string | — | Glob or substring pattern |
+| `q` | string | — | Search query |
 | `path` | string | `/` | Root directory to search from |
-| `maxResults` | number | 50 | Maximum results (capped at 50) |
 
 **Response** `200`:
 
@@ -544,34 +616,11 @@ Search for files matching a pattern.
 {
   "results": [
     { "path": "workspace/main/AGENTS.md", "type": "file", "size": 2048 }
-  ],
-  "total": 1
-}
-```
-
-### `GET /api/fs/tree`
-
-Get a recursive tree view of a directory.
-
-**Query parameters**:
-
-| Param | Type | Default | Description |
-|---|---|---|---|
-| `path` | string | `/` | Root directory |
-| `depth` | number | 3 | Maximum depth |
-
-**Response** `200`:
-
-```json
-{
-  "tree": [
-    { "name": "AGENTS.md", "type": "file", "size": 2048 },
-    { "name": "memory", "type": "directory", "children": [ ... ] }
   ]
 }
 ```
 
-### `GET /api/fs/info`
+### `GET /api/fs/stat`
 
 Get file/directory metadata.
 
@@ -588,7 +637,6 @@ Get file/directory metadata.
   "path": "workspace/main/AGENTS.md",
   "type": "file",
   "size": 2048,
-  "created": "2026-01-01T00:00:00Z",
   "modified": "2026-03-15T10:00:00Z"
 }
 ```

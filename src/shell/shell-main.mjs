@@ -366,6 +366,10 @@ export function bootstrapShell({
   // Start the realtime sync
   sync.start();
 
+  // Enable SSE push updates (falls back to polling if unavailable)
+  globalThis.__realtimeSyncForceRefresh = () => sync.refresh();
+  import('./realtime-sync.mjs').then(({ connectSSE }) => connectSSE());
+
   widgetsReady = (async () => {
     try {
       widgetRegistry = new WidgetRegistry({

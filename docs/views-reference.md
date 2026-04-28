@@ -488,3 +488,41 @@ Factory function that creates view renderers for support/debugging views. Used t
 Compatibility wrapper that adapts legacy view render functions to the current shell API. Used during migration from the old single-page layout to the windowed desktop shell.
 
 **Usage:** `renderLegacyView(renderFn, context)` wraps an old-style render function.
+
+### Sessions
+
+**Category:** Work · **ID:** `sessions` · **Default size:** 1120×740
+
+Live session browser and chat interface for interacting with OpenClaw agents. Shows active and past sessions with streaming chat support.
+
+**Features:**
+- Browse active and past agent sessions
+- Stream chat messages in real-time via SSE
+- Send messages to running sessions
+- View session history and metadata
+- Abort running session tasks
+
+**API:** Uses `/api/oc/chat/send`, `/api/oc/chat/status`, `/api/oc/chat/abort`, `/api/oc/sessions` routes.
+
+### Bing Webmaster
+
+**Category:** Admin · **ID:** `bing`
+
+Submit URLs to Bing and manage search engine indexing for connected sites.
+
+**Features:**
+- Submit URLs for indexing
+- Check indexing status
+- Manage sitemap submissions
+
+### Settings
+
+**Category:** Admin · **ID:** `settings`
+
+Configuration panel for OpenClaw Desktop settings and preferences.
+
+**Features:**
+- View and edit dashboard settings by category
+- Import/export configuration bundles
+- View settings changelog
+- Persist settings across sessions

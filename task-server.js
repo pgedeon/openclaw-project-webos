@@ -672,7 +672,7 @@ const server = http.createServer(async (req, res) => {
   // Require Bearer token for all /api/* routes (except /api/health)
   // when DASHBOARD_AUTH_TOKEN is set in environment
   // SSE endpoints (/api/events) can also authenticate via ?token= query param
-  if (DASHBOARD_AUTH_TOKEN && url.startsWith('/api/') && url !== '/api/health') {
+  if (DASHBOARD_AUTH_TOKEN && url.startsWith('/api/') && url !== '/api/health' && url !== '/api/auth/self') {
     const authHeader = req.headers['authorization'] || '';
     let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
     // SSE fallback: accept token in query string

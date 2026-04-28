@@ -27,7 +27,7 @@ const SYNC_STATUS = {
 };
 
 // API endpoint configuration
-const API_ENDPOINT = '/api/tasks'; // Adjust as needed
+const API_ENDPOINT = '/api/tasks/all'; // Full task list for sync
 
 class SyncManager {
   constructor() {

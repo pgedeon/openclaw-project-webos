@@ -11,8 +11,8 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 
 | Phase | Items | Done | Status |
 |-------|-------|------|--------|
-| P0 — Doc Corrections | 5 | 0/5 | 🔲 Not started |
-| P0 — Quick Wins | 7 | 0/7 | 🔲 Not started |
+| P0 — Doc Corrections | 5 | 5/5 | ✅ Done |
+| P0 — Quick Wins | 7 | 5/7 | 🟡 In progress |
 | P0 — Hierarchical Docs | 1 | 0/1 | 🔲 Not started |
 | P1 — Features | 4 | 0/4 | 🔲 Not started |
 | P2 — Features | 2 | 0/2 | 🔲 Not started |
@@ -24,11 +24,11 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 
 > Every feature below depends on accurate references. Fix these first.
 
-- [ ] **DOC-1:** Fix `README.md` — says 23 apps and 17 widgets, source has 25 apps and 18 widgets
-- [ ] **DOC-2:** Fix `docs/views-reference.md` — missing `sessions`, `bing`, and `settings` apps
-- [ ] **DOC-3:** Fix `docs/api-reference-complete.md` — memory routes documented as `/api/memory/read` but implemented as `/api/memory/file/:name`; filesystem routes documented as `/api/fs/ls` but implemented as `/api/fs/list`, `/api/fs/file`, `/api/fs/path`
-- [ ] **DOC-4:** Fix `docs/shell-architecture.md` — describes `RealtimeSync.subscribe('key', cb)` but implementation is `subscribe(callback)` with `(data, changedKeys)`
-- [ ] **DOC-5:** Fix `docs/offline-reference.md` — says conflict default is server-wins, but `SyncManager.resolveConflict()` defaults to `client-wins`
+- [x] **DOC-1:** Fix `README.md` — says 23 apps and 17 widgets, source has 25 apps and 18 widgets
+- [x] **DOC-2:** Fix `docs/views-reference.md` — missing `sessions`, `bing`, and `settings` apps
+- [x] **DOC-3:** Fix `docs/api-reference-complete.md` — memory routes documented as `/api/memory/read` but implemented as `/api/memory/file/:name`; filesystem routes documented as `/api/fs/ls` but implemented as `/api/fs/list`, `/api/fs/file`, `/api/fs/path`
+- [x] **DOC-4:** Fix `docs/shell-architecture.md` — describes `RealtimeSync.subscribe('key', cb)` but implementation is `subscribe(callback)` with `(data, changedKeys)`
+- [x] **DOC-5:** Fix `docs/offline-reference.md` — says conflict default is server-wins, but `SyncManager.resolveConflict()` defaults to `client-wins`
 
 ---
 
@@ -36,11 +36,11 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 
 > Small changes with outsized impact. Most are one-line fixes.
 
-- [ ] **QW-1:** Enable SSE — import and call `connectSSE()` in `src/shell/shell-main.mjs` after `sync.start()`
-- [ ] **QW-2:** Fix `SyncManager.syncAll()` — fetches `/api/tasks` (legacy) instead of `/api/tasks/all`
-- [ ] **QW-3:** Add `/api/auth/self` — returns `{ mode: 'token', actor: 'dashboard-operator', role: 'operator' }`
-- [ ] **QW-4:** Add `api.memory` helpers to `src/shell/api-client.mjs` — stop views from open-coding fetches
-- [ ] **QW-5:** Add `api.settings`, `api.sessions`, `api.chat` helpers to `src/shell/api-client.mjs`
+- [x] **QW-1:** Enable SSE — import and call `connectSSE()` in `src/shell/shell-main.mjs` after `sync.start()`
+- [x] **QW-2:** Fix `SyncManager.syncAll()` — fetches `/api/tasks` (legacy) instead of `/api/tasks/all`
+- [x] **QW-3:** Add `/api/auth/self` — returns `{ mode: 'token', actor: 'dashboard-operator', role: 'operator' }`
+- [x] **QW-4:** Add `api.memory` helpers to `src/shell/api-client.mjs` — stop views from open-coding fetches
+- [x] **QW-5:** Add `api.settings`, `api.sessions`, `api.chat` helpers to `src/shell/api-client.mjs`
 - [ ] **QW-6:** Replace absolute memory API calls in `memory-view.mjs` — use same-origin `/api/memory/*` after adding proxy route
 - [ ] **QW-7:** Add `scripts/docs-drift-check.js` and wire into `npm run validate`
 

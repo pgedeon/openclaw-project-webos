@@ -523,6 +523,71 @@ export function createAPIClient(baseURL = '/api', options = {}) {
         return jsonRequest(`/service-requests/${encodeURIComponent(id)}/launch`, { method: 'POST', body: data });
       },
     },
+    memory: {
+      list() {
+        return request('/memory/list');
+      },
+      file(name) {
+        return request(`/memory/file/${encodeURIComponent(name)}`);
+      },
+      writeFile(name, content) {
+        return jsonRequest(`/memory/file/${encodeURIComponent(name)}`, { method: 'PUT', body: { content } });
+      },
+      root() {
+        return request('/memory/root');
+      },
+      search(q) {
+        return request(pathWithQuery('/memory/search', { q }));
+      },
+      facts() {
+        return request('/memory/facts');
+      },
+      factsList(params = {}) {
+        return request(pathWithQuery('/memory/facts/list', params));
+      },
+      status() {
+        return request('/memory/status');
+      },
+      stats() {
+        return request('/memory/stats');
+      },
+    },
+    settings: {
+      list(category) {
+        return request(pathWithQuery('/settings', category ? { category } : {}));
+      },
+      get(key) {
+        return request(`/settings/${encodeURIComponent(key)}`);
+      },
+      set(key, value) {
+        return jsonRequest(`/settings/${encodeURIComponent(key)}`, { method: 'PUT', body: { value } });
+      },
+      importSettings(data) {
+        return jsonRequest('/settings/import', { method: 'POST', body: data });
+      },
+      changelog() {
+        return request('/settings/changelog');
+      },
+    },
+    sessions: {
+      list() {
+        return request('/oc/sessions');
+      },
+      history(sessionId) {
+        return request(`/oc/sessions/${encodeURIComponent(sessionId)}/history`);
+      },
+    },
+    chat: {
+      send(sessionId, message) {
+        return jsonRequest('/oc/chat/send', { method: 'POST', body: { sessionId, message } });
+      },
+      abort(sessionId) {
+        return jsonRequest('/oc/chat/abort', { method: 'POST', body: { sessionId } });
+      },
+      status(sessionId) {
+        return request(pathWithQuery('/oc/chat/status', sessionId ? { sessionId } : {}));
+      },
+    },
   };
 
   return client;

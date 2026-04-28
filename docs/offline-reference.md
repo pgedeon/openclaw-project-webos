@@ -252,7 +252,7 @@ When the server returns HTTP 409 (conflict):
 
 1. The queue item is marked with status `conflict`.
 2. `SyncManager` emits a `conflictDetected` event.
-3. `OfflineUIManager` auto-resolves using the **server-wins** strategy by default:
+3. `OfflineUIManager` auto-resolves using the **client-wins** strategy by default (configurable):
    - Fetches current server state.
    - Replaces local data with server data.
    - Removes the conflicting queue item.
@@ -312,7 +312,7 @@ A persistent error banner (requires `#errorBanner` and `#errorBannerMessage` ele
 ### Conflict Notification
 
 - Uses `showNotice()` if available.
-- Auto-resolves via server-wins strategy.
+- Auto-resolves via client-wins strategy (configurable to server-wins or merge).
 - Shows success or failure notice after resolution.
 
 ---

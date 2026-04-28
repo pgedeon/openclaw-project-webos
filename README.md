@@ -48,8 +48,8 @@ A Windows 11-style desktop environment for managing OpenClaw agent workflows —
 
 ### Desktop Shell
 - **Windows 11 aesthetic** — frosted glass taskbar, start menu with app grid, draggable/resizable windows
-- **23 windowed apps** — each feature is a self-contained view launched as a desktop window
-- **17 desktop widgets** — always-on data panels (clock, health, task pulse, agent fleet, etc.)
+- **26 windowed apps** — each feature is a self-contained view launched as a desktop window
+- **18 desktop widgets** — always-on data panels (clock, health, task pulse, agent fleet, etc.)
 - **Start menu** — searchable app grid organized by category (Work, Operations, System, Integration)
 - **Taskbar** — live clock, system tray, running app indicators, theme toggle
 - **Offline support** — IndexedDB-backed state management with automatic sync on reconnect
@@ -116,7 +116,7 @@ Lightweight text editor window for viewing and editing files from the Explorer o
 |----------|-------------|
 | [User Guide](docs/user-guide.md) | Desktop usage — tasks, board, timeline, agents, audit, cron |
 | [Views Reference](docs/views-reference.md) | All 23 desktop views — features, API calls, UI elements |
-| [Widget Catalog](docs/widget-catalog.md) | All 17 desktop widgets — manifests, sizes, data sources |
+| [Widget Catalog](docs/widget-catalog.md) | All 18 desktop widgets — manifests, sizes, data sources |
 | [Admin Guide](docs/admin-guide.md) | Operator guide for administration and monitoring |
 
 ### API Reference
@@ -223,7 +223,7 @@ When installed at `~/.openclaw/workspace/dashboard`, the server auto-detects the
 │   │   ├── widgets/                 # Desktop widget system
 │   │   │   ├── widget-registry.mjs  # Widget auto-discovery
 │   │   │   ├── widget-panel.mjs     # Widget panel container
-│   │   │   └── widgets/             # 17 widget implementations
+│   │   │   └── widgets/             # 18 widget implementations
 │   │   └── native-views/            # 23 window view implementations
 │   │       ├── tasks-view.mjs
 │   │       ├── board-view.mjs

@@ -162,8 +162,8 @@ Unified real-time data synchronization module. Fetches all key data sources in p
 ```javascript
 const sync = createRealtimeSync({ api, interval: 20000 });
 
-sync.subscribe('stats', (newStats, oldStats) => { ... });
-sync.subscribe('healthStatus', (newHealth) => { ... });
+sync.subscribe((data, changedKeys) => { /* handle updated data */ });
+
 
 // Force immediate refresh
 sync.refresh();
