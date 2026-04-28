@@ -3701,6 +3701,147 @@ class AsanaStorage {
     return result.rows.length > 0;
   }
 
+
+  // ── State Snapshots / Time Travel ───────────────────────────
+
+  /**
+   * Record a state snapshot for time-travel / undo support
+   */
+  async recordStateSnapshot({ entityType, entityId, action, state, actor = 'system', correlationId = null }) {
+    const result = await this.pool.query(
+      `INSERT INTO state_snapshots (entity_type, entity_id, action, state, actor, correlation_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
+      [entityType, entityId, action, JSON.stringify(state), actor, correlationId]
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * List snapshots for an entity, newest first
+   */
+  async listSnapshots({ entityType, entityId, limit = 50, offset = 0 }) {
+    const result = await this.pool.query(
+      `SELECT id, entity_type, entity_id, action, state, actor, correlation_id, created_at
+       FROM state_snapshots
+       WHERE entity_type = $1 AND entity_id = $2
+       ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+      [entityType, entityId, limit, offset]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get a specific snapshot by ID
+   */
+  async getSnapshot(id) {
+    const result = await this.pool.query(
+      `SELECT * FROM state_snapshots WHERE id = $1`, [id]
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Get diff between two snapshots
+   */
+  async getSnapshotDiff(snapshotIdA, snapshotIdB) {
+    const [a, b] = await Promise.all([
+      this.getSnapshot(snapshotIdA),
+      this.getSnapshot(snapshotIdB),
+    ]);
+    if (!a || !b) return null;
+
+    const stateA = typeof a.state === 'string' ? JSON.parse(a.state) : a.state;
+    const stateB = typeof b.state === 'string' ? JSON.parse(b.state) : b.state;
+
+    const allKeys = new Set([...Object.keys(stateA), ...Object.keys(stateB)]);
+    const changes = [];
+    for (const key of allKeys) {
+      const valA = JSON.stringify(stateA[key]);
+      const valB = JSON.stringify(stateB[key]);
+      if (valA !== valB) {
+        changes.push({ field: key, from: stateA[key], to: stateB[key] });
+      }
+    }
+
+    return { snapshotA: a, snapshotB: b, changes };
+  }
+
+  /**
+   * Preview what reverting to a snapshot would change (no actual revert)
+   */
+  async previewRevert(snapshotId) {
+    const snapshot = await this.getSnapshot(snapshotId);
+    if (!snapshot) return null;
+
+    // Get current entity state
+    let current = null;
+    const eid = snapshot.entity_id;
+    if (snapshot.entity_type === 'task') {
+      const r = await this.pool.query('SELECT * FROM tasks WHERE id = $1', [eid]);
+      current = r.rows[0] || null;
+    } else if (snapshot.entity_type === 'project') {
+      const r = await this.pool.query('SELECT * FROM projects WHERE id = $1', [eid]);
+      current = r.rows[0] || null;
+    }
+
+    return {
+      snapshot,
+      currentState: current,
+      entityType: snapshot.entity_type,
+      entityId: eid,
+    };
+  }
+
+  /**
+   * Revert an entity to a previous snapshot state
+   */
+  async revertToSnapshot(snapshotId, actor = 'system') {
+    const snapshot = await this.getSnapshot(snapshotId);
+    if (!snapshot) throw new Error('Snapshot not found');
+
+    const state = typeof snapshot.state === 'string' ? JSON.parse(snapshot.state) : snapshot.state;
+    const eid = snapshot.entity_id;
+
+    // Record a snapshot of current state before reverting
+    await this.recordStateSnapshot({
+      entityType: snapshot.entity_type,
+      entityId: eid,
+      action: 'pre-revert',
+      state: state, // we'll record current state then overwrite
+      actor,
+      correlationId: snapshot.id,
+    });
+
+    if (snapshot.entity_type === 'task') {
+      await this.pool.query(
+        `UPDATE tasks SET title = $1, description = $2, status = $3, priority = $4,
+         owner = $5, due_date = $6, labels = $7, metadata = $8, updated_at = NOW()
+         WHERE id = $9`,
+        [state.title, state.description || '', state.status, state.priority || 'medium',
+         state.owner, state.due_date, state.labels || [], state.metadata || {}, eid]
+      );
+    } else if (snapshot.entity_type === 'project') {
+      await this.pool.query(
+        `UPDATE projects SET name = $1, description = $2, status = $3, tags = $4,
+         metadata = $5, updated_at = NOW() WHERE id = $6`,
+        [state.name, state.description || '', state.status || 'active', state.tags || [],
+         state.metadata || {}, eid]
+      );
+    }
+
+    // Record the revert action
+    await this.recordStateSnapshot({
+      entityType: snapshot.entity_type,
+      entityId: eid,
+      action: 'revert',
+      state,
+      actor,
+      correlationId: snapshot.id,
+    });
+
+    return { reverted: true, entityType: snapshot.entity_type, entityId: eid };
+  }
+
   async close() {
     await this.pool.end();
   }

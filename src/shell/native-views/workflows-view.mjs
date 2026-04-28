@@ -1,5 +1,7 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
+import { mutate } from '../mutation-manager.mjs';
+
 export async function renderWorkflowsView({ mountNode, api, adapter, stateStore, sync }) {
   ensureNativeRoot(mountNode, 'workflows-view');
   mountNode.innerHTML = '';
@@ -277,25 +279,27 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
     btn.textContent = 'Starting...';
 
     try {
-      // Create the workflow run
-      const run = await api.workflows.create({
-        workflow_type: tpl.name,
-        owner_agent_id: agent || null,
-        task_id: taskId || null,
-        initiator: 'dashboard-operator',
-        run_priority: priority,
-        input_payload: {
-          instructions,
-          ...extraPayload,
+      // Create + start workflow via mutation manager
+      const result = await mutate({
+        key: 'workflow-create-start',
+        optimisticApply: () => { btn.textContent = 'Triggered ✓'; },
+        request: async () => {
+          const run = await api.workflows.create({
+            workflow_type: tpl.name,
+            owner_agent_id: agent || null,
+            task_id: taskId || null,
+            initiator: 'dashboard-operator',
+            run_priority: priority,
+            input_payload: { instructions, ...extraPayload },
+          });
+          if (!run?.id) throw new Error('No run ID returned from create');
+          await api.workflows.start(run.id);
+          return run;
         },
+        rollback: () => { btn.textContent = '🚀 Start'; btn.disabled = false; },
+        onSuccess: (run) => showNotice(`Workflow "${tpl.display_name || tpl.name}" triggered → run ${run.id.substring(0, 8)} assigned to ${agent || 'default'}.`, 'success'),
+        onError: (err) => showNotice(`Workflow failed: ${err.message}`, 'error'),
       });
-
-      if (!run?.id) throw new Error('No run ID returned from create');
-
-      // Start it immediately
-      await api.workflows.start(run.id);
-
-      showNotice(`Workflow "${tpl.display_name || tpl.name}" triggered → run ${run.id.substring(0, 8)} assigned to ${agent || 'default'}.`, 'success');
 
       // Reset form
       root.querySelector('#wfvInstructions').value = '';

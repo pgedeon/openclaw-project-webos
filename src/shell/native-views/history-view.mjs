@@ -31,6 +31,12 @@ const CSS = `
   .hist-diff-val { padding: 8px; border-radius: 6px; background: var(--win11-surface-solid); font-family: 'SF Mono','Consolas',monospace; font-size: 0.78rem; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
   .hist-empty { text-align: center; padding: 40px; color: var(--win11-text-secondary); }
   .hist-loading { text-align: center; padding: 40px; color: var(--win11-text-secondary); }
+  .hist-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--win11-border); flex-shrink: 0; }
+  .hist-tab { padding: 8px 16px; cursor: pointer; font-size: 0.82rem; color: var(--win11-text-secondary); border-bottom: 2px solid transparent; transition: all .15s; }
+  .hist-tab.active { color: var(--win11-accent); border-bottom-color: var(--win11-accent); }
+  .hist-tab:hover { background: var(--win11-surface-hover); }
+  .hist-revert-btn { padding: 4px 12px; border-radius: 4px; border: 1px solid #f59e0b; background: #f59e0b20; color: #f59e0b; cursor: pointer; font-size: 0.75rem; }
+  .hist-revert-btn:hover { background: #f59e0b40; }
 `;
 
 function escapeHtml(s) {
@@ -83,20 +89,40 @@ export async function renderHistoryView({ mountNode, api }) {
     header.className = 'hist-header';
     header.innerHTML = `
       <div class="hist-title">📜 Change History</div>
-      <div class="hist-filter">
-        <input id="hist-actor-filter" placeholder="Filter by actor..." style="width:140px">
-        <select id="hist-action-filter">
-          <option value="">All actions</option>
-          <option value="create">Create</option>
-          <option value="move">Move</option>
-          <option value="update">Update</option>
-          <option value="delete">Delete</option>
-          <option value="claim">Claim</option>
-        </select>
-        <button id="hist-refresh" style="padding:6px 12px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);cursor:pointer;font-size:0.82rem;">🔄 Refresh</button>
-      </div>
     `;
     container.appendChild(header);
+
+    // Tabs
+    const tabs = document.createElement('div');
+    tabs.className = 'hist-tabs';
+    tabs.innerHTML = `
+      <div class="hist-tab ${activeTab === 'audit' ? 'active' : ''}" data-tab="audit">Audit Log</div>
+      <div class="hist-tab ${activeTab === 'snapshots' ? 'active' : ''}" data-tab="snapshots">State Snapshots</div>
+    `;
+    tabs.querySelectorAll('.hist-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        activeTab = tab.dataset.tab;
+        render();
+      });
+    });
+    container.appendChild(tabs);
+
+    // Filter bar
+    const filter = document.createElement('div');
+    filter.className = 'hist-filter';
+    filter.innerHTML = `
+      <input id="hist-actor-filter" placeholder="Filter by actor..." style="width:140px">
+      <select id="hist-action-filter">
+        <option value="">All actions</option>
+        <option value="create">Create</option>
+        <option value="move">Move</option>
+        <option value="update">Update</option>
+        <option value="delete">Delete</option>
+        <option value="revert">Revert</option>
+      </select>
+      <button id="hist-refresh" style="padding:6px 12px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);cursor:pointer;font-size:0.82rem;">🔄 Refresh</button>
+    `;
+    container.appendChild(filter);
 
     // Entry list
     const list = document.createElement('div');

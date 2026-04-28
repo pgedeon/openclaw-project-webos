@@ -103,9 +103,9 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 - [x] **OPT-5:** Add bearer token headers to sync manager requests
 - [x] **OPT-6:** Update `offline-ui.mjs` — show generic pending operation counts
 - [x] **OPT-7:** Migrate `tasks-view.mjs` — create/update/move/archive/delete
-- [ ] **OPT-8:** Migrate `board-view.mjs` — replace local optimistic code with MutationManager
-- [ ] **OPT-9:** Migrate `approvals-view.mjs` — approve/reject/escalate
-- [ ] **OPT-10:** Migrate `workflows-view.mjs` — start/pause/resume/cancel
+- [x] **OPT-8:** Migrate `board-view.mjs` — replace local optimistic code with MutationManager
+- [x] **OPT-9:** Migrate `approvals-view.mjs` — approve/reject/escalate
+- [x] **OPT-10:** Migrate `workflows-view.mjs` — start/pause/resume/cancel
 
 **Complexity:** M | **Dependencies:** DOC corrections, QW-2
 
@@ -120,19 +120,19 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 - `audit-view.mjs` renders audit data
 - Task history JSONB on dependency changes
 
-- [ ] **TT-1:** Add migration `schema/migrations/022_add_history_snapshots.sql` — `state_snapshots` table
-- [ ] **TT-2:** Make `audit_log.task_id` nullable — add `entity_type`, `entity_id`, `correlation_id`
-- [ ] **TT-3:** Extend `storage/asana.js` — `recordStateSnapshot()`, `listHistory()`, `getHistoryDiff()`, `previewRevert()`, `revertSnapshot()`
-- [ ] **TT-4:** Add `routes/history-routes.js` — `GET /api/history`, `GET /api/history/:id/diff`, `POST /api/history/:id/preview-revert`, `POST /api/history/:id/revert`
-- [ ] **TT-5:** Instrument `task-routes.js` — snapshot on create/update/delete/archive/restore/move/retry
-- [ ] **TT-6:** Instrument `project-routes.js` — snapshot on create/update/delete
-- [ ] **TT-7:** Instrument `view-routes.js` — snapshot on saved view create/update/delete
-- [ ] **TT-8:** Instrument `settings-routes.js` — snapshot on key/category/import writes
-- [ ] **TT-9:** Instrument `workflow-runs-api.js` — snapshot on pause/resume/cancel/approval actions
-- [ ] **TT-10:** Add `api.history` methods in `api-client.mjs`
-- [ ] **TT-11:** Create `src/shell/native-views/history-view.mjs` — two-pane history/diff UI
-- [ ] **TT-12:** Register `history` in `app-registry.mjs`
-- [ ] **TT-13:** Update `docs/schema-reference.md`, `docs/api-reference-complete.md`, `docs/views-reference.md`
+- [x] **TT-1:** Add migration `schema/migrations/022_add_history_snapshots.sql` — `state_snapshots` table
+- [x] **TT-2:** Make `audit_log.task_id` nullable — add `entity_type`, `entity_id`, `correlation_id`
+- [x] **TT-3:** Extend `storage/asana.js` — `recordStateSnapshot()`, `listHistory()`, `getHistoryDiff()`, `previewRevert()`, `revertSnapshot()`
+- [x] **TT-4:** Add `routes/history-routes.js` — `GET /api/history`, `GET /api/history/:id/diff`, `POST /api/history/:id/preview-revert`, `POST /api/history/:id/revert`
+- [x] **TT-5:** Instrument `task-routes.js` — snapshot on create/update/delete/archive/restore/move/retry
+- [x] **TT-6:** Instrument `project-routes.js` — snapshot on create/update/delete
+- [x] **TT-7:** Instrument `view-routes.js` — snapshot on saved view create/update/delete
+- [x] **TT-8:** Instrument `settings-routes.js` — snapshot on key/category/import writes
+- [x] **TT-9:** Instrument `workflow-runs-api.js` — snapshot on pause/resume/cancel/approval actions
+- [x] **TT-10:** Add `api.history` methods in `api-client.mjs`
+- [x] **TT-11:** Create `src/shell/native-views/history-view.mjs` — two-pane history/diff UI
+- [x] **TT-12:** Register `history` in `app-registry.mjs`
+- [x] **TT-13:** Update `docs/schema-reference.md`, `docs/api-reference-complete.md`, `docs/views-reference.md`
 
 **Complexity:** L | **Dependencies:** DOC corrections
 
