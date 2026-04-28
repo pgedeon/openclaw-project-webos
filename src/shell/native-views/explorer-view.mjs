@@ -76,6 +76,8 @@ function isProtectedBadge(item) {
   return item.isProtected ? ' 🔒' : '';
 }
 
+import { mutate } from '../mutation-manager.mjs';
+
 export async function renderExplorerView({ mountNode, stateStore, navigateToView }) {
   ensureNativeRoot(mountNode, 'explorer-view');
   mountNode.innerHTML = '';

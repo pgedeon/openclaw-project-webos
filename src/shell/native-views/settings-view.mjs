@@ -25,6 +25,8 @@ const CATEGORY_META = {
 
 const CATEGORY_ORDER = ['general','database','gateway','appearance','apps','security','integrations','sse','system'];
 
+import { mutate } from '../mutation-manager.mjs';
+
 export async function renderSettingsView({ mountNode, api, adapter, stateStore, sync }) {
   ensureNativeRoot(mountNode, 'settings-view');
   mountNode.innerHTML = '';
@@ -600,7 +602,13 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
     saveInProgress = true;
 
     try {
-      const result = await apiPut(`/api/settings/${activeTab}`, dirty);
+      const result = await mutate({
+        key: `settings-save-${activeTab}`,
+        request: () => apiPut(`/api/settings/${activeTab}`, dirty),
+        onError: (err) => showToast(`Save failed: ${err.message}`, 'error'),
+      });
+      if (!result.ok) return;
+      const saved = result.data;
       dirty = {};
       updateDirtyDots();
       await loadChangelog();
@@ -635,7 +643,13 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
       async () => {
         try {
           // First save
-          const result = await apiPut(`/api/settings/${activeTab}`, dirty);
+          const result = await mutate({
+        key: `settings-save-${activeTab}`,
+        request: () => apiPut(`/api/settings/${activeTab}`, dirty),
+        onError: (err) => showToast(`Save failed: ${err.message}`, 'error'),
+      });
+      if (!result.ok) return;
+      const saved = result.data;
           dirty = {};
           updateDirtyDots();
 

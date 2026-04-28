@@ -63,6 +63,8 @@ const { registerChatRoutes } = require('./routes/chat-routes');
 const { registerBingRoutes } = require('./routes/bing-routes');
 const { registerSettingsRoutes } = require('./routes/settings-routes');
 const { registerMemoryRoutes } = require('./routes/memory-routes');
+const { registerHistoryRoutes } = require('./routes/history-routes');
+const { registerExportRoutes } = require('./routes/export-routes');
 const SettingsStore = require('./lib/settings-store');
 
 function loadDashboardEnv() {
@@ -659,6 +661,8 @@ registerTaskRoutes(router);
 registerProjectRoutes(router);
 registerViewRoutes(router);
 registerMemoryRoutes(router);
+registerHistoryRoutes(router, asanaStorage.pool);
+registerExportRoutes(router, asanaStorage.pool, settingsStore);
 const server = http.createServer(async (req, res) => {
   const timestamp = new Date().toISOString();
   const url = req.url.split('?')[0];

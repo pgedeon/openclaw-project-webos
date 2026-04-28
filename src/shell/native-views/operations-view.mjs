@@ -14,6 +14,8 @@ async function cronFetch(path, options = {}) {
   return res.json();
 }
 
+import { mutate } from '../mutation-manager.mjs';
+
 export async function renderOperationsView({ mountNode, api, adapter, stateStore, sync }) {
   ensureNativeRoot(mountNode, 'operations-view');
   mountNode.innerHTML = '';
@@ -307,10 +309,13 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
       const action = btn.dataset.action;
 
       if (action === 'run') {
-        try {
-          await cronFetch(`/jobs/${encodeURIComponent(id)}/run`, { method: 'POST' });
-          showNotice(`Job "${id}" triggered.`, 'success');
-        } catch (err) { showNotice(`Run failed: ${err.message}`, 'error'); }
+        await mutate({
+          key: `cron-run-${id}`,
+          optimisticApply: () => { btn.textContent = '⏳'; },
+          request: () => cronFetch(`/jobs/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+          onSuccess: () => showNotice(`Job "${id}" triggered.`, 'success'),
+          onError: (err) => showNotice(`Run failed: ${err.message}`, 'error'),
+        });
       } else if (action === 'logs') {
         await showLogs(id);
       } else if (action === 'edit') {
@@ -318,12 +323,14 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
         renderCronPanel(panel);
       } else if (action === 'delete') {
         if (!confirm(`Delete cron job "${id}"? This removes the .cron file.`)) return;
-        try {
-          await cronFetch(`/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
-          cronJobs = cronJobs.filter(j => j.id !== id);
-          showNotice(`Deleted "${id}".`, 'success');
-          renderCronPanel(panel);
-        } catch (err) { showNotice(`Delete failed: ${err.message}`, 'error'); }
+        await mutate({
+          key: `cron-del-${id}`,
+          optimisticApply: () => { row.style.opacity = '0.4'; },
+          request: () => cronFetch(`/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+          rollback: () => { row.style.opacity = '1'; },
+          onSuccess: () => { cronJobs = cronJobs.filter(j => j.id !== id); showNotice(`Deleted "${id}".`, 'success'); renderCronPanel(panel); },
+          onError: (err) => { row.style.opacity = '1'; showNotice(`Delete failed: ${err.message}`, 'error'); },
+        });
       }
     };
     cronSection?.addEventListener('click', delegation);
@@ -419,37 +426,32 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
       if (/\s/.test(id) && isNew) { showNotice('Job ID cannot contain spaces.', 'error'); return; }
       if (!command) { showNotice('Command is required.', 'error'); return; }
 
-      try {
-        if (isNew) {
-          await cronFetch('/jobs', {
-            method: 'POST',
-            body: JSON.stringify({ id, description, minute, hour, dom, month, dow, command }),
-          });
-          showNotice(`Created "${id}".`, 'success');
-        } else {
-          await cronFetch(`/jobs/${encodeURIComponent(id)}`, {
-            method: 'PUT',
-            body: JSON.stringify({ description, minute, hour, dom, month, dow, command }),
-          });
-          showNotice(`Updated "${id}".`, 'success');
-        }
-        editingJob = null;
-        const refreshed = await cronFetch('/jobs').catch(() => ({ jobs: [] }));
-        cronJobs = refreshed.jobs || [];
-        renderCronPanel(panel);
-      } catch (err) { showNotice(`Save failed: ${err.message}`, 'error'); }
+      const result = await mutate({
+        key: `cron-save-${id}`,
+        optimisticApply: () => {},
+        request: () => isNew
+          ? cronFetch('/jobs', { method: 'POST', body: JSON.stringify({ id, description, minute, hour, dom, month, dow, command }) })
+          : cronFetch(`/jobs/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ description, minute, hour, dom, month, dow, command }) }),
+        onSuccess: async () => {
+          showNotice(isNew ? `Created "${id}".` : `Updated "${id}".`, 'success');
+          editingJob = null;
+          const refreshed = await cronFetch('/jobs').catch(() => ({ jobs: [] }));
+          cronJobs = refreshed.jobs || [];
+          renderCronPanel(panel);
+        },
+        onError: (err) => showNotice(`Save failed: ${err.message}`, 'error'),
+      });
     });
 
     // Delete from form
     panel.querySelector('#cronFormDelete')?.addEventListener('click', async () => {
       if (!confirm(`Delete "${job.id}"?`)) return;
-      try {
-        await cronFetch(`/jobs/${encodeURIComponent(job.id)}`, { method: 'DELETE' });
-        showNotice(`Deleted "${job.id}".`, 'success');
-        editingJob = null;
-        cronJobs = cronJobs.filter(j => j.id !== job.id);
-        renderCronPanel(panel);
-      } catch (err) { showNotice(`Delete failed: ${err.message}`, 'error'); }
+      await mutate({
+        key: `cron-del-${job.id}`,
+        request: () => cronFetch(`/jobs/${encodeURIComponent(job.id)}`, { method: 'DELETE' }),
+        onSuccess: () => { showNotice(`Deleted "${job.id}".`, 'success'); editingJob = null; cronJobs = cronJobs.filter(j => j.id !== job.id); renderCronPanel(panel); },
+        onError: (err) => showNotice(`Delete failed: ${err.message}`, 'error'),
+      });
     });
 
     // Cancel

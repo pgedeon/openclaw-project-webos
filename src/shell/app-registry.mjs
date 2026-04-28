@@ -277,6 +277,16 @@ export const APP_REGISTRY = Object.freeze([
     defaultHeight: 700,
   },
   {
+    id: 'history',
+    label: 'History',
+    icon: '📜',
+    url: '/?view=history',
+    viewModule: './native-views/history-view.mjs',
+    category: 'Operations',
+    defaultWidth: 1020,
+    defaultHeight: 700,
+  },
+  {
     id: 'audit',
     label: 'Audit',
     icon: appIcon.eye,

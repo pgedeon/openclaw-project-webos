@@ -2,6 +2,8 @@ import { ensureNativeRoot, escapeHtml } from './helpers.mjs';
 
 const FS_API = '/api/fs';
 
+import { mutate } from '../mutation-manager.mjs';
+
 export async function renderNotepadView({ mountNode, stateStore }) {
   ensureNativeRoot(mountNode, 'notepad-view');
   mountNode.innerHTML = '';

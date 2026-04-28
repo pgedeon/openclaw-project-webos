@@ -97,12 +97,12 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 - `board-view.mjs` already does optimistic status moves
 
 - [x] **OPT-1:** Create `src/shell/mutation-manager.mjs` — `mutate({ key, optimisticApply, request, rollback, onSuccess })`
-- [ ] **OPT-2:** Update `sync-manager.mjs` — generic queue items with `{ method, url, body, entityType }`
-- [ ] **OPT-3:** Fix `SyncManager.syncAll()` — use `/api/tasks/all` (also tracked as QW-2)
-- [ ] **OPT-4:** Set intentional conflict default — document whether server-wins or client-wins
-- [ ] **OPT-5:** Add bearer token headers to sync manager requests
-- [ ] **OPT-6:** Update `offline-ui.mjs` — show generic pending operation counts
-- [ ] **OPT-7:** Migrate `tasks-view.mjs` — create/update/move/archive/delete
+- [x] **OPT-2:** Update `sync-manager.mjs` — generic queue items with `{ method, url, body, entityType }`
+- [x] **OPT-3:** Fix `SyncManager.syncAll()` — use `/api/tasks/all` (also tracked as QW-2)
+- [x] **OPT-4:** Set intentional conflict default — document whether server-wins or client-wins
+- [x] **OPT-5:** Add bearer token headers to sync manager requests
+- [x] **OPT-6:** Update `offline-ui.mjs` — show generic pending operation counts
+- [x] **OPT-7:** Migrate `tasks-view.mjs` — create/update/move/archive/delete
 - [ ] **OPT-8:** Migrate `board-view.mjs` — replace local optimistic code with MutationManager
 - [ ] **OPT-9:** Migrate `approvals-view.mjs` — approve/reject/escalate
 - [ ] **OPT-10:** Migrate `workflows-view.mjs` — start/pause/resume/cancel
@@ -142,10 +142,10 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 
 > **Status:** Partially implemented — settings export/import exists, `exportData()`/`importData()` in asana.js unused
 
-- [ ] **EXP-1:** Create `lib/export-bundle.js` — `buildExportBundle()`, `validateImportBundle()`, `previewImportBundle()`
-- [ ] **EXP-2:** Add `routes/export-routes.js` — `GET /api/export?scope=`, `POST /api/import/preview`, `POST /api/import`
-- [ ] **EXP-3:** Extend `storage/asana.js` — additive upsert methods (not destructive `importData()`)
-- [ ] **EXP-4:** Add import preview UI to `settings-view.mjs`
+- [x] **EXP-1:** Create `lib/export-bundle.js` — `buildExportBundle()`, `validateImportBundle()`, `previewImportBundle()`
+- [x] **EXP-2:** Add `routes/export-routes.js` — `GET /api/export?scope=`, `POST /api/import/preview`, `POST /api/import`
+- [x] **EXP-3:** Extend `storage/asana.js` — additive upsert methods (not destructive `importData()`)
+- [x] **EXP-4:** Add import preview UI to `settings-view.mjs`
 - [ ] **EXP-5:** Add audit/history entries for import operations
 - [ ] **EXP-6:** Update docs
 
