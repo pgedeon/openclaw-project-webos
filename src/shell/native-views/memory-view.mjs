@@ -1,6 +1,6 @@
 import { ensureNativeRoot, escapeHtml, createStatCard, formatCount } from './helpers.mjs';
 
-const MEMORY_API_BASE = 'http://127.0.0.1:3879/api/memory';
+const MEMORY_API_BASE = '/api/memory'; // Proxied through task-server
 
 export async function renderMemoryView({ mountNode, api, adapter, stateStore, sync }) {
   ensureNativeRoot(mountNode, 'memory-view');

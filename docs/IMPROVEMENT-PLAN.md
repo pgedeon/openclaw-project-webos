@@ -12,7 +12,7 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 | Phase | Items | Done | Status |
 |-------|-------|------|--------|
 | P0 — Doc Corrections | 5 | 5/5 | ✅ Done |
-| P0 — Quick Wins | 7 | 5/7 | 🟡 In progress |
+| P0 — Quick Wins | 7 | 7/7 | ✅ Done |
 | P0 — Hierarchical Docs | 1 | 0/1 | 🔲 Not started |
 | P1 — Features | 4 | 0/4 | 🔲 Not started |
 | P2 — Features | 2 | 0/2 | 🔲 Not started |
@@ -41,8 +41,8 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 - [x] **QW-3:** Add `/api/auth/self` — returns `{ mode: 'token', actor: 'dashboard-operator', role: 'operator' }`
 - [x] **QW-4:** Add `api.memory` helpers to `src/shell/api-client.mjs` — stop views from open-coding fetches
 - [x] **QW-5:** Add `api.settings`, `api.sessions`, `api.chat` helpers to `src/shell/api-client.mjs`
-- [ ] **QW-6:** Replace absolute memory API calls in `memory-view.mjs` — use same-origin `/api/memory/*` after adding proxy route
-- [ ] **QW-7:** Add `scripts/docs-drift-check.js` and wire into `npm run validate`
+- [x] **QW-6:** Replace absolute memory API calls in `memory-view.mjs` — use same-origin `/api/memory/*` after adding proxy route
+- [x] **QW-7:** Add `scripts/docs-drift-check.js` and wire into `npm run validate`
 
 ---
 

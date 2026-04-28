@@ -27,7 +27,7 @@
   ],
   "scripts": {
     "start": "node task-server.js",
-    "validate": "node scripts/dashboard-validation.js",
+    "validate": "node scripts/dashboard-validation.js && node scripts/docs-drift-check.js",
     "test:filters": "node tests/test-filter-behavior.js",
     "test:routes": "node tests/test-route-modules.js",
     "test": "npx playwright test",

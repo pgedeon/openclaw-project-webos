@@ -62,6 +62,7 @@ const { registerSessionRoutes } = require('./routes/session-routes');
 const { registerChatRoutes } = require('./routes/chat-routes');
 const { registerBingRoutes } = require('./routes/bing-routes');
 const { registerSettingsRoutes } = require('./routes/settings-routes');
+const { registerMemoryRoutes } = require('./routes/memory-routes');
 const SettingsStore = require('./lib/settings-store');
 
 function loadDashboardEnv() {
