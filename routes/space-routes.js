@@ -4,6 +4,9 @@
  * CRUD for workspaces (spaces) — list, get, create, update, delete, duplicate.
  */
 
+const { broadcast } = require('./sse-routes');
+
+
 function parseBody(req, maxBytes = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -76,6 +79,7 @@ function registerSpaceRoutes(router, deps) {
       if (data.description && data.description.length > 1000) return sendJSON(res, 400, { error: 'Description too long' });
 
       const space = await ctx.asanaStorage.createWorkspace(data);
+      broadcast('space:changed', { action: 'create', space });  // #14
       sendJSON(res, 201, space);
     } catch (err) {
       // Handle slug uniqueness violation (#8)
@@ -91,8 +95,10 @@ function registerSpaceRoutes(router, deps) {
     if (!_ok(res)) return;
     try {
       const data = await parseBody(req);
-      const space = await ctx.asanaStorage.updateWorkspace(params.id, data);
+      const expectedUpdatedAt = data._expected_updated_at || null;
+      const space = await ctx.asanaStorage.updateWorkspace(params.id, data, expectedUpdatedAt);
       if (!space) return sendJSON(res, 404, { error: 'Workspace not found' });
+      broadcast('space:changed', { action: 'update', space });  // #14
       sendJSON(res, 200, space);
     } catch (err) {
       console.error('[space-routes] update error:', err.message);
@@ -107,6 +113,7 @@ function registerSpaceRoutes(router, deps) {
     try {
       const deleted = await ctx.asanaStorage.deleteWorkspace(params.id);
       if (!deleted) return sendJSON(res, 404, { error: 'Workspace not found' });
+      broadcast('space:changed', { action: 'delete', spaceId: params.id });  // #14
       sendJSON(res, 200, { deleted: true });
     } catch (err) {
       if (err.message.includes('default')) {
@@ -127,6 +134,7 @@ function registerSpaceRoutes(router, deps) {
     try {
       const data = await parseBody(req);
       const space = await ctx.asanaStorage.duplicateWorkspace(params.id, data.slug);
+      broadcast('space:changed', { action: 'duplicate', space });  // #14
       sendJSON(res, 201, space);
     } catch (err) {
       if (err.message.includes('not found')) {
@@ -135,6 +143,21 @@ function registerSpaceRoutes(router, deps) {
         console.error('[space-routes] duplicate error:', err.message);
         sendJSON(res, 500, { error: 'Failed to duplicate space' });
       }
+    }
+    return true;
+  });
+
+  // POST /api/spaces/:id/set-default — set workspace as the default
+  router.add('POST', '/api/spaces/:id/set-default', async (req, res, ctx, params) => {
+    if (!_ok(res)) return;
+    try {
+      const space = await ctx.asanaStorage.setDefaultWorkspace(params.id);
+      if (!space) return sendJSON(res, 404, { error: 'Workspace not found' });
+      broadcast('space:changed', { action: 'set_default', space });
+      sendJSON(res, 200, space);
+    } catch (err) {
+      console.error('[space-routes] set-default error:', err.message);
+      sendJSON(res, 500, { error: 'Failed to set default workspace' });
     }
     return true;
   });

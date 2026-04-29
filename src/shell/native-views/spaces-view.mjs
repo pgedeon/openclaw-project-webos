@@ -300,6 +300,25 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
   }
 
   load();
+
+  // Listen for SSE space changes from other tabs/sessions (#14)
+  const onSSEChange = (event) => {
+    const data = event.data ? JSON.parse(event.data) : null;
+    if (data?.action === 'delete') {
+      // If active space was deleted, switch to default
+      if (data.spaceId === getActiveSpaceId()) {
+        const def = spaces.find(s => s.is_default) || spaces[0];
+        if (def) setActiveSpace(def);
+      }
+    }
+    load(); // Refresh the list
+  };
+  globalThis.addEventListener?.('sse:space:changed', onSSEChange);
+
+  // Return cleanup function
+  return () => {
+    globalThis.removeEventListener?.('sse:space:changed', onSSEChange);
+  };
 }
 
 function esc(str) { return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }

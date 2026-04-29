@@ -1583,6 +1583,12 @@ class AsanaStorage {
       idx++;
     }
 
+    if (filters.workspace_id) {
+      query += ` AND p.workspace_id = $${idx}`;
+      values.push(filters.workspace_id);
+      idx++;
+    }
+
     query += `
       ORDER BY
         CASE WHEN COALESCE(task_summary.task_count, 0) > 0 THEN 0 ELSE 1 END,
@@ -3710,6 +3716,16 @@ class AsanaStorage {
 
   // ── Workspace / Spaces CRUD ────────────────────────────────
 
+  async _auditWorkspace({ action, workspaceId, state, actor = 'user' }) {
+    try {
+      await this.pool.query(
+        `INSERT INTO state_snapshots (entity_type, entity_id, action, state, actor)
+         VALUES ('workspace', $1, $2, $3, $4)`,
+        [workspaceId, action, JSON.stringify(state), actor]
+      );
+    } catch (e) { console.warn('[audit:workspace]', e.message); }
+  }
+
   async listWorkspaces() {
     const result = await this.pool.query(
       'SELECT * FROM workspaces ORDER BY sort_order, name'
@@ -3733,10 +3749,11 @@ class AsanaStorage {
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [name, slug, icon, color, description, JSON.stringify(settings)]
     );
+    this._auditWorkspace({ action: 'create', workspaceId: result.rows[0].id, state: result.rows[0] });
     return result.rows[0];
   }
 
-  async updateWorkspace(id, updates) {
+  async updateWorkspace(id, updates, expectedUpdatedAt = null) {
     // Explicit column mapping (#10) — is_default excluded (use setDefaultWorkspace)
     const columns = { name: 'name', slug: 'slug', icon: 'icon', color: 'color', description: 'description', settings: 'settings', sort_order: 'sort_order' };
     const fields = [];
@@ -3755,11 +3772,23 @@ class AsanaStorage {
     if (fields.length === 0) return this.getWorkspace(id);
 
     fields.push('updated_at = NOW()');
-    const result = await this.pool.query(
-      `UPDATE workspaces SET ${fields.join(', ')} WHERE id = $1 RETURNING *`,
-      values
-    );
-    return result.rows[0] || null;
+
+    // Optimistic concurrency (#21)
+    let query = `UPDATE workspaces SET ${fields.join(', ')} WHERE id = $1`;
+    if (expectedUpdatedAt) {
+      values.push(expectedUpdatedAt);
+      query += ` AND updated_at = $${values.length}`;
+    }
+    query += ' RETURNING *';
+
+    const result = await this.pool.query(query, values);
+    if (expectedUpdatedAt && result.rows.length === 0) {
+      const check = await this.getWorkspace(id);
+      if (check) throw Object.assign(new Error('Workspace was modified by another session. Reload and retry.'), { status: 409 });
+    }
+    const ws = result.rows[0] || null;
+    if (ws) this._auditWorkspace({ action: 'update', workspaceId: id, state: ws });
+    return ws;
   }
 
   async deleteWorkspace(id) {
@@ -3773,6 +3802,7 @@ class AsanaStorage {
       'DELETE FROM workspaces WHERE id = $1 AND is_default = false RETURNING id',
       [id]
     );
+    if (result.rows.length > 0) this._auditWorkspace({ action: 'delete', workspaceId: id, state: { id } });
     if (result.rows.length === 0) {
       // Either not found or is_default
       const ws = await this.getWorkspace(id);
@@ -3793,17 +3823,91 @@ class AsanaStorage {
       if (!existing) break;
       slug = `${ws.slug}-copy-${i}`;
     }
-    return this.createWorkspace({
-      name: ws.name + ' (Copy)',
-      slug,
-      icon: ws.icon,
-      color: ws.color,
-      description: ws.description,
-      settings: typeof ws.settings === 'string' ? JSON.parse(ws.settings) : ws.settings,
-    });
+
+    const settings = typeof ws.settings === 'string' ? JSON.parse(ws.settings) : ws.settings;
+
+    // Deep duplicate: copy workspace + projects in a transaction (#5)
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const wsResult = await client.query(
+        `INSERT INTO workspaces (name, slug, icon, color, description, settings)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [ws.name + ' (Copy)', slug, ws.icon, ws.color, ws.description, JSON.stringify(settings)]
+      );
+      const newWs = wsResult.rows[0];
+
+      // Copy projects
+      const projResult = await client.query(
+        'SELECT * FROM projects WHERE workspace_id = $1',
+        [id]
+      );
+      const projMap = new Map(); // old id -> new id
+      for (const proj of projResult.rows) {
+        const newProj = await client.query(
+          `INSERT INTO projects (name, description, status, tags, default_workflow_id, metadata, qmd_project_namespace, workspace_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+          [
+            proj.name, proj.description, proj.status, proj.tags,
+            proj.default_workflow_id, proj.metadata,
+            (proj.qmd_project_namespace || 'proj') + '-copy-' + Date.now().toString(36),
+            newWs.id
+          ]
+        );
+        projMap.set(proj.id, newProj.rows[0].id);
+      }
+
+      // Copy tasks that belong to these projects
+      if (projMap.size > 0) {
+        const oldProjIds = Array.from(projMap.keys());
+        const tasksResult = await client.query(
+          'SELECT * FROM tasks WHERE project_id = ANY($1)',
+          [oldProjIds]
+        );
+        for (const task of tasksResult.rows) {
+          const newProjId = projMap.get(task.project_id);
+          if (!newProjId) continue;
+          await client.query(
+            `INSERT INTO tasks (project_id, workspace_id, title, description, status, priority, owner,
+               assignee, due_date, tags, metadata, parent_task_id, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+            [newProjId, newWs.id, task.title, task.description, task.status, task.priority,
+             task.owner, task.assignee, task.due_date, task.tags, task.metadata,
+             task.parent_task_id, task.sort_order]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      this._auditWorkspace({ action: 'duplicate', workspaceId: newWs.id, state: { sourceId: id, projectCount: projMap.size } });
+      return newWs;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
-  // ── State Snapshots / Time Travel ───────────────────────────
+  async setDefaultWorkspace(id) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE workspaces SET is_default = false WHERE is_default = true');
+      const r = await client.query('UPDATE workspaces SET is_default = true WHERE id = $1 RETURNING *', [id]);
+      await client.query('COMMIT');
+      if (r.rows[0]) this._auditWorkspace({ action: 'set_default', workspaceId: id, state: r.rows[0] });
+      return r.rows[0] || null;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+    // ── State Snapshots / Time Travel ───────────────────────────
 
   /**
    * Record a state snapshot for time-travel / undo support

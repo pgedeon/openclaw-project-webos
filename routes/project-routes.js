@@ -12,7 +12,9 @@ function registerProjectRoutes(router) {
       return true;
     }
     const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-    const projects = await ctx.asanaStorage.listProjects(query);
+    const filters = Object.fromEntries(query);
+    // Pass workspace_id for space-scoped queries (#22)
+    const projects = await ctx.asanaStorage.listProjects(filters);
     ctx.sendJSON(res, 200, projects);
     return true;
   });

@@ -625,6 +625,7 @@ export function createAPIClient(baseURL = '/api', options = {}) {
       update(id, data) { return jsonRequest(`/spaces/${id}`, { method: 'PUT', body: data }); },
       delete(id) { return jsonRequest(`/spaces/${id}`, { method: 'DELETE' }); },
       duplicate(id, slug) { return jsonRequest(`/spaces/${id}/duplicate`, { method: 'POST', body: { slug } }); },
+      setDefault(id) { return jsonRequest(`/spaces/${id}/set-default`, { method: 'POST' }); },
     },
 
     // Export / Import
