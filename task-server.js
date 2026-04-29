@@ -976,7 +976,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Serve webos desktop at root
-    if (url === '/') {
+    if (url === '/' || url === '/index.html') {
       // Serve dashboard with auth token injected
       if (DASHBOARD_AUTH_TOKEN) {
         const fs = require('fs');

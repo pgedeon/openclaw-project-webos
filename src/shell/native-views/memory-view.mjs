@@ -120,26 +120,32 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
 
   async function loadData() {
     try {
-      const [filesResp, statsResp, statusResp, factsResp] = await Promise.all([
-        fetch(`${MEMORY_API_BASE}/list`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }),
-        fetch(`${MEMORY_API_BASE}/stats`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }),
-        fetch(`${MEMORY_API_BASE}/status`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }),
-        fetch(`${MEMORY_API_BASE}/facts`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }),
+      const [filesResp, statsResp, statusResp, factsResp] = await Promise.allSettled([
+        fetch(`${MEMORY_API_BASE}/list`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }).then(r => r.ok ? r.json() : Promise.reject(r.status)),
+        fetch(`${MEMORY_API_BASE}/stats`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }).then(r => r.ok ? r.json() : Promise.reject(r.status)),
+        fetch(`${MEMORY_API_BASE}/status`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }).then(r => r.ok ? r.json() : Promise.reject(r.status)),
+        fetch(`${MEMORY_API_BASE}/facts`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } }).then(r => r.ok ? r.json() : Promise.reject(r.status)),
       ]);
 
-      memoryFiles = (await filesResp.json()).files || [];
-      stats = await statsResp.json();
-      systemStatus = await statusResp.json();
-      facts = (await factsResp.json()).namespaces || [];
+      memoryFiles = filesResp.status === 'fulfilled' ? (filesResp.value?.files || []) : [];
+      stats = statsResp.status === 'fulfilled' ? statsResp.value : null;
+      systemStatus = statusResp.status === 'fulfilled' ? statusResp.value : null;
+      facts = factsResp.status === 'fulfilled' ? (factsResp.value?.namespaces || []) : [];
       searchResults = [];
-      // Fetch actual fact records
-      const factsListResp = await fetch(`${MEMORY_API_BASE}/facts/list`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
-      if (factsListResp.ok) {
-        factsRecords = (await factsListResp.json()).facts || [];
+
+      // Fetch fact records (non-blocking)
+      try {
+        const factsListResp = await fetch(`${MEMORY_API_BASE}/facts/list`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
+        if (factsListResp.ok) {
+          factsRecords = (await factsListResp.json()).facts || [];
+        }
+      } catch (_) { factsRecords = []; }
+
+      if (!stats) {
+        console.error('[Memory View] Critical: stats endpoint failed');
       }
     } catch (err) {
       console.error('[Memory View] Error loading data:', err);
-      content.innerHTML = `<div class="mem-empty">Error loading memory data: ${escapeHtml(err.message)}</div>`;
     }
   }
 
