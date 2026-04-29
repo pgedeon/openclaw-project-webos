@@ -337,7 +337,7 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
       const stepsLabel = stepsCompleted && totalSteps ? `${stepsCompleted}/${totalSteps}` : '';
       const inputTitle = r.input_payload?.title || r.input_payload?.instructions || '';
 
-      return `<div class="wfv-run-row">
+      return `<div class="wfv-run-row" data-run-id="${escapeHtml(r.id)}" style="cursor:pointer;" title="Click for details">
         <div style="min-width:0;flex:1;">
           <div style="font-weight:500;font-size:0.83rem;color:var(--win11-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(name)}">${escapeHtml(name.length > 80 ? name.substring(0,80)+'...' : name)}</div>
           <div style="font-size:0.72rem;color:var(--win11-text-secondary);margin-top:2px;">
@@ -349,9 +349,23 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
           ${currentStep ? `<span style="font-size:0.7rem;color:var(--win11-text-tertiary);">${escapeHtml(currentStep)}</span>` : ''}
           ${stepsLabel ? `<span style="font-size:0.7rem;color:var(--win11-text-tertiary);">${stepsLabel} steps</span>` : ''}
           ${statusBadge(status)}
+          <span style="font-size:0.72rem;color:var(--win11-accent);">▶</span>
         </div>
       </div>`;
     }).join('');
+
+    // Run row click handlers (P7)
+    container.querySelectorAll('[data-run-id]').forEach(row => {
+      row.addEventListener('click', () => {
+        const run = runs.find(r => r.id === row.dataset.runId);
+        if (!run) return;
+        if (run.owner_agent_id) {
+          navigateToView?.('agents', { params: { agentName: run.owner_agent_id } });
+        } else if (run.task_id) {
+          navigateToView?.('tasks', { params: { taskId: run.task_id } });
+        }
+      });
+    });
   }
 
   async function loadTemplates() {
@@ -377,7 +391,8 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
   }
 
   async function loadMeta() {
-    try { const r = await api.projects.list(); projects = Array.isArray(r) ? r : []; } catch { projects = []; }
+    const _wsId = stateStore?.getState?.('activeSpaceId');
+    try { const r = await api.projects.list(_wsId ? { workspace_id: _wsId } : {}); projects = Array.isArray(r) ? r : []; } catch { projects = []; }
     try { const r = await api.org.agents.list(); agents = Array.isArray(r) ? r : []; } catch { agents = []; }
 
     // Populate task dropdown (recent tasks with active workflow runs)

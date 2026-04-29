@@ -385,6 +385,14 @@ export async function renderAgentsView({ mountNode, api, adapter, stateStore, sy
           </div>
         ` : ''}
 
+        <!-- Cross-navigation actions (P6) -->
+        <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
+          ${currentTask ? `<button class="av-action-btn" data-nav="task" data-task-id="${escapeHtml(currentTask)}" title="Open current task">📋 Current Task</button>` : ''}
+          <button class="av-action-btn" data-nav="tasks" data-agent-name="${escapeHtml(name)}" title="View agent's task queue">📝 Task Queue</button>
+          ${queue && (queue.blocked || 0) > 0 ? `<button class="av-action-btn" data-nav="tasks" data-filter="blocked" data-agent-name="${escapeHtml(name)}" title="View blocked tasks">🚫 Blocked (${queue.blocked})</button>` : ''}
+          <button class="av-action-btn" data-nav="history" data-agent-name="${escapeHtml(name)}" title="View agent history">📜 History</button>
+        </div>
+
         <!-- Assign Task Form -->
         <div style="border-top:1px solid var(--win11-border);padding-top:12px;">
           <h4 style="margin:0 0 8px;color:var(--win11-text);font-size:0.9rem;font-weight:600;">Assign Task to ${escapeHtml(name)}</h4>
@@ -458,6 +466,26 @@ export async function renderAgentsView({ mountNode, api, adapter, stateStore, sy
     const quickBtn = panel.querySelector('#avQuickAssignBtn');
     quickBtn.addEventListener('click', () => handleAssign('in_progress'));
     cleanupFns.push(() => quickBtn.removeEventListener('click', () => handleAssign('in_progress')));
+
+    // Cross-navigation handlers (P6)
+    panel.querySelectorAll('[data-nav]').forEach(btn => {
+      const handler = () => {
+        const nav = btn.dataset.nav;
+        switch (nav) {
+          case 'task':
+            navigateToView?.('tasks', { params: { taskId: btn.dataset.taskId } });
+            break;
+          case 'tasks':
+            navigateToView?.('tasks', { params: { agentFilter: btn.dataset.agentName } });
+            break;
+          case 'history':
+            navigateToView?.('history', { params: { actor: btn.dataset.agentName } });
+            break;
+        }
+      };
+      btn.addEventListener('click', handler);
+      cleanupFns.push(() => btn.removeEventListener('click', handler));
+    });
   }
 
   async function handleAssign(forcedStatus) {

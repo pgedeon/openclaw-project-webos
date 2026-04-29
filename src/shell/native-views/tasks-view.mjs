@@ -137,6 +137,10 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
   let initialTaskId = params.taskId || null;
   let initialProjectId = params.projectId || null;
   if (initialProjectId) currentProjectId = initialProjectId;
+
+  // Space scope (P4): filter by active space's projects
+  let activeSpaceId = stateStore?.getState?.('activeSpaceId') || null;
+  let spaceProjectIds = null; // null = all projects, array = space-scoped
   let projects = [];
   let currentProjectId = null;
   let currentFilter = 'all';
@@ -1184,7 +1188,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
   await loadTaskOptions();
   await loadTasks();
 
-  return () => {
+  return () => { globalThis.removeEventListener('space:changed', onSpaceChanged);
     if (syncUnsubscribe) syncUnsubscribe();
     cleanupFns.forEach(fn => fn());
     cleanupFns = [];

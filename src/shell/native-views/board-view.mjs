@@ -165,9 +165,11 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
   const body = $('#kbBody');
   const det = $('#kbDet');
 
-  // ── Load projects ──────────────────────────────────────────────────
+  // ── Load projects (space-scoped if active) ──────────────────────
+  const _activeSpaceId = stateStore?.getState?.('activeSpaceId') || params.projectId ? null : null;
+  const _spaceFilter = _activeSpaceId ? `?workspace_id=${encodeURIComponent(_activeSpaceId)}` : '';
   try {
-    const r = await fetch('/api/projects', { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
+    const r = await fetch('/api/projects' + _spaceFilter, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     projects = normalizeCollection(data, ['projects', 'data']);
