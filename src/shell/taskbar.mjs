@@ -320,17 +320,16 @@ export class Taskbar extends EventTarget {
     const container = this.root.querySelector('[data-role="pinned-apps"]');
     if (!container) return;
     this.pinnedApps = appIds.map(id => getAppById(id)).filter(Boolean);
-    // Re-render pinned app icons
+    // Re-render using same structure as render() for consistent styling
     const icons = this.pinnedApps.map(app => `
-      <button class="win11-taskbar__pinned-app" data-action="launch" data-app-id="${app.id}" title="${app.label}">
-        <span class="win11-app-icon">${app.icon}</span>
+      <button type="button" class="win11-taskbar__button win11-taskbar__app" data-app-id="${app.id}" aria-label="${escapeHtml(app.label)}" title="${escapeHtml(app.label)}">
+        <span class="win11-app-icon win11-taskbar__app-icon">${app.icon}</span>
+        <span class="win11-taskbar__indicator" aria-hidden="true"></span>
+        <span class="win11-taskbar__tooltip">${escapeHtml(app.label)}</span>
       </button>
     `).join('');
     container.innerHTML = icons;
-    // Re-bind click handlers
-    container.querySelectorAll('[data-action="launch"]').forEach(btn => {
-      btn.addEventListener('click', () => this.onAppActivate(btn.dataset.appId));
-    });
+    // Click delegation is already handled by the root click listener in render()
   }
 
   updateClock() {

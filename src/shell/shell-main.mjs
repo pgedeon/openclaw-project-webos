@@ -241,7 +241,8 @@ export function bootstrapShell({
     return () => themeSubscribers.delete(callback);
   };
 
-  const sharedStateStore = createViewState({ project_id: '', activeSpaceId: null });
+  const _savedSpaceId = (() => { try { return JSON.parse(localStorage.getItem('openclaw.win11.activeSpaceId') || 'null'); } catch { return null; } })();
+  const sharedStateStore = createViewState({ project_id: '', activeSpaceId: _savedSpaceId });
   const apiClient = createAPIClient('/api');
 
   // Create realtime sync module
@@ -339,7 +340,19 @@ export function bootstrapShell({
         }
         const activeId = sharedStateStore.getState('activeSpaceId');
         const active = spaces.find(s => s.id === activeId);
-        if (active) taskbar.updateSpaceName(active.name);
+        if (active) {
+          taskbar.updateSpaceName(active.name);
+          // Apply space settings on startup (pinned apps, agent config)
+          const settings = typeof active.settings === 'string' ? JSON.parse(active.settings || '{}') : (active.settings || {});
+          const desktop = settings.desktop || {};
+          const agent = settings.agent || {};
+          if (desktop.pinnedApps?.length && taskbar.updatePinnedApps) {
+            taskbar.updatePinnedApps(desktop.pinnedApps);
+          }
+          if (chatPanel && (agent.defaultModel || agent.systemPrompt)) {
+            chatPanel.updateSpaceConfig?.(agent);
+          }
+        }
       }
     }).catch(() => {});
   } catch (e) { /* spaces load failure is non-critical */ }
@@ -348,6 +361,9 @@ export function bootstrapShell({
   globalThis.addEventListener('space:changed', (event) => {
     const space = event.detail?.space;
     if (!space) return;
+    // Persist active space to localStorage so it survives refresh
+    sharedStateStore.setState('activeSpaceId', space.id);
+    try { localStorage.setItem('openclaw.win11.activeSpaceId', JSON.stringify(space.id)); } catch {}
     taskbar.updateSpaceName(space.name);
 
     // Apply space settings: pinned apps, agent config, desktop layout
