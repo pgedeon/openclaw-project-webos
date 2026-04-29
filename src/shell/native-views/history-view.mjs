@@ -193,3 +193,5 @@ export async function renderHistoryView({ mountNode, api }) {
 
   await loadData();
 }
+
+export default renderHistoryView;
