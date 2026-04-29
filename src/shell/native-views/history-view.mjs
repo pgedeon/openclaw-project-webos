@@ -78,7 +78,7 @@ export async function renderHistoryView({ mountNode, api }) {
   async function loadSnapshots() {
     container.innerHTML = '<div class="hist-loading">Loading snapshots...</div>';
     try {
-      const data = await api.snapshots.list('task', 'all', { limit: 50 });
+      const data = await api.snapshots.listAll({ limit: 50 });
       snapshots = data.snapshots || [];
       render();
     } catch (err) {

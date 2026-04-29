@@ -146,7 +146,24 @@ function registerHistoryRoutes(router, deps) {
     }
   });
 
-  // GET /api/snapshots/:entityType/:entityId — list state snapshots
+  // GET /api/snapshots — list recent snapshots across all entities
+  router.add('GET', '/api/snapshots', async (req, res, ctx) => {
+    if (!_ensurePool(res, ctx)) return;
+    try {
+      const urlStr = req.url || '';
+      const limit = Math.min(parseInt(urlStr.split('limit=')[1]?.split('&')[0] || '50', 10), 200);
+      const result = await getPool().query(
+        'SELECT id, entity_type, entity_id, action, actor, correlation_id, created_at FROM state_snapshots ORDER BY created_at DESC LIMIT $1',
+        [limit]
+      );
+      ctx.sendJSON(res, 200, { snapshots: result.rows, total: result.rows.length });
+    } catch (err) {
+      ctx.sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  });
+
+  // GET /api/snapshots/:entityType/:entityId — list state snapshots for a specific entity
   router.add('GET', '/api/snapshots/:entityType/:entityId', async (req, res, ctx, params) => {
     if (!_ensurePool(res, ctx)) return;
     try {

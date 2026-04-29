@@ -611,6 +611,7 @@ export function createAPIClient(baseURL = '/api', options = {}) {
 
     // State Snapshots
     snapshots: {
+      listAll(params = {}) { return request(pathWithQuery('/snapshots', params)); },
       list(entityType, entityId, params = {}) { return request(pathWithQuery(`/snapshots/${entityType}/${entityId}`, params)); },
       previewRevert(snapshotId) { return jsonRequest(`/snapshots/${snapshotId}/preview-revert`, { method: 'POST', body: {} }); },
       revert(snapshotId, actor = 'dashboard') { return jsonRequest(`/snapshots/${snapshotId}/revert`, { method: 'POST', body: { actor } }); },
