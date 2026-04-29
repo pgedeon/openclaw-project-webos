@@ -177,12 +177,12 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 
 > **Status:** Partially implemented — session chat exists, needs dashboard context and safe actions
 
-- [ ] **AGT-1:** Enable SSE in `shell-main.mjs` (also QW-1)
-- [ ] **AGT-2:** Create `src/shell/agent-context.mjs` — `buildDashboardContext()`
-- [ ] **AGT-3:** Add `POST /api/agent/chat` — dashboard-scoped chat with context
-- [ ] **AGT-4:** Create `src/shell/agent-actions.mjs` — read-only actions first, then confirmed writes
-- [ ] **AGT-5:** Create agent chat panel (docked sidebar or floating panel)
-- [ ] **AGT-6:** Wire confirmed writes through `api-client` with actor `dashboard-agent`
+- [x] **AGT-1:** Enable SSE in `shell-main.mjs` (also QW-1)
+- [x] **AGT-2:** Create `src/shell/agent-context.mjs` — `buildDashboardContext()`
+- [x] **AGT-3:** Add `POST /api/agent/chat` — dashboard-scoped chat with context
+- [x] **AGT-4:** Create `src/shell/agent-actions.mjs` — read-only actions first, then confirmed writes
+- [x] **AGT-5:** Create agent chat panel (docked sidebar or floating panel)
+- [x] **AGT-6:** Wire confirmed writes through `api-client` with actor `dashboard-agent`
 
 **Complexity:** L | **Dependencies:** Memory system, SSE enablement
 

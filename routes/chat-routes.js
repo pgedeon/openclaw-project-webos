@@ -117,6 +117,54 @@ function registerChatRoutes(router, gatewayClient) {
       gatewayUrl: gatewayClient?.url || null,
     });
   });
+
+  // POST /api/agent/chat — Dashboard-scoped chat with context
+  // Wraps the gateway chat with dashboard context injection
+  router.add('POST', '/api/agent/chat', async (req, res) => {
+    if (!gatewayClient) {
+      res.writeHead(503); res.end(JSON.stringify({ error: 'Gateway not connected' })); return;
+    }
+    try {
+      const body = await parseBody(req);
+      const { message, sessionKey, context } = body;
+
+      if (!message) {
+        res.writeHead(400); res.end(JSON.stringify({ error: 'message is required' })); return;
+      }
+
+      // Build enhanced message with dashboard context prefix
+      const enhancedMessage = context
+        ? `[Dashboard Context: ${context.activeView || 'unknown'} view, ${context.stats?.projects || 0} projects, ${context.stats?.recentTasks || 0} recent tasks${context.activeSpace ? ', space: ' + context.activeSpace.name : ''}]\n\n${message}`
+        : message;
+
+      const result = await gatewayClient.chatSend({
+        sessionKey: sessionKey || 'dashboard-agent',
+        message: enhancedMessage,
+        metadata: { source: 'dashboard-chat', context: true },
+      });
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(500); res.end(JSON.stringify({ error: err.message }));
+    }
+  });
+
+  // GET /api/agent/chat/history — Get recent chat history for dashboard agent
+  router.add('GET', '/api/agent/chat/history', async (req, res) => {
+    if (!gatewayClient) {
+      res.writeHead(503); res.end(JSON.stringify({ error: 'Gateway not connected' })); return;
+    }
+    try {
+      const urlStr = req.url || '';
+      const limit = parseInt(urlStr.split('limit=')[1]?.split('&')[0] || '50', 10);
+      const history = await gatewayClient.chatHistory?.('dashboard-agent', limit) || [];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ history }));
+    } catch (err) {
+      res.writeHead(500); res.end(JSON.stringify({ error: err.message }));
+    }
+  });
 }
 
 module.exports = { registerChatRoutes };

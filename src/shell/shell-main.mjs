@@ -10,6 +10,8 @@ import {
 } from './view-adapter.mjs';
 import { createAPIClient } from './api-client.mjs';
 import { createViewState } from './view-state.mjs';
+import { buildDashboardContext } from './agent-context.mjs';
+import { AgentChatPanel } from './agent-chat-panel.mjs';
 import { createRealtimeSync } from './realtime-sync.mjs';
 import { setOnlineStatus } from './mutation-manager.mjs';
 import { WidgetRegistry } from './widgets/widget-registry.mjs';
@@ -191,6 +193,16 @@ export function bootstrapShell({
   }
 
   const existingShell = window[SHELL_INSTANCE_KEY];
+  // Chat panel toggle: Ctrl+/
+  if (typeof document !== 'undefined') {
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === '/') {
+        e.preventDefault();
+        chatPanel.toggle();
+      }
+    });
+  }
+
   if (existingShell && existingShell.desktop === desktop && existingShell.taskbarRoot === taskbarRoot) {
     return existingShell;
   }
@@ -327,6 +339,32 @@ export function bootstrapShell({
       if (active) taskbar.updateSpaceName(active.name);
     });
   }
+
+  // Agent chat panel
+  const chatPanel = new AgentChatPanel({
+    onSend: async (message) => {
+      try {
+        const _api = createAPIClient('/api', { headers: getAuthHeaders });
+        const ctx = await buildDashboardContext(_api, {
+          activeSpaceId: sharedStateStore.getState('activeSpaceId'),
+          activeViewId: null,
+          viewState: sharedStateStore.getState(),
+        });
+        const resp = await fetch('/api/agent/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ message, context: ctx }),
+        });
+        const data = await resp.json();
+        if (data.response) chatPanel.addMessage('agent', data.response);
+        else if (data.error) chatPanel.addMessage('system', 'Error: ' + data.error);
+      } catch (err) {
+        chatPanel.addMessage('system', 'Connection error: ' + err.message);
+      }
+    },
+    onConfirm: (actionId) => chatPanel.addMessage('system', 'Action approved: ' + actionId),
+    onReject: (actionId) => chatPanel.addMessage('system', 'Action cancelled'),
+  });
 
   viewAdapter = createViewAdapter(document.createElement('div'), {
     viewState: sharedStateStore,
