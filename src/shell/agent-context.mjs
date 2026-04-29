@@ -33,13 +33,13 @@ export async function buildDashboardContext(api, {
   };
 
   try {
-    // Parallel fetch for speed
+    // Parallel fetch for speed — scope by workspace when active
     const [spaces, projects, agents, recentTasks, health] = await Promise.allSettled([
       activeSpaceId ? api.spaces.get(activeSpaceId) : api.spaces.list(),
-      api.projects.list(),
+      api.projects.list(activeSpaceId ? { workspace_id: activeSpaceId } : {}),
       api.org.agents.list().catch(() => []),
-      api.tasks.list({ limit: 10, sort: 'updated_at', order: 'desc' }).catch(() => ({ tasks: [] })),
-      api.health().catch(() => ({})),
+      api.tasks.list({ limit: 10, sort: 'updated_at', order: 'desc', ...(activeSpaceId ? { workspace_id: activeSpaceId } : {}) }).catch(() => ({ tasks: [] })),
+      api.health?.status ? api.health.status().catch(() => ({})) : (api.health ? api.health().catch(() => ({})) : Promise.resolve({})),
     ]);
 
     // Active space

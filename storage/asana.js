@@ -3891,29 +3891,39 @@ class AsanaStorage {
   }
 
   async assignProjectsToWorkspace(workspaceId, projectIds) {
-    // First clear all projects from this workspace
-    await this.pool.query('UPDATE projects SET workspace_id = NULL WHERE workspace_id = $1', [workspaceId]);
-    // Then assign the specified ones
-    if (projectIds.length > 0) {
-      await this.pool.query(
-        'UPDATE projects SET workspace_id = $1 WHERE id = ANY($2)',
-        [workspaceId, projectIds]
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Clear all projects from this workspace
+      await client.query('UPDATE projects SET workspace_id = NULL WHERE workspace_id = $1', [workspaceId]);
+      // Assign the specified ones
+      if (projectIds.length > 0) {
+        await client.query(
+          'UPDATE projects SET workspace_id = $1 WHERE id = ANY($2)',
+          [workspaceId, projectIds]
+        );
+      }
+      // Update tasks to match
+      await client.query(
+        'UPDATE tasks t SET workspace_id = $1 FROM projects p WHERE t.project_id = p.id AND p.workspace_id = $1',
+        [workspaceId]
       );
+      // Clear workspace_id on tasks whose projects were removed
+      await client.query(
+        'UPDATE tasks t SET workspace_id = NULL FROM projects p WHERE t.project_id = p.id AND p.workspace_id IS NULL AND t.workspace_id = $1',
+        [workspaceId]
+      );
+      await client.query('COMMIT');
+      const assigned = await this.pool.query(
+        'SELECT id, name FROM projects WHERE workspace_id = $1', [workspaceId]
+      );
+      return { assigned: assigned.rows.length, projects: assigned.rows };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-    // Update tasks to match
-    await this.pool.query(
-      'UPDATE tasks t SET workspace_id = $1 FROM projects p WHERE t.project_id = p.id AND p.workspace_id = $1',
-      [workspaceId]
-    );
-    // Clear workspace_id on tasks whose projects were removed
-    await this.pool.query(
-      'UPDATE tasks t SET workspace_id = NULL FROM projects p WHERE t.project_id = p.id AND p.workspace_id IS NULL AND t.workspace_id = $1',
-      [workspaceId]
-    );
-    const assigned = await this.pool.query(
-      'SELECT id, name FROM projects WHERE workspace_id = $1', [workspaceId]
-    );
-    return { assigned: assigned.rows.length, projects: assigned.rows };
   }
 
   async getWorkspaceStats(workspaceId) {

@@ -499,7 +499,7 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
     const form = await showTabbedModal('Create Space', tabs);
     if (!form?.name) return;
     try {
-      const settings = buildSettings(form);
+      const settings = buildSettings(form, space.settings);
       await api.spaces.create({ name: form.name, description: form.description, icon: form._selectedIcon, color: form._selectedColor, settings });
       showNotice('Space created!', 'success');
     } catch (err) { showNotice(`Failed: ${err.message}`, 'error'); }
@@ -533,7 +533,7 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
     if (!form) return;
 
     try {
-      const settings = buildSettings(form);
+      const settings = buildSettings(form, space.settings);
       await Promise.all([
         api.spaces.update(id, {
           name: form.name || space.name,
@@ -549,20 +549,27 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
     load();
   }
 
-  function buildSettings(form) {
+  function buildSettings(form, existingSettings = {}) {
+    const existing = typeof existingSettings === 'string' ? JSON.parse(existingSettings || '{}') : (existingSettings || {});
+    const prevDesktop = existing.desktop || {};
+    const prevAgent = existing.agent || {};
     return {
       desktop: {
-        pinnedApps: form._selectedApps || [],
-        restoreLayout: !!form.restoreLayout,
-        saveLayout: !!form.saveLayout,
-        homeView: form.homeView || '',
+        ...prevDesktop,
+        pinnedApps: form._selectedApps || prevDesktop.pinnedApps || [],
+        restoreLayout: form.restoreLayout !== undefined ? !!form.restoreLayout : prevDesktop.restoreLayout,
+        saveLayout: form.saveLayout !== undefined ? !!form.saveLayout : prevDesktop.saveLayout,
+        homeView: form.homeView !== undefined ? form.homeView : prevDesktop.homeView || '',
+        // Preserve saved layout — only overwrite from form if explicitly provided
+        layout: prevDesktop.layout || null,
       },
       agent: {
-        defaultModel: form.agentModel || '',
-        systemPrompt: form.agentSystemPrompt || '',
-        name: form.agentName || '',
-        memoryScope: form.agentMemoryScope ? 'workspace' : 'global',
-        autonomous: !!form.agentAutonomous,
+        ...prevAgent,
+        defaultModel: form.agentModel !== undefined ? form.agentModel : prevAgent.defaultModel || '',
+        systemPrompt: form.agentSystemPrompt !== undefined ? form.agentSystemPrompt : prevAgent.systemPrompt || '',
+        name: form.agentName !== undefined ? form.agentName : prevAgent.name || '',
+        memoryScope: form.agentMemoryScope !== undefined ? (form.agentMemoryScope ? 'workspace' : 'global') : prevAgent.memoryScope || 'global',
+        autonomous: form.agentAutonomous !== undefined ? !!form.agentAutonomous : prevAgent.autonomous || false,
       },
     };
   }
@@ -580,6 +587,17 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
     if (!confirm(`Delete "${space?.name}"? This cannot be undone.`)) return;
     try {
       await api.spaces.delete(id);
+      // If we deleted the active space, switch to default
+      if (id === getActiveSpaceId()) {
+        const remaining = spaces.filter(s => s.id !== id);
+        const def = remaining.find(s => s.is_default) || remaining[0];
+        if (def) {
+          setActiveSpace(def);
+          restoreDesktopLayout(def);
+        } else {
+          stateStore?.setState?.('activeSpaceId', null);
+        }
+      }
       showNotice('Space deleted.');
     } catch (err) { showNotice(`Failed: ${err.message}`, 'error'); }
     load();

@@ -216,12 +216,12 @@ export class WindowManager extends EventTarget {
    * Restore a previously saved window layout (e.g. from a Space).
    * Closes current windows and reopens from the layout data.
    */
-  restoreLayout(layout) {
+  async restoreLayout(layout) {
     if (!layout?.windows) return;
-    // Close all current windows
-    for (const [appId] of Array.from(this.windows)) {
-      this.closeWindow(appId);
-    }
+    // Close all current windows and await completion to avoid race conditions (#1)
+    await Promise.all(
+      Array.from(this.windows.keys()).map(id => this.closeWindow(id, { skipPersist: true, skipEmit: true }))
+    );
     // Reopen from layout
     const wins = layout.windows || [];
     wins

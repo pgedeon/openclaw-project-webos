@@ -123,22 +123,41 @@ export class AgentChatPanel {
     const msgContainer = this.el.querySelector('.acp-messages');
     const div = document.createElement('div');
     div.className = 'acp-confirm';
-    div.innerHTML = `
-      <div class="acp-confirm-label">⚠️ ${actionLabel}</div>
-      <div style="font-size:0.78rem;color:var(--win11-text-secondary)">${JSON.stringify(params, null, 2).slice(0, 200)}</div>
-      <div class="acp-confirm-actions">
-        <button class="acp-confirm-btn approve" data-action-id="${actionId}">Approve</button>
-        <button class="acp-confirm-btn reject" data-action-id="${actionId}">Cancel</button>
-      </div>
-    `;
-    div.querySelector('.approve').addEventListener('click', () => {
-      this.onConfirm?.(actionId);
-      div.remove();
-    });
-    div.querySelector('.reject').addEventListener('click', () => {
+
+    // Safe DOM construction — no innerHTML with untrusted data (#5 XSS fix)
+    const label = document.createElement('div');
+    label.className = 'acp-confirm-label';
+    label.textContent = '⚠️ ' + (actionLabel || 'Action');
+
+    const paramsEl = document.createElement('div');
+    paramsEl.style.cssText = 'font-size:0.78rem;color:var(--win11-text-secondary)';
+    paramsEl.textContent = JSON.stringify(params, null, 2).slice(0, 200);
+
+    const actions = document.createElement('div');
+    actions.className = 'acp-confirm-actions';
+
+    const approveBtn = document.createElement('button');
+    approveBtn.className = 'acp-confirm-btn approve';
+    approveBtn.textContent = 'Approve';
+    approveBtn.addEventListener('click', () => { this.onConfirm?.(actionId); div.remove(); });
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.className = 'acp-confirm-btn reject';
+    rejectBtn.textContent = 'Cancel';
+    rejectBtn.addEventListener('click', () => {
       this.onReject?.(actionId);
-      div.innerHTML = '<div style="color:var(--win11-text-tertiary);font-size:0.78rem;">Action cancelled</div>';
+      const cancelled = document.createElement('div');
+      cancelled.style.cssText = 'color:var(--win11-text-tertiary);font-size:0.78rem;';
+      cancelled.textContent = 'Action cancelled';
+      div.innerHTML = '';
+      div.appendChild(cancelled);
     });
+
+    actions.appendChild(approveBtn);
+    actions.appendChild(rejectBtn);
+    div.appendChild(label);
+    div.appendChild(paramsEl);
+    div.appendChild(actions);
     msgContainer.appendChild(div);
     msgContainer.scrollTop = msgContainer.scrollHeight;
   }
