@@ -81,8 +81,23 @@ function getMemoryRoot() {
 }
 
 function searchMemory(query) {
-  return execAsync('node', [UNIFIED_SCRIPT, '--scope', 'all', '--q', query], { timeout: 15000 })
-    .then(({ stdout }) => JSON.parse(stdout));
+  // Use OpenClaw's built-in memory search (vector + full-text) instead of missing script
+  return execAsync('openclaw', ['memory', 'search', query, '--json'], { timeout: 15000 })
+    .then(({ stdout }) => {
+      const data = JSON.parse(stdout);
+      // Transform OpenClaw format to dashboard format
+      if (data.results) {
+        return { hits: data.results.map(r => ({
+          path: r.path,
+          snippet: r.snippet,
+          score: r.score,
+          source: r.source,
+          startLine: r.startLine,
+          endLine: r.endLine,
+        }))};
+      }
+      return { hits: [] };
+    });
 }
 
 function getFacts() {
