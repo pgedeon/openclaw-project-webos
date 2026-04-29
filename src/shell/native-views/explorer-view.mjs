@@ -309,7 +309,7 @@ export async function renderExplorerView({ mountNode, stateStore, navigateToView
 
   async function loadDirectory() {
     try {
-      const res = await fetch(`${FS_API}/list?path=${encodeURIComponent(currentPath, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`);
+      const res = await fetch(`${FS_API}/list?path=${encodeURIComponent(currentPath)}`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       const data = await res.json();
 
       if (!res.ok) {
@@ -561,7 +561,7 @@ export async function renderExplorerView({ mountNode, stateStore, navigateToView
   async function doSearch(query) {
     try {
       const searchPath = currentPath || '';
-      const res = await fetch(`${FS_API}/search?q=${encodeURIComponent(query, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}&path=${encodeURIComponent(searchPath)}`);
+      const res = await fetch(`${FS_API}/search?q=${encodeURIComponent(query)}&path=${encodeURIComponent(searchPath)}`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       const data = await res.json();
       if (!res.ok) {
         fileList.innerHTML = `<div class="ex-empty">Search failed: ${escapeHtml(data.error)}</div>`;

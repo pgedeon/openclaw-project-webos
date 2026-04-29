@@ -194,16 +194,6 @@ export function bootstrapShell({
   }
 
   const existingShell = window[SHELL_INSTANCE_KEY];
-  // Chat panel toggle: Ctrl+/
-  if (typeof document !== 'undefined') {
-    document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.key === '/') {
-        e.preventDefault();
-        chatPanel.toggle();
-      }
-    });
-  }
-
   if (existingShell && existingShell.desktop === desktop && existingShell.taskbarRoot === taskbarRoot) {
     return existingShell;
   }
@@ -338,13 +328,21 @@ export function bootstrapShell({
   });
 
   // Load spaces on startup and set active space name in taskbar
-  if (context?.loadSpaces) {
-    context.loadSpaces().then(spaces => {
-      const activeId = sharedStateStore.getState('activeSpaceId');
-      const active = spaces.find(s => s.id === activeId);
-      if (active) taskbar.updateSpaceName(active.name);
-    });
-  }
+  try {
+    const _api = createAPIClient('/api', { headers: getAuthHeaders });
+    _api.spaces.list().then(({ spaces }) => {
+      if (spaces?.length) {
+        const current = sharedStateStore.getState('activeSpaceId');
+        if (!current) {
+          const def = spaces.find(s => s.is_default) || spaces[0];
+          sharedStateStore.setState('activeSpaceId', def.id);
+        }
+        const activeId = sharedStateStore.getState('activeSpaceId');
+        const active = spaces.find(s => s.id === activeId);
+        if (active) taskbar.updateSpaceName(active.name);
+      }
+    }).catch(() => {});
+  } catch (e) { /* spaces load failure is non-critical */ }
 
   // Notification center
   const notifCenter = new NotificationCenter();
