@@ -344,14 +344,29 @@ export function bootstrapShell({
     }).catch(() => {});
   } catch (e) { /* spaces load failure is non-critical */ }
 
-  // Listen for space changes from the Spaces view (#4)
+  // Listen for space changes — restore layout, update taskbar, refresh views
   globalThis.addEventListener('space:changed', (event) => {
     const space = event.detail?.space;
-    if (space) {
-      taskbar.updateSpaceName(space.name);
-      // Refresh visible views so they pick up the new activeSpaceId
-      sync?.refresh?.();
+    if (!space) return;
+    taskbar.updateSpaceName(space.name);
+
+    // Apply space settings: pinned apps, agent config, desktop layout
+    const settings = typeof space.settings === 'string' ? JSON.parse(space.settings || '{}') : (space.settings || {});
+    const desktop = settings.desktop || {};
+    const agent = settings.agent || {};
+
+    // Update taskbar pinned apps if configured
+    if (desktop.pinnedApps?.length && taskbar.updatePinnedApps) {
+      taskbar.updatePinnedApps(desktop.pinnedApps);
     }
+
+    // Update agent panel defaults if configured
+    if (chatPanel && (agent.defaultModel || agent.systemPrompt)) {
+      chatPanel.updateSpaceConfig?.(agent);
+    }
+
+    // Refresh visible views so they pick up the new activeSpaceId
+    sync?.refresh?.();
   });
 
   // Notification center
@@ -368,10 +383,16 @@ export function bootstrapShell({
           activeViewId: null,
           viewState: sharedStateStore.getState(),
         });
+        // Include space agent config if available
+        const spaceAgentCfg = chatPanel.spaceConfig || {};
         const resp = await fetch('/api/agent/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({ message, context: ctx }),
+          body: JSON.stringify({
+            message,
+            context: ctx,
+            agentConfig: Object.keys(spaceAgentCfg).length ? spaceAgentCfg : undefined,
+          }),
         });
         const data = await resp.json();
         if (data.response) chatPanel.addMessage('agent', data.response);

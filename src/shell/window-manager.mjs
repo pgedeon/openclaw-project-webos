@@ -205,6 +205,42 @@ export class WindowManager extends EventTarget {
     }
   }
 
+  /**
+   * Get serializable window layout for space persistence.
+   */
+  getWindowLayout() {
+    return this.getStateSnapshot();
+  }
+
+  /**
+   * Restore a previously saved window layout (e.g. from a Space).
+   * Closes current windows and reopens from the layout data.
+   */
+  restoreLayout(layout) {
+    if (!layout?.windows) return;
+    // Close all current windows
+    for (const [appId] of Array.from(this.windows)) {
+      this.closeWindow(appId);
+    }
+    // Reopen from layout
+    const wins = layout.windows || [];
+    wins
+      .filter(w => this.appMap.has(w.id))
+      .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
+      .forEach(w => {
+        this.openWindow(w.id, {
+          state: { ...w, restoreBounds: w.restoreBounds ? copyBounds(w.restoreBounds) : null },
+          skipPersist: true,
+          skipEmit: true,
+          skipFocus: true,
+        });
+      });
+    // Focus topmost
+    const top = wins.filter(w => !w.minimized).sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0))[0];
+    if (top) this.focusWindow(top.id);
+    this.emitChange();
+  }
+
   restoreFromStorage() {
     let persistedWindows = [];
 

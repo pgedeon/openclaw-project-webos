@@ -316,6 +316,23 @@ export class Taskbar extends EventTarget {
     if (btn) btn.title = 'Switch Space: ' + (name || 'Default');
   }
 
+  updatePinnedApps(appIds) {
+    const container = this.root.querySelector('[data-role="pinned-apps"]');
+    if (!container) return;
+    this.pinnedApps = appIds.map(id => getAppById(id)).filter(Boolean);
+    // Re-render pinned app icons
+    const icons = this.pinnedApps.map(app => `
+      <button class="win11-taskbar__pinned-app" data-action="launch" data-app-id="${app.id}" title="${app.label}">
+        <span class="win11-app-icon">${app.icon}</span>
+      </button>
+    `).join('');
+    container.innerHTML = icons;
+    // Re-bind click handlers
+    container.querySelectorAll('[data-action="launch"]').forEach(btn => {
+      btn.addEventListener('click', () => this.emitLaunch(btn.dataset.appId));
+    });
+  }
+
   updateClock() {
     if (this.clockElement) {
       this.clockElement.textContent = timeFormatter.format(new Date());

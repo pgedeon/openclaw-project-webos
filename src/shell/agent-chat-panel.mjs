@@ -150,6 +150,31 @@ export class AgentChatPanel {
     if (input) input.disabled = loading;
   }
 
+  /**
+   * Update agent config from the active Space settings.
+   */
+  updateSpaceConfig(agentConfig) {
+    this._spaceConfig = agentConfig;
+    // Show indicator if custom model or prompt is set
+    const indicator = this.el.querySelector('.acp-space-indicator');
+    if (agentConfig.defaultModel || agentConfig.systemPrompt) {
+      if (!indicator) {
+        const badge = document.createElement('div');
+        badge.className = 'acp-space-indicator';
+        badge.style.cssText = 'font-size:0.7rem;padding:2px 8px;border-radius:8px;background:var(--win11-accent-light);color:var(--win11-accent);margin:4px 8px;';
+        badge.textContent = agentConfig.name ? `🤖 ${agentConfig.name}` : '🤖 Space Agent';
+        const header = this.el.querySelector('.acp-header');
+        header?.appendChild(badge);
+      } else {
+        indicator.textContent = agentConfig.name ? `🤖 ${agentConfig.name}` : '🤖 Space Agent';
+      }
+    } else if (indicator) {
+      indicator.remove();
+    }
+  }
+
+  get spaceConfig() { return this._spaceConfig || {}; }
+
   _send() {
     const input = this.el.querySelector('.acp-input');
     const msg = input?.value?.trim();
