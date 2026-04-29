@@ -267,6 +267,16 @@ export const APP_REGISTRY = Object.freeze([
     defaultHeight: 720,
   },
   {
+    id: 'spaces',
+    label: 'Spaces',
+    icon: appIcon.folder,
+    url: '/?view=spaces',
+    viewModule: './native-views/spaces-view.mjs',
+    category: 'System',
+    defaultWidth: 780,
+    defaultHeight: 560,
+  },
+  {
     id: 'handoffs',
     label: 'Handoffs',
     icon: appIcon.handoff,

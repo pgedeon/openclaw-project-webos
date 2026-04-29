@@ -238,7 +238,7 @@ export function bootstrapShell({
     return () => themeSubscribers.delete(callback);
   };
 
-  const sharedStateStore = createViewState({ project_id: '' });
+  const sharedStateStore = createViewState({ project_id: '', activeSpaceId: null });
   const apiClient = createAPIClient('/api');
 
   // Create realtime sync module
@@ -307,8 +307,43 @@ export function bootstrapShell({
     onThemeToggle: (theme) => applyTheme(theme),
   });
 
+  // Space switcher: open spaces view on click
+  taskbar.addEventListener('space-switch', () => {
+    const entry = windowManager.getWindowEntry('spaces');
+    if (!entry) {
+      windowManager.openWindow('spaces');
+    } else if (entry.state.minimized) {
+      windowManager.restoreWindow('spaces');
+    } else {
+      windowManager.focusWindow('spaces');
+    }
+  });
+
+  // Load spaces on startup and set active space name in taskbar
+  if (context?.loadSpaces) {
+    context.loadSpaces().then(spaces => {
+      const activeId = sharedStateStore.getState('activeSpaceId');
+      const active = spaces.find(s => s.id === activeId);
+      if (active) taskbar.updateSpaceName(active.name);
+    });
+  }
+
   viewAdapter = createViewAdapter(document.createElement('div'), {
     viewState: sharedStateStore,
+    async loadSpaces() {
+      try {
+        const { spaces } = await api.spaces.list();
+        if (spaces?.length) {
+          const current = sharedStateStore.getState('activeSpaceId');
+          if (!current) {
+            const def = spaces.find(s => s.is_default) || spaces[0];
+            sharedStateStore.setState('activeSpaceId', def.id);
+          }
+          return spaces;
+        }
+      } catch {}
+      return [];
+    },
     api: apiClient,
     getProjectId: () => sharedStateStore.getState('project_id') || '',
     getTheme: () => currentTheme,

@@ -65,6 +65,7 @@ const { registerSettingsRoutes } = require('./routes/settings-routes');
 const { registerMemoryRoutes } = require('./routes/memory-routes');
 const { registerHistoryRoutes } = require('./routes/history-routes');
 const { registerExportRoutes } = require('./routes/export-routes');
+const { registerSpaceRoutes } = require('./routes/space-routes');
 const SettingsStore = require('./lib/settings-store');
 
 function loadDashboardEnv() {
@@ -663,6 +664,7 @@ registerViewRoutes(router);
 registerMemoryRoutes(router);
 registerHistoryRoutes(router, settingsDeps);
 registerExportRoutes(router, settingsDeps, settingsStore);
+registerSpaceRoutes(router, settingsDeps);
 const server = http.createServer(async (req, res) => {
   const timestamp = new Date().toISOString();
   const url = req.url.split('?')[0];

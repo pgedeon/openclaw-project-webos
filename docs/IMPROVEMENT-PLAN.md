@@ -157,17 +157,17 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 
 > **Status:** New — partial layout/filter foundations exist
 
-- [ ] **SPC-1:** Add migration `023_add_spaces.sql`
-- [ ] **SPC-2:** Extend `storage/asana.js` — space CRUD
-- [ ] **SPC-3:** Add `routes/space-routes.js`
-- [ ] **SPC-4:** Add `api.spaces` in `api-client.mjs`
-- [ ] **SPC-5:** Update `shell-main.mjs` — `activeSpaceId` in ViewState, `applySpace()`
-- [ ] **SPC-6:** Update `WindowManager` — per-space storage keys
-- [ ] **SPC-7:** Update `WidgetPanel` — per-space layout storage
-- [ ] **SPC-8:** Update `Taskbar` — space switcher
-- [ ] **SPC-9:** Create `spaces-view.mjs` — create/edit/duplicate/delete
-- [ ] **SPC-10:** Register in `app-registry.mjs`
-- [ ] **SPC-11:** Update docs
+- [x] **SPC-1:** Add migration `023_add_spaces.sql`
+- [x] **SPC-2:** Extend `storage/asana.js` — space CRUD
+- [x] **SPC-3:** Add `routes/space-routes.js`
+- [x] **SPC-4:** Add `api.spaces` in `api-client.mjs`
+- [x] **SPC-5:** Update `shell-main.mjs` — `activeSpaceId` in ViewState, `applySpace()`
+- [x] **SPC-6:** Update `WindowManager` — per-space storage keys
+- [x] **SPC-7:** Update `WidgetPanel` — per-space layout storage
+- [x] **SPC-8:** Update `Taskbar` — space switcher
+- [x] **SPC-9:** Create `spaces-view.mjs` — create/edit/duplicate/delete
+- [x] **SPC-10:** Register in `app-registry.mjs`
+- [x] **SPC-11:** Update docs
 
 **Complexity:** L | **Dependencies:** Memory system (for agent instructions per space)
 

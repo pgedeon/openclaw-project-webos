@@ -209,6 +209,10 @@ export class Taskbar extends EventTarget {
               z-index:1;
             ">0</span>
           </div>
+          <button type="button" class="win11-taskbar__button win11-taskbar__tray-button" data-action="space-switcher" aria-label="Switch space" title="Switch Space">
+            <span class="win11-taskbar__glyph">📁</span>
+            <span class="win11-taskbar__tooltip" data-role="space-name">Default</span>
+          </button>
           <button type="button" class="win11-taskbar__button win11-taskbar__tray-button" data-action="theme" aria-label="Toggle theme">
             <span class="win11-taskbar__glyph" data-role="theme-icon"></span>
             <span class="win11-taskbar__tooltip" data-role="theme-tooltip"></span>
@@ -291,6 +295,13 @@ export class Taskbar extends EventTarget {
       this.syncUnsubscribe = null;
     }
     this.root.innerHTML = "";
+  }
+
+  updateSpaceName(name) {
+    const el = this.root.querySelector('[data-role="space-name"]');
+    if (el) el.textContent = name || 'Default';
+    const btn = this.root.querySelector('[data-action="space-switcher"]');
+    if (btn) btn.title = 'Switch Space: ' + (name || 'Default');
   }
 
   updateClock() {

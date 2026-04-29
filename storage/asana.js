@@ -3702,6 +3702,80 @@ class AsanaStorage {
   }
 
 
+
+  // ── Workspace / Spaces CRUD ────────────────────────────────
+
+  async listWorkspaces() {
+    const result = await this.pool.query(
+      'SELECT * FROM workspaces ORDER BY sort_order, name'
+    );
+    return result.rows;
+  }
+
+  async getWorkspace(id) {
+    const result = await this.pool.query('SELECT * FROM workspaces WHERE id = $1', [id]);
+    return result.rows[0] || null;
+  }
+
+  async getWorkspaceBySlug(slug) {
+    const result = await this.pool.query('SELECT * FROM workspaces WHERE slug = $1', [slug]);
+    return result.rows[0] || null;
+  }
+
+  async createWorkspace({ name, slug, icon = '📁', color = '#0078d4', description = '', settings = {} }) {
+    const result = await this.pool.query(
+      `INSERT INTO workspaces (name, slug, icon, color, description, settings)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [name, slug, icon, color, description, JSON.stringify(settings)]
+    );
+    return result.rows[0];
+  }
+
+  async updateWorkspace(id, updates) {
+    const allowed = ['name', 'slug', 'icon', 'color', 'description', 'settings', 'sort_order', 'is_default'];
+    const fields = [];
+    const values = [id];
+    let idx = 2;
+
+    for (const [key, val] of Object.entries(updates)) {
+      if (allowed.includes(key)) {
+        fields.push(`${key} = $${idx}`);
+        values.push(key === 'settings' ? JSON.stringify(val) : val);
+        idx++;
+      }
+    }
+
+    if (fields.length === 0) return this.getWorkspace(id);
+
+    fields.push('updated_at = NOW()');
+    const result = await this.pool.query(
+      `UPDATE workspaces SET ${fields.join(', ')} WHERE id = $1 RETURNING *`,
+      values
+    );
+    return result.rows[0] || null;
+  }
+
+  async deleteWorkspace(id) {
+    // Prevent deleting the default workspace
+    const ws = await this.getWorkspace(id);
+    if (ws?.is_default) throw new Error('Cannot delete the default workspace');
+    const result = await this.pool.query('DELETE FROM workspaces WHERE id = $1 RETURNING id', [id]);
+    return result.rows.length > 0;
+  }
+
+  async duplicateWorkspace(id, newSlug) {
+    const ws = await this.getWorkspace(id);
+    if (!ws) throw new Error('Workspace not found');
+    return this.createWorkspace({
+      name: ws.name + ' (Copy)',
+      slug: newSlug || ws.slug + '-copy',
+      icon: ws.icon,
+      color: ws.color,
+      description: ws.description,
+      settings: typeof ws.settings === 'string' ? JSON.parse(ws.settings) : ws.settings,
+    });
+  }
+
   // ── State Snapshots / Time Travel ───────────────────────────
 
   /**
