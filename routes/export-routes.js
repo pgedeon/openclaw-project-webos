@@ -169,6 +169,22 @@ function registerExportRoutes(router, deps, settingsStore) {
       }
 
       await client.query('COMMIT');
+
+      // Record audit entry for the import operation
+      try {
+        const pool = getPool();
+        await pool.query(
+          `INSERT INTO audit_log (task_id, actor, action, old_value, new_value, timestamp)
+           VALUES (NULL, $1, $2, $3, $4, NOW())`,
+          ['dashboard-import', 'import', null, JSON.stringify({ mode, counts })]
+        );
+        await pool.query(
+          `INSERT INTO state_snapshots (entity_type, entity_id, action, state, actor)
+           VALUES ('system', 'import', 'import', $1, $2)`,
+          [JSON.stringify({ mode, counts, timestamp: new Date().toISOString() }), 'dashboard-import']
+        );
+      } catch (_) {}
+
       ctx.sendJSON(res, 200, { imported: counts, mode });
     } catch (err) {
       await client.query('ROLLBACK');
