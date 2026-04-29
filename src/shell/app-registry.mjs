@@ -297,6 +297,16 @@ export const APP_REGISTRY = Object.freeze([
     defaultHeight: 520,
   },
   {
+    id: 'docs-drift',
+    label: 'Docs Drift',
+    icon: appIcon.eye,
+    url: '/?view=docs-drift',
+    viewModule: './native-views/docs-drift-view.mjs',
+    category: 'System',
+    defaultWidth: 420,
+    defaultHeight: 520,
+  },
+  {
     id: 'handoffs',
     label: 'Handoffs',
     icon: appIcon.handoff,

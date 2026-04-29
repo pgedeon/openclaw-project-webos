@@ -218,8 +218,8 @@ These were discovered by Codex from the actual codebase. Schedule when capacity 
 - [x] **Route Catalog View** — auto-generated API inventory from `routes/*` for operators
 - [x] **Workflow Routing Admin** — UI for `workflow_agent_routing` table
 - [x] **Memory Safety Guard** — wire `src/security` scrubbing into memory API writes
-- [ ] **Docs Drift Widget** — widget showing whether docs match source counts
-- [ ] **Dispatcher Live Feed** — SSE from `GatewayWorkflowDispatcherV2` → workflows view
+- [x] **Docs Drift Widget** — widget showing whether docs match source counts
+- [x] **Dispatcher Live Feed** — SSE from `GatewayWorkflowDispatcherV2` → workflows view
 
 ---
 
