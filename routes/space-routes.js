@@ -4,11 +4,19 @@
  * CRUD for workspaces (spaces) — list, get, create, update, delete, duplicate.
  */
 
-function parseBody(req) {
+function parseBody(req, maxBytes = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', chunk => data += chunk);
-    req.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve({}); } });
+    req.on('data', chunk => {
+      data += chunk;
+      if (Buffer.byteLength(data) > maxBytes) {
+        reject(Object.assign(new Error('Payload too large (max 64KB)'), { status: 413 }));
+      }
+    });
+    req.on('end', () => {
+      try { resolve(data ? JSON.parse(data) : {}); }
+      catch { reject(Object.assign(new Error('Invalid JSON'), { status: 400 })); }
+    });
     req.on('error', reject);
   });
 }
@@ -32,7 +40,8 @@ function registerSpaceRoutes(router, deps) {
       const spaces = await ctx.asanaStorage.listWorkspaces();
       sendJSON(res, 200, { spaces });
     } catch (err) {
-      sendJSON(res, 500, { error: err.message });
+      console.error('[space-routes] list error:', err.message);
+      sendJSON(res, 500, { error: 'Failed to list spaces' });
     }
     return true;
   });
@@ -45,7 +54,8 @@ function registerSpaceRoutes(router, deps) {
       if (!space) return sendJSON(res, 404, { error: 'Workspace not found' });
       sendJSON(res, 200, space);
     } catch (err) {
-      sendJSON(res, 500, { error: err.message });
+      console.error('[space-routes] get error:', err.message);
+      sendJSON(res, 500, { error: 'Failed to get space' });
     }
     return true;
   });
@@ -56,16 +66,22 @@ function registerSpaceRoutes(router, deps) {
     try {
       const data = await parseBody(req);
       if (!data.name) return sendJSON(res, 400, { error: 'name is required' });
-      if (!data.slug) data.slug = data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      if (!data.slug) {
+        data.slug = String(data.name || '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 80);
+        if (!data.slug) data.slug = 'space-' + Date.now();
+      }
 
-      // Check slug uniqueness
-      const existing = await ctx.asanaStorage.getWorkspaceBySlug(data.slug);
-      if (existing) return sendJSON(res, 409, { error: 'Slug already exists' });
+      // Validate inputs (#19)
+      if (data.color && !/^#[0-9a-fA-F]{6}$/.test(data.color)) return sendJSON(res, 400, { error: 'Invalid color format' });
+      if (data.description && data.description.length > 1000) return sendJSON(res, 400, { error: 'Description too long' });
 
       const space = await ctx.asanaStorage.createWorkspace(data);
       sendJSON(res, 201, space);
     } catch (err) {
-      sendJSON(res, 500, { error: err.message });
+      // Handle slug uniqueness violation (#8)
+      if (err.code === '23505') return sendJSON(res, 409, { error: 'Slug already exists' });
+      console.error('[space-routes] create error:', err.message);
+      sendJSON(res, 500, { error: 'Failed to create space' });
     }
     return true;
   });
@@ -79,7 +95,8 @@ function registerSpaceRoutes(router, deps) {
       if (!space) return sendJSON(res, 404, { error: 'Workspace not found' });
       sendJSON(res, 200, space);
     } catch (err) {
-      sendJSON(res, 500, { error: err.message });
+      console.error('[space-routes] update error:', err.message);
+      sendJSON(res, 500, { error: 'Failed to update space' });
     }
     return true;
   });
@@ -92,8 +109,14 @@ function registerSpaceRoutes(router, deps) {
       if (!deleted) return sendJSON(res, 404, { error: 'Workspace not found' });
       sendJSON(res, 200, { deleted: true });
     } catch (err) {
-      const status = err.message.includes('default') ? 403 : 500;
-      sendJSON(res, status, { error: err.message });
+      if (err.message.includes('default')) {
+        sendJSON(res, 403, { error: 'Cannot delete the default workspace' });
+      } else if (err.message.includes('non-empty')) {
+        sendJSON(res, 409, { error: err.message });
+      } else {
+        console.error('[space-routes] delete error:', err.message);
+        sendJSON(res, 500, { error: 'Failed to delete space' });
+      }
     }
     return true;
   });
@@ -106,8 +129,12 @@ function registerSpaceRoutes(router, deps) {
       const space = await ctx.asanaStorage.duplicateWorkspace(params.id, data.slug);
       sendJSON(res, 201, space);
     } catch (err) {
-      const status = err.message.includes('not found') ? 404 : 500;
-      sendJSON(res, status, { error: err.message });
+      if (err.message.includes('not found')) {
+        sendJSON(res, 404, { error: err.message });
+      } else {
+        console.error('[space-routes] duplicate error:', err.message);
+        sendJSON(res, 500, { error: 'Failed to duplicate space' });
+      }
     }
     return true;
   });

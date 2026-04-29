@@ -2,10 +2,6 @@
  * Spaces View — manage workspaces (create, edit, duplicate, delete, switch)
  */
 
-
-let spaces = [];
-let editingId = null;
-
 const COLORS = ['#0078d4', '#107c10', '#c239b3', '#e74856', '#ffb900', '#00b7c3', '#8764b8', '#00cc6a'];
 const ICONS = ['📁', '🏠', '💼', '🚀', '🎯', '📊', '🔧', '🎨', '📦', '⚡'];
 
@@ -27,6 +23,8 @@ const CSS = `
   .spc-btn-primary { background: var(--win11-accent); color: #fff; border-color: var(--win11-accent); }
   .spc-btn-danger { color: #e74856; border-color: #e74856; }
   .spc-btn-danger:hover { background: #e7485620; }
+  .spc-btn-switch { color: #0078d4; border-color: #0078d4; }
+  .spc-btn-switch:hover { background: #0078d420; }
   .spc-add { border: 2px dashed var(--win11-border); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 120px; opacity: .6; }
   .spc-add:hover { opacity: 1; border-color: var(--win11-accent); }
   .spc-modal { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.4); }
@@ -43,7 +41,7 @@ const CSS = `
   .spc-color-swatch { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
   .spc-color-swatch.selected { border-color: var(--win11-text-primary); transform: scale(1.2); }
   .spc-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-  .spc-notice { position: fixed; bottom: 16px; right: 16px; padding: 8px 16px; border-radius: 6px; font-size: 0.82rem; z-index: 10000; }
+  .spc-notice { position: fixed; bottom: 16px; right: 16px; padding: 8px 16px; border-radius: 6px; font-size: 0.82rem; z-index: 10000; transition: opacity .3s; }
   .spc-notice.success { background: #107c10; color: #fff; }
   .spc-notice.error { background: #e74856; color: #fff; }
 `;
@@ -53,18 +51,21 @@ function showNotice(msg, type = 'success') {
   n.className = `spc-notice ${type}`;
   n.textContent = msg;
   document.body.appendChild(n);
-  setTimeout(() => n.remove(), 3000);
+  setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 3000);
 }
 
 function showModal(html) {
   return new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.className = 'spc-modal';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
     overlay.innerHTML = `<div class="spc-modal-inner">${html}</div>`;
     document.body.appendChild(overlay);
     const inner = overlay.querySelector('.spc-modal-inner');
     const close = (val) => { overlay.remove(); resolve(val); };
     overlay.addEventListener('click', e => { if (e.target === overlay) close(null); });
+    overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(null); });
     inner.querySelector('[data-cancel]')?.addEventListener('click', () => close(null));
     inner.querySelector('[data-confirm]')?.addEventListener('click', () => {
       const form = {};
@@ -73,7 +74,6 @@ function showModal(html) {
       form.color = inner.querySelector('.spc-color-swatch.selected')?.dataset.color || '#0078d4';
       close(form);
     });
-    // Bind icon/color pickers
     inner.querySelectorAll('.spc-icon-pick').forEach(el => {
       el.addEventListener('click', () => {
         inner.querySelectorAll('.spc-icon-pick').forEach(e => e.classList.remove('selected'));
@@ -86,12 +86,27 @@ function showModal(html) {
         el.classList.add('selected');
       });
     });
+    // Focus first interactive element (accessibility)
+    const first = inner.querySelector('input, textarea, button');
+    first?.focus();
   });
 }
 
 export async function renderSpacesView({ mountNode, api, adapter, stateStore, sync }) {
+  // Instance-scoped state (fixes #16: module-level variable leak)
+  let spaces = [];
+
   mountNode.innerHTML = `<style>${CSS}</style><div class="spc-container"><div style="text-align:center;padding:40px;">Loading spaces...</div></div>`;
   const container = mountNode.querySelector('.spc-container');
+
+  function getActiveSpaceId() {
+    return stateStore?.getState?.('activeSpaceId') || null;
+  }
+
+  function setActiveSpace(space) {
+    stateStore?.setState?.('activeSpaceId', space.id);
+    globalThis.dispatchEvent(new CustomEvent('space:changed', { detail: { space } }));
+  }
 
   async function load() {
     try {
@@ -103,6 +118,7 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
 
   function render() {
     container.innerHTML = '';
+    const activeId = getActiveSpaceId();
 
     // Header
     const header = document.createElement('div');
@@ -120,21 +136,95 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
     spaces.forEach(space => {
       const card = document.createElement('div');
       card.className = 'spc-card';
-      if (space.is_default) card.classList.add('active');
-      card.innerHTML = `
-        <div class="spc-card-icon">${space.icon || '📁'}</div>
-        <div class="spc-card-name">${esc(space.name)}</div>
-        <div class="spc-card-desc">${esc(space.description || space.slug)}</div>
-        ${space.is_default ? '<span class="spc-card-badge">Default</span>' : ''}
-        <div style="margin-top:6px;font-size:0.72rem;color:var(--win11-text-tertiary);">
-          ${new Date(space.created_at).toLocaleDateString()}
-        </div>
-        <div class="spc-card-actions">
-          <button class="spc-btn" data-edit="${space.id}">Edit</button>
-          <button class="spc-btn" data-dup="${space.id}">Duplicate</button>
-          ${!space.is_default ? '<button class="spc-btn spc-btn-danger" data-del="' + space.id + '">Delete</button>' : ''}
-        </div>
-      `;
+      if (space.id === activeId) card.classList.add('active');
+
+      // Safe icon rendering (fixes #6: XSS via innerHTML)
+      const iconEl = document.createElement('div');
+      iconEl.className = 'spc-card-icon';
+      iconEl.textContent = space.icon || '📁';
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'spc-card-name';
+      nameEl.textContent = space.name;
+
+      const descEl = document.createElement('div');
+      descEl.className = 'spc-card-desc';
+      descEl.textContent = space.description || space.slug;
+
+      const metaEl = document.createElement('div');
+      metaEl.style.cssText = 'margin-top:6px;font-size:0.72rem;color:var(--win11-text-tertiary);';
+      metaEl.textContent = new Date(space.created_at).toLocaleDateString();
+
+      card.appendChild(iconEl);
+      card.appendChild(nameEl);
+      card.appendChild(descEl);
+
+      if (space.is_default) {
+        const badge = document.createElement('span');
+        badge.className = 'spc-card-badge';
+        badge.textContent = 'Default';
+        card.appendChild(badge);
+      }
+
+      card.appendChild(metaEl);
+
+      // Action buttons
+      const actions = document.createElement('div');
+      actions.className = 'spc-card-actions';
+
+      const isActive = space.id === activeId;
+
+      // Switch button (unless already active)
+      if (!isActive) {
+        const switchBtn = document.createElement('button');
+        switchBtn.className = 'spc-btn spc-btn-switch';
+        switchBtn.textContent = 'Switch';
+        switchBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setActiveSpace(space);
+          showNotice(`Switched to ${space.name}`);
+          render();
+        });
+        actions.appendChild(switchBtn);
+      } else {
+        const activeBtn = document.createElement('button');
+        activeBtn.className = 'spc-btn';
+        activeBtn.textContent = '✓ Active';
+        activeBtn.disabled = true;
+        actions.appendChild(activeBtn);
+      }
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'spc-btn';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', (e) => { e.stopPropagation(); handleEdit(space.id); });
+      actions.appendChild(editBtn);
+
+      const dupBtn = document.createElement('button');
+      dupBtn.className = 'spc-btn';
+      dupBtn.textContent = 'Duplicate';
+      dupBtn.addEventListener('click', (e) => { e.stopPropagation(); handleDuplicate(space.id); });
+      actions.appendChild(dupBtn);
+
+      if (!space.is_default) {
+        const delBtn = document.createElement('button');
+        delBtn.className = 'spc-btn spc-btn-danger';
+        delBtn.textContent = 'Delete';
+        delBtn.addEventListener('click', (e) => { e.stopPropagation(); handleDelete(space.id); });
+        actions.appendChild(delBtn);
+      }
+
+      card.appendChild(actions);
+
+      // Click card to switch (if not already active)
+      if (!isActive) {
+        card.addEventListener('click', () => {
+          setActiveSpace(space);
+          showNotice(`Switched to ${space.name}`);
+          render();
+        });
+      }
+
       grid.appendChild(card);
     });
 
@@ -146,19 +236,14 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
     grid.appendChild(addCard);
 
     container.appendChild(grid);
-
-    // Wire buttons
-    grid.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => handleEdit(btn.dataset.edit)));
-    grid.querySelectorAll('[data-dup]').forEach(btn => btn.addEventListener('click', () => handleDuplicate(btn.dataset.dup)));
-    grid.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => handleDelete(btn.dataset.del)));
     header.querySelector('#spc-create-btn')?.addEventListener('click', handleCreate);
   }
 
   async function handleCreate() {
     const form = await showModal(`
       <h3>Create Space</h3>
-      <div class="spc-field"><label>Name</label><input name="name" placeholder="My Space"></div>
-      <div class="spc-field"><label>Description</label><textarea name="description" placeholder="What's this space for?"></textarea></div>
+      <div class="spc-field"><label>Name</label><input name="name" placeholder="My Space" maxlength="120"></div>
+      <div class="spc-field"><label>Description</label><textarea name="description" placeholder="What's this space for?" maxlength="1000"></textarea></div>
       <div class="spc-field"><label>Icon</label><div class="spc-icon-picker">${ICONS.map(i => `<span class="spc-icon-pick${i === '📁' ? ' selected' : ''}">${i}</span>`).join('')}</div></div>
       <div class="spc-field"><label>Color</label><div class="spc-color-picker">${COLORS.map(c => `<span class="spc-color-swatch${c === '#0078d4' ? ' selected' : ''}" data-color="${c}" style="background:${c}"></span>`).join('')}</div></div>
       <div class="spc-modal-actions">
@@ -179,8 +264,8 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
     if (!space) return;
     const form = await showModal(`
       <h3>Edit "${esc(space.name)}"</h3>
-      <div class="spc-field"><label>Name</label><input name="name" value="${esc(space.name)}"></div>
-      <div class="spc-field"><label>Description</label><textarea name="description">${esc(space.description || '')}</textarea></div>
+      <div class="spc-field"><label>Name</label><input name="name" value="${esc(space.name)}" maxlength="120"></div>
+      <div class="spc-field"><label>Description</label><textarea name="description" maxlength="1000">${esc(space.description || '')}</textarea></div>
       <div class="spc-field"><label>Icon</label><div class="spc-icon-picker">${ICONS.map(i => `<span class="spc-icon-pick${i === (space.icon || '📁') ? ' selected' : ''}">${i}</span>`).join('')}</div></div>
       <div class="spc-field"><label>Color</label><div class="spc-color-picker">${COLORS.map(c => `<span class="spc-color-swatch${c === (space.color || '#0078d4') ? ' selected' : ''}" data-color="${c}" style="background:${c}"></span>`).join('')}</div></div>
       <div class="spc-modal-actions">

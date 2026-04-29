@@ -2255,6 +2255,11 @@ class AsanaStorage {
         idx++;
       }
     }
+    if (options.workspace_id) {
+      query += ` AND t.workspace_id = $${idx}`;
+      values.push(options.workspace_id);
+      idx++;
+    }
     if (options.updated_since) {
       const since = options.updated_since instanceof Date ? options.updated_since.toISOString() : options.updated_since;
       query += ` AND t.updated_at > $${idx}`;
@@ -3732,14 +3737,16 @@ class AsanaStorage {
   }
 
   async updateWorkspace(id, updates) {
-    const allowed = ['name', 'slug', 'icon', 'color', 'description', 'settings', 'sort_order', 'is_default'];
+    // Explicit column mapping (#10) — is_default excluded (use setDefaultWorkspace)
+    const columns = { name: 'name', slug: 'slug', icon: 'icon', color: 'color', description: 'description', settings: 'settings', sort_order: 'sort_order' };
     const fields = [];
     const values = [id];
     let idx = 2;
 
     for (const [key, val] of Object.entries(updates)) {
-      if (allowed.includes(key)) {
-        fields.push(`${key} = $${idx}`);
+      const column = columns[key];
+      if (column) {
+        fields.push(`${column} = $${idx}`);
         values.push(key === 'settings' ? JSON.stringify(val) : val);
         idx++;
       }
@@ -3756,19 +3763,39 @@ class AsanaStorage {
   }
 
   async deleteWorkspace(id) {
-    // Prevent deleting the default workspace
-    const ws = await this.getWorkspace(id);
-    if (ws?.is_default) throw new Error('Cannot delete the default workspace');
-    const result = await this.pool.query('DELETE FROM workspaces WHERE id = $1 RETURNING id', [id]);
-    return result.rows.length > 0;
+    // Atomic delete (#12): check is_default in the same query
+    // Also block if workspace has projects (#13)
+    const projects = await this.pool.query('SELECT COUNT(*) FROM projects WHERE workspace_id = $1', [id]);
+    if (parseInt(projects.rows[0].count) > 0) {
+      throw new Error('Cannot delete non-empty workspace. Remove or reassign projects first.');
+    }
+    const result = await this.pool.query(
+      'DELETE FROM workspaces WHERE id = $1 AND is_default = false RETURNING id',
+      [id]
+    );
+    if (result.rows.length === 0) {
+      // Either not found or is_default
+      const ws = await this.getWorkspace(id);
+      if (ws?.is_default) throw new Error('Cannot delete the default workspace');
+      return false;
+    }
+    return true;
   }
 
   async duplicateWorkspace(id, newSlug) {
     const ws = await this.getWorkspace(id);
     if (!ws) throw new Error('Workspace not found');
+    // Auto-increment slug (#20)
+    const baseSlug = newSlug || ws.slug + '-copy';
+    let slug = baseSlug;
+    for (let i = 2; i < 100; i++) {
+      const existing = await this.getWorkspaceBySlug(slug);
+      if (!existing) break;
+      slug = `${ws.slug}-copy-${i}`;
+    }
     return this.createWorkspace({
       name: ws.name + ' (Copy)',
-      slug: newSlug || ws.slug + '-copy',
+      slug,
       icon: ws.icon,
       color: ws.color,
       description: ws.description,

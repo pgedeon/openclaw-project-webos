@@ -344,6 +344,16 @@ export function bootstrapShell({
     }).catch(() => {});
   } catch (e) { /* spaces load failure is non-critical */ }
 
+  // Listen for space changes from the Spaces view (#4)
+  globalThis.addEventListener('space:changed', (event) => {
+    const space = event.detail?.space;
+    if (space) {
+      taskbar.updateSpaceName(space.name);
+      // Refresh visible views so they pick up the new activeSpaceId
+      sync?.refresh?.();
+    }
+  });
+
   // Notification center
   const notifCenter = new NotificationCenter();
   globalThis.__notifCenter = notifCenter;

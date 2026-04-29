@@ -91,6 +91,7 @@ function registerTaskRoutes(router) {
     const includeChildProjects = query.get('include_child_projects') === 'true';
     const depth = parseInt(query.get('depth')) || undefined;
     const updatedSince = query.get('updated_since') || undefined;
+    const workspaceId = query.get('workspace_id') || undefined;
 
     let tasks;
     if (projectId) {
@@ -100,12 +101,14 @@ function registerTaskRoutes(router) {
         include_deleted: includeDeleted,
         include_child_projects: includeChildProjects,
         updated_since: updatedSince,
+        workspace_id: workspaceId,
       });
     } else {
       tasks = await ctx.asanaStorage.listAllTasks({
         include_archived: includeArchived,
         include_deleted: includeDeleted,
         updated_since: updatedSince,
+        workspace_id: workspaceId,
       });
     }
     ctx.sendJSON(res, 200, tasks);
