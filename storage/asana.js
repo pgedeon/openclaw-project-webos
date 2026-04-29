@@ -3890,7 +3890,51 @@ class AsanaStorage {
     }
   }
 
-  async setDefaultWorkspace(id) {
+  async assignProjectsToWorkspace(workspaceId, projectIds) {
+    // First clear all projects from this workspace
+    await this.pool.query('UPDATE projects SET workspace_id = NULL WHERE workspace_id = $1', [workspaceId]);
+    // Then assign the specified ones
+    if (projectIds.length > 0) {
+      await this.pool.query(
+        'UPDATE projects SET workspace_id = $1 WHERE id = ANY($2)',
+        [workspaceId, projectIds]
+      );
+    }
+    // Update tasks to match
+    await this.pool.query(
+      'UPDATE tasks t SET workspace_id = $1 FROM projects p WHERE t.project_id = p.id AND p.workspace_id = $1',
+      [workspaceId]
+    );
+    // Clear workspace_id on tasks whose projects were removed
+    await this.pool.query(
+      'UPDATE tasks t SET workspace_id = NULL FROM projects p WHERE t.project_id = p.id AND p.workspace_id IS NULL AND t.workspace_id = $1',
+      [workspaceId]
+    );
+    const assigned = await this.pool.query(
+      'SELECT id, name FROM projects WHERE workspace_id = $1', [workspaceId]
+    );
+    return { assigned: assigned.rows.length, projects: assigned.rows };
+  }
+
+  async getWorkspaceStats(workspaceId) {
+    const projCount = await this.pool.query(
+      'SELECT COUNT(*) FROM projects WHERE workspace_id = $1', [workspaceId]
+    );
+    const taskCount = await this.pool.query(
+      'SELECT COUNT(*) FROM tasks WHERE workspace_id = $1', [workspaceId]
+    );
+    const activeTasks = await this.pool.query(
+      `SELECT COUNT(*) FROM tasks WHERE workspace_id = $1 AND archived_at IS NULL AND deleted_at IS NULL AND status NOT IN ('completed','archived')`,
+      [workspaceId]
+    );
+    return {
+      projects: parseInt(projCount.rows[0].count),
+      tasks: parseInt(taskCount.rows[0].count),
+      activeTasks: parseInt(activeTasks.rows[0].count),
+    };
+  }
+
+    async setDefaultWorkspace(id) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');

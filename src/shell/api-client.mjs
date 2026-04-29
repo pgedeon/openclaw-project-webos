@@ -626,6 +626,9 @@ export function createAPIClient(baseURL = '/api', options = {}) {
       delete(id) { return jsonRequest(`/spaces/${id}`, { method: 'DELETE' }); },
       duplicate(id, slug) { return jsonRequest(`/spaces/${id}/duplicate`, { method: 'POST', body: { slug } }); },
       setDefault(id) { return jsonRequest(`/spaces/${id}/set-default`, { method: 'POST' }); },
+      projects(id) { return request(`/spaces/${id}/projects`); },
+      assignProjects(id, projectIds) { return jsonRequest(`/spaces/${id}/projects`, { method: 'PUT', body: { project_ids: projectIds } }); },
+      stats(id) { return request(`/spaces/${id}/stats`); },
     },
 
     // Export / Import

@@ -161,6 +161,48 @@ function registerSpaceRoutes(router, deps) {
     }
     return true;
   });
+
+  // GET /api/spaces/:id/projects — list projects in a workspace
+  router.add('GET', '/api/spaces/:id/projects', async (req, res, ctx, params) => {
+    if (!_ok(res)) return;
+    try {
+      const projects = await ctx.asanaStorage.listProjects({ workspace_id: params.id });
+      sendJSON(res, 200, { projects });
+    } catch (err) {
+      console.error('[space-routes] list projects error:', err.message);
+      sendJSON(res, 500, { error: 'Failed to list projects' });
+    }
+    return true;
+  });
+
+  // PUT /api/spaces/:id/projects — batch assign projects to workspace
+  router.add('PUT', '/api/spaces/:id/projects', async (req, res, ctx, params) => {
+    if (!_ok(res)) return;
+    try {
+      const data = await parseBody(req);
+      if (!Array.isArray(data.project_ids)) return sendJSON(res, 400, { error: 'project_ids array required' });
+      const result = await ctx.asanaStorage.assignProjectsToWorkspace(params.id, data.project_ids);
+      broadcast('space:changed', { action: 'projects_updated', spaceId: params.id });
+      sendJSON(res, 200, result);
+    } catch (err) {
+      console.error('[space-routes] assign projects error:', err.message);
+      sendJSON(res, 500, { error: 'Failed to assign projects' });
+    }
+    return true;
+  });
+
+  // GET /api/spaces/:id/stats — workspace stats (project/task counts)
+  router.add('GET', '/api/spaces/:id/stats', async (req, res, ctx, params) => {
+    if (!_ok(res)) return;
+    try {
+      const stats = await ctx.asanaStorage.getWorkspaceStats(params.id);
+      sendJSON(res, 200, stats);
+    } catch (err) {
+      console.error('[space-routes] stats error:', err.message);
+      sendJSON(res, 500, { error: 'Failed to get stats' });
+    }
+    return true;
+  });
 }
 
 module.exports = { registerSpaceRoutes };

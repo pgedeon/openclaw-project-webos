@@ -112,6 +112,16 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
     try {
       const result = await api.spaces.list();
       spaces = result.spaces || [];
+      // Fetch stats for each space in parallel
+      const stats = await Promise.allSettled(
+        spaces.map(s => api.spaces.stats(s.id).catch(() => null))
+      );
+      spaces.forEach((s, i) => {
+        if (stats[i]?.status === 'fulfilled' && stats[i]?.value) {
+          s._projectCount = stats[i].value.projects;
+          s._taskCount = stats[i].value.tasks;
+        }
+      });
     } catch { spaces = []; }
     render();
   }
@@ -151,10 +161,6 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
       descEl.className = 'spc-card-desc';
       descEl.textContent = space.description || space.slug;
 
-      const metaEl = document.createElement('div');
-      metaEl.style.cssText = 'margin-top:6px;font-size:0.72rem;color:var(--win11-text-tertiary);';
-      metaEl.textContent = new Date(space.created_at).toLocaleDateString();
-
       card.appendChild(iconEl);
       card.appendChild(nameEl);
       card.appendChild(descEl);
@@ -166,7 +172,11 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
         card.appendChild(badge);
       }
 
-      card.appendChild(metaEl);
+      // Stats row
+      const statsEl = document.createElement('div');
+      statsEl.className = 'spc-card-stats';
+      statsEl.innerHTML = `<span>📁 ${space._projectCount ?? '?'} projects</span><span>✅ ${space._taskCount ?? '?'} tasks</span>`;
+      card.appendChild(statsEl);
 
       // Action buttons
       const actions = document.createElement('div');
@@ -262,20 +272,64 @@ export async function renderSpacesView({ mountNode, api, adapter, stateStore, sy
   async function handleEdit(id) {
     const space = spaces.find(s => s.id === id);
     if (!space) return;
+    
+    // Fetch all projects and current workspace's projects
+    let allProjects = [];
+    let currentProjectIds = new Set();
+    try {
+      const [allRes, wsRes] = await Promise.all([
+        api.projects?.list?.() || api.tasks?.getProjects?.() || { projects: [] },
+        api.spaces.projects(id).catch(() => ({ projects: [] }))
+      ]);
+      allProjects = allRes.projects || allRes || [];
+      currentProjectIds = new Set((wsRes.projects || []).map(p => p.id));
+    } catch (e) {
+      // Fallback: try getting all projects
+      try {
+        const res = await fetch('/api/projects', { headers: api._headers || {} });
+        const data = await res.json();
+        allProjects = Array.isArray(data) ? data : (data.projects || []);
+      } catch {}
+    }
+
+    const projectCheckboxes = allProjects.map(p => `
+      <label class="spc-project-item">
+        <input type="checkbox" name="project_${p.id}" ${currentProjectIds.has(p.id) ? 'checked' : ''}>
+        <span>${esc(p.name)}</span>
+        <span class="spc-proj-status ${p.status || 'active'}">${p.status || 'active'}</span>
+      </label>
+    `).join('');
+
     const form = await showModal(`
       <h3>Edit "${esc(space.name)}"</h3>
       <div class="spc-field"><label>Name</label><input name="name" value="${esc(space.name)}" maxlength="120"></div>
       <div class="spc-field"><label>Description</label><textarea name="description" maxlength="1000">${esc(space.description || '')}</textarea></div>
       <div class="spc-field"><label>Icon</label><div class="spc-icon-picker">${ICONS.map(i => `<span class="spc-icon-pick${i === (space.icon || '📁') ? ' selected' : ''}">${i}</span>`).join('')}</div></div>
       <div class="spc-field"><label>Color</label><div class="spc-color-picker">${COLORS.map(c => `<span class="spc-color-swatch${c === (space.color || '#0078d4') ? ' selected' : ''}" data-color="${c}" style="background:${c}"></span>`).join('')}</div></div>
+      <div class="spc-field">
+        <label>Projects (${allProjects.length} available, ${currentProjectIds.size} assigned)</label>
+        ${allProjects.length > 0 ? `<div class="spc-project-list">${projectCheckboxes}</div>` : '<div style="color:var(--win11-text-tertiary);font-size:0.82rem;">No projects found</div>'}
+      </div>
       <div class="spc-modal-actions">
         <button class="spc-btn" data-cancel>Cancel</button>
         <button class="spc-btn spc-btn-primary" data-confirm>Save</button>
       </div>
     `);
-    if (!form?.name) return;
+    if (!form) return;
+    
+    // Collect checked project IDs
+    const inner = document.querySelector('.spc-modal-inner');
+    const checkedIds = [];
+    inner?.querySelectorAll('input[name^="project_"]').forEach(cb => {
+      if (cb.checked) checkedIds.push(cb.name.replace('project_', ''));
+    });
+
     try {
-      await api.spaces.update(id, form);
+      // Save workspace details + project assignments in parallel
+      await Promise.all([
+        form.name ? api.spaces.update(id, { name: form.name, description: form.description, icon: form.icon, color: form.color }) : Promise.resolve(),
+        api.spaces.assignProjects(id, checkedIds),
+      ]);
       showNotice('Updated!', 'success');
     } catch (err) { showNotice(`Failed: ${err.message}`, 'error'); }
     load();
