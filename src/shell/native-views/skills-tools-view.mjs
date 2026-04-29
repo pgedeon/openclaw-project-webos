@@ -1,6 +1,6 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
-export async function renderSkillsToolsView({ mountNode, api, adapter, stateStore, sync }) {
+export async function renderSkillsToolsView({ mountNode, api, adapter, stateStore, sync, navigateToView, params = {} }) {
   ensureNativeRoot(mountNode, 'skills-tools-view');
   mountNode.innerHTML = '';
 
@@ -120,7 +120,8 @@ export async function renderSkillsToolsView({ mountNode, api, adapter, stateStor
 
   async function loadProjects() {
     try {
-      const res = await api.projects.list();
+      const _wsId = stateStore?.getState?.('activeSpaceId');
+      const res = await api.projects.list(_wsId ? { workspace_id: _wsId } : {});
       projects = Array.isArray(res) ? res : (Array.isArray(res.projects) ? res.projects : []);
     } catch (e) { /* ok */ }
   }
@@ -402,6 +403,29 @@ export async function renderSkillsToolsView({ mountNode, api, adapter, stateStor
       });
 
       showNotice(`Task created with skill "${skillId}"${agentName ? ` → ${agentName}` : ''}.`, 'success');
+
+      // P11: Post-create navigation buttons
+      const noticeEl = root.querySelector('.stv-notice');
+      if (noticeEl) {
+        const navDiv = document.createElement('div');
+        navDiv.style.cssText = 'display:flex;gap:6px;margin-top:8px;';
+        
+        const openTaskBtn = document.createElement('button');
+        openTaskBtn.className = 'stv-action-btn';
+        openTaskBtn.textContent = '📋 Open Tasks';
+        openTaskBtn.addEventListener('click', () => navigateToView?.('tasks'));
+        navDiv.appendChild(openTaskBtn);
+        
+        if (agentName) {
+          const openAgentBtn = document.createElement('button');
+          openAgentBtn.className = 'stv-action-btn';
+          openAgentBtn.textContent = '🤖 Open Agent';
+          openAgentBtn.addEventListener('click', () => navigateToView?.('agents', { params: { agentName } }));
+          navDiv.appendChild(openAgentBtn);
+        }
+        
+        noticeEl.appendChild(navDiv);
+      }
 
       root.querySelector('#stvTaskTitle').value = '';
       root.querySelector('#stvTaskDesc').value = skillRef;

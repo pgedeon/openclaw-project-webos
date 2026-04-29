@@ -78,7 +78,7 @@ function isProtectedBadge(item) {
 
 import { mutate } from '../mutation-manager.mjs';
 
-export async function renderExplorerView({ mountNode, stateStore, navigateToView }) {
+export async function renderExplorerView({ mountNode, stateStore, navigateToView, params = {} }) {
   ensureNativeRoot(mountNode, 'explorer-view');
   mountNode.innerHTML = '';
 
@@ -249,6 +249,17 @@ export async function renderExplorerView({ mountNode, stateStore, navigateToView
     if (item && !item.isProtected) {
       items.push({ label: 'Rename', action: () => doRename(item) });
       items.push({ label: 'Delete', action: () => doDelete(item), cls: 'danger' });
+    }
+    // P12: Cross-feature context menu items
+    if (item && item.type === 'file' && item.isText) {
+      items.push({ sep: true });
+      items.push({ label: '📋 Attach to Task', action: () => navigateToView?.('tasks') });
+      items.push({ label: '🧠 Search in Memory', action: () => navigateToView?.('memory', { params: { query: item.name } }) });
+      items.push({ label: '🤖 Ask Agent About File', action: () => navigateToView?.('agents', { params: { filePath: item.path } }) });
+    }
+    if (item && item.type === 'directory') {
+      items.push({ sep: true });
+      items.push({ label: '🧠 Search in Memory', action: () => navigateToView?.('memory', { params: { query: item.name } }) });
     }
     if (!item) {
       items.push({ label: 'New File', action: () => doNewFile() });
