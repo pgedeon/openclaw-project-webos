@@ -128,7 +128,7 @@ const relativeAge = (dateStr) => {
 // ── Main render ──────────────────────────────────────────────────────
 import { mutate } from '../mutation-manager.mjs';
 
-export async function renderBoardView({ mountNode, api, adapter, stateStore }) {
+export async function renderBoardView({ mountNode, api, adapter, stateStore, params = {}, navigateToView}) {
   ensureNativeRoot(mountNode, 'kanban-board');
   injectCSS();
 

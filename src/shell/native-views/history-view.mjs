@@ -55,7 +55,7 @@ function fmtTime(ts) {
   } catch { return String(ts); }
 }
 
-export async function renderHistoryView({ mountNode, api }) {
+export async function renderHistoryView({ mountNode, api, params = {}, navigateToView}) {
   mountNode.innerHTML = `<style>${CSS}</style><div class="hist-container"><div class="hist-loading">Loading history...</div></div>`;
   const container = mountNode.querySelector('.hist-container');
 
@@ -64,15 +64,22 @@ export async function renderHistoryView({ mountNode, api }) {
   let expanded = null;
   let activeTab = 'audit';
 
-  async function loadData(params = {}) {
+  async function loadData(queryParams = {}) {
     container.innerHTML = '<div class="hist-loading">Loading...</div>';
     try {
-      const data = await api.history.list(params);
+      const data = await api.history.list(queryParams);
       entries = data.entries || [];
       render();
     } catch (err) {
       container.innerHTML = `<div class="hist-empty">Error: ${esc(err.message)}</div>`;
     }
+  }
+
+  // Deep-link: auto-load task history if taskId param provided (P2/P9)
+  if (params.taskId) {
+    loadData({ task_id: params.taskId });
+  } else {
+    loadData({});
   }
 
   async function loadSnapshots() {
@@ -223,7 +230,7 @@ export async function renderHistoryView({ mountNode, api }) {
     container.appendChild(list);
   }
 
-  await loadData();
+  // Initial load already called above with params
 }
 
 export default renderHistoryView;

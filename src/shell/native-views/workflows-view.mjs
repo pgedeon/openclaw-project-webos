@@ -2,7 +2,7 @@ import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './hel
 
 import { mutate } from '../mutation-manager.mjs';
 
-export async function renderWorkflowsView({ mountNode, api, adapter, stateStore, sync }) {
+export async function renderWorkflowsView({ mountNode, api, adapter, stateStore, sync, params = {}, navigateToView}) {
   ensureNativeRoot(mountNode, 'workflows-view');
   mountNode.innerHTML = '';
 

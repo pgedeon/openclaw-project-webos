@@ -1,6 +1,6 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
-export async function renderAgentsView({ mountNode, api, adapter, stateStore, sync }) {
+export async function renderAgentsView({ mountNode, api, adapter, stateStore, sync, params = {}, navigateToView}) {
   ensureNativeRoot(mountNode, 'agents-view');
   mountNode.innerHTML = '';
 

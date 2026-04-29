@@ -123,7 +123,7 @@ export function buildTaskListParams(projectId) {
   return params;
 }
 
-export async function renderTasksView({ mountNode, api, adapter, stateStore, sync }) {
+export async function renderTasksView({ mountNode, api, adapter, stateStore, sync, params = {}, navigateToView }) {
   ensureNativeRoot(mountNode, 'tasks-view');
   mountNode.innerHTML = '';
 
@@ -133,6 +133,10 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
 
   // === State ===
   let tasks = [];
+  // Deep-link params (P2/P5): auto-select task or filter by project
+  let initialTaskId = params.taskId || null;
+  let initialProjectId = params.projectId || null;
+  if (initialProjectId) currentProjectId = initialProjectId;
   let projects = [];
   let currentProjectId = null;
   let currentFilter = 'all';
@@ -432,10 +436,17 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       tasks = [];
     }
     isLoading = false;
+    // Auto-select task from deep-link (P2/P5)
+    if (initialTaskId) {
+      const found = tasks.find(t => t.id === initialTaskId);
+      if (found) { selectedTaskId = initialTaskId; }
+      initialTaskId = null; // Only apply once
+    }
     updateCategoryFilter();
     renderStats();
     renderFilterCounts();
     renderList();
+    if (selectedTaskId) renderDetail();
   }
 
   // === Categories ===
@@ -762,10 +773,17 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
           ${labels ? `<div style="grid-column:1/-1;"><span style="color:var(--win11-text-tertiary);">Labels:</span> ${escapeHtml(labels)}</div>` : ''}
           ${error ? `<div style="grid-column:1/-1;color:#ef4444;"><strong>Error:</strong> ${escapeHtml(error)}</div>` : ''}
         </div>
-        <div style="display:flex;gap:8px;margin-top:10px;">
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
           <button id="tvDetailEdit" class="tv-action-btn">Edit</button>
           <button id="tvDetailArchive" class="tv-action-btn">${isTaskArchived(task) ? 'Restore' : 'Archive'}</button>
           <button id="tvDetailDelete" class="tv-action-btn danger">Delete</button>
+        </div>
+        <!-- Cross-navigation actions (P5) -->
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+          ${task.project_id ? `<button class="tv-nav-btn" data-nav="board" data-project-id="${escapeHtml(task.project_id)}" title="Open in Board view">📋 Board</button>` : ''}
+          ${owner && owner !== '—' ? `<button class="tv-nav-btn" data-nav="agent" data-agent-name="${escapeHtml(owner)}" title="Open agent details">🤖 Agent</button>` : ''}
+          <button class="tv-nav-btn" data-nav="history" data-task-id="${escapeHtml(task.id)}" title="View task history">📜 History</button>
+          <button class="tv-nav-btn" data-nav="memory" data-query="${escapeHtml(title)}" title="Search memory for this task">🧠 Memory</button>
         </div>
       </div>
     `;
@@ -797,6 +815,29 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
     };
     deleteBtn.addEventListener('click', deleteH);
     cleanupFns.push(() => deleteBtn.removeEventListener('click', deleteH));
+
+    // Cross-navigation handlers (P5)
+    panel.querySelectorAll('.tv-nav-btn').forEach(btn => {
+      const navType = btn.dataset.nav;
+      const handler = () => {
+        switch (navType) {
+          case 'board':
+            navigateToView?.('board', { params: { projectId: btn.dataset.projectId } });
+            break;
+          case 'agent':
+            navigateToView?.('agents', { params: { agentName: btn.dataset.agentName } });
+            break;
+          case 'history':
+            navigateToView?.('history', { params: { taskId: btn.dataset.taskId } });
+            break;
+          case 'memory':
+            navigateToView?.('memory', { params: { query: btn.dataset.query } });
+            break;
+        }
+      };
+      btn.addEventListener('click', handler);
+      cleanupFns.push(() => btn.removeEventListener('click', handler));
+    });
   }
 
   // === Composer ===

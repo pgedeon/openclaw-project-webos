@@ -286,6 +286,32 @@ export class WindowManager extends EventTarget {
     return this.windows.size;
   }
 
+  async _rerenderView(entry) {
+    // Re-render a view with updated params (P2)
+    if (!entry.nativeContent || !entry.app?.viewModule) return;
+    if (typeof entry._cleanup === 'function') { try { entry._cleanup(); } catch {} }
+    entry.nativeContent.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--win11-text-tertiary);font-size:0.9rem;">Loading...</div>';
+    try {
+      const viewModule = await import(entry.app.viewModule);
+      const renderFn = viewModule.default || viewModule.render || viewModule;
+      if (typeof renderFn === 'function') {
+        const cleanup = await renderFn({
+          mountNode: entry.nativeContent,
+          api: _sharedApiClient,
+          adapter: _sharedAdapter,
+          stateStore: _sharedAdapter?.stateStore,
+          state: _sharedAdapter?.state,
+          sync: _sharedSync,
+          navigateToView: (viewId, opts = {}) => this.openWindow(viewId, opts),
+          params: entry._params || {},
+        });
+        entry._cleanup = typeof cleanup === 'function' ? cleanup : (cleanup?.destroy || cleanup?.cleanup || cleanup?.unmount || null);
+      }
+    } catch (error) {
+      console.error(`Failed to re-render ${entry.app.id}:`, error);
+    }
+  }
+
   openWindow(appId, options = {}) {
     const app = this.appMap.get(appId) ?? getAppById(appId);
     if (!app) {
@@ -294,6 +320,16 @@ export class WindowManager extends EventTarget {
 
     const existingWindow = this.windows.get(appId);
     if (existingWindow) {
+      // Update params if provided and re-render if different (P2)
+      const newParams = options.params || {};
+      if (Object.keys(newParams).length > 0) {
+        const changed = JSON.stringify(existingWindow._params) !== JSON.stringify(newParams);
+        existingWindow._params = newParams;
+        if (changed) {
+          // Re-render the view with new params
+          this._rerenderView(existingWindow);
+        }
+      }
       if (existingWindow.state.minimized) {
         this.restoreWindow(appId, { skipEmit: true, skipPersist: true });
       }
@@ -303,6 +339,8 @@ export class WindowManager extends EventTarget {
 
     const state = this.createInitialState(app, options.state);
     const entry = this.createWindowEntry(app, state);
+    // Store deep-link params (P2)
+    entry._params = options.params || {};
     this.windows.set(appId, entry);
     this.windowLayer.append(entry.element);
 
@@ -415,6 +453,8 @@ export class WindowManager extends EventTarget {
         state: _sharedAdapter?.state,
         sync: _sharedSync,
         navigateToView: (viewId, options = {}) => this.openWindow(viewId, options),
+        // Deep-link params (P2): passed from navigateToView or window state
+        params: entry._params || {},
       });
 
       entry._cleanup = typeof cleanup === 'function' ? cleanup : (cleanup?.destroy || cleanup?.cleanup || cleanup?.unmount || null);

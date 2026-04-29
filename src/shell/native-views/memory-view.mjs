@@ -2,7 +2,7 @@ import { ensureNativeRoot, escapeHtml, createStatCard, formatCount } from './hel
 
 const MEMORY_API_BASE = '/api/memory'; // Proxied through task-server
 
-export async function renderMemoryView({ mountNode, api, adapter, stateStore, sync }) {
+export async function renderMemoryView({ mountNode, api, adapter, stateStore, sync, params = {}, navigateToView}) {
   ensureNativeRoot(mountNode, 'memory-view');
   mountNode.innerHTML = '';
 
@@ -333,6 +333,23 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
     }
   });
 
+  // Deep-link auto-search (P2/P8): if query param provided, auto-fill and search
+  if (params.query) {
+    // Activate the search tab first, then fill and search
+    setTimeout(() => {
+      const searchTab = root.querySelector('[data-tab="search"]');
+      if (searchTab) searchTab.click();
+      setTimeout(() => {
+        const searchInput = document.getElementById('mem-search-input');
+        if (searchInput) {
+          searchInput.value = params.query;
+          searchQuery = params.query;
+          performSearch(params.query);
+        }
+      }, 200);
+    }, 100);
+  }
+
   async function renderFactsTab() {
     content.innerHTML = '<div class="mem-loading">Loading facts...</div>';
 
@@ -427,7 +444,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
       if (!q) { renderFactList(listContainer, factsRecords); return; }
       listContainer.innerHTML = '<div class="mem-loading">Searching...</div>';
       try {
-        const resp = await fetch(`${MEMORY_API_BASE}/facts/search?query=${encodeURIComponent(q, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`);
+        const resp = await fetch(`${MEMORY_API_BASE}/facts/search?query=${encodeURIComponent(q)}`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
         if (resp.ok) {
           const results = (await resp.json()).facts || [];
           renderFactList(listContainer, results, true);
