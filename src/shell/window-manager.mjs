@@ -238,6 +238,8 @@ export class WindowManager extends EventTarget {
     // Focus topmost
     const top = wins.filter(w => !w.minimized).sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0))[0];
     if (top) this.focusWindow(top.id);
+    // Persist the restored layout to localStorage so refresh doesn't resurrect old state
+    this.persistState();
     this.emitChange();
   }
 

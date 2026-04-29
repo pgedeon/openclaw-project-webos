@@ -329,7 +329,7 @@ export class Taskbar extends EventTarget {
     container.innerHTML = icons;
     // Re-bind click handlers
     container.querySelectorAll('[data-action="launch"]').forEach(btn => {
-      btn.addEventListener('click', () => this.emitLaunch(btn.dataset.appId));
+      btn.addEventListener('click', () => this.onAppActivate(btn.dataset.appId));
     });
   }
 

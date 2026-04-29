@@ -447,6 +447,18 @@ export function connectSSE() {
       }
     });
     
+    sseSource.addEventListener('space:changed', (e) => {
+      console.log('[SSE] space:changed received');
+      // Dispatch a global event so the Spaces view can refresh
+      try {
+        const data = e.data ? JSON.parse(e.data) : {};
+        globalThis.dispatchEvent(new CustomEvent('sse:space:changed', { detail: data }));
+      } catch {}
+      if (typeof globalThis.__realtimeSyncForceRefresh === 'function') {
+        globalThis.__realtimeSyncForceRefresh();
+      }
+    });
+
     sseSource.onerror = () => {
       // SSE will auto-reconnect, no action needed
     };

@@ -329,7 +329,7 @@ export function bootstrapShell({
 
   // Load spaces on startup and set active space name in taskbar
   try {
-    const _api = createAPIClient('/api', { headers: getAuthHeaders });
+    const _api = createAPIClient('/api');
     _api.spaces.list().then(({ spaces }) => {
       if (spaces?.length) {
         const current = sharedStateStore.getState('activeSpaceId');
@@ -377,7 +377,7 @@ export function bootstrapShell({
   const chatPanel = new AgentChatPanel({
     onSend: async (message) => {
       try {
-        const _api = createAPIClient('/api', { headers: getAuthHeaders });
+        const _api = createAPIClient('/api');
         const ctx = await buildDashboardContext(_api, {
           activeSpaceId: sharedStateStore.getState('activeSpaceId'),
           activeViewId: null,
@@ -387,7 +387,7 @@ export function bootstrapShell({
         const spaceAgentCfg = chatPanel.spaceConfig || {};
         const resp = await fetch('/api/agent/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message,
             context: ctx,
