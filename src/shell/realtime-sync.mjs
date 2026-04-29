@@ -414,10 +414,16 @@ export function connectSSE() {
   try {
     sseSource = new EventSource('/api/events?token=' + encodeURIComponent(token));
     
-    sseSource.addEventListener('task:changed', () => {
+    sseSource.addEventListener('task:changed', (e) => {
       console.log('[SSE] task:changed received, triggering refresh');
       if (typeof globalThis.__realtimeSyncForceRefresh === 'function') {
         globalThis.__realtimeSyncForceRefresh();
+      }
+      if (globalThis.__notifCenter) {
+        try {
+          const data = e.data ? JSON.parse(e.data) : {};
+          globalThis.__notifCenter.pushSSE({ type: 'task:changed', data });
+        } catch {}
       }
     });
     
@@ -428,10 +434,16 @@ export function connectSSE() {
       }
     });
     
-    sseSource.addEventListener('workflow:changed', () => {
+    sseSource.addEventListener('workflow:changed', (e) => {
       console.log('[SSE] workflow:changed received, triggering refresh');
       if (typeof globalThis.__realtimeSyncForceRefresh === 'function') {
         globalThis.__realtimeSyncForceRefresh();
+      }
+      if (globalThis.__notifCenter) {
+        try {
+          const data = e.data ? JSON.parse(e.data) : {};
+          globalThis.__notifCenter.pushSSE({ type: 'workflow:changed', data });
+        } catch {}
       }
     });
     

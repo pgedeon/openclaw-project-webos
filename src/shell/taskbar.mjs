@@ -262,6 +262,18 @@ export class Taskbar extends EventTarget {
         return;
       }
 
+      const spaceButton = event.target.closest('[data-action="space-switcher"]');
+      if (spaceButton) {
+        this.dispatchEvent(new CustomEvent('space-switch'));
+        return;
+      }
+
+      const notifButton = event.target.closest('[data-action="notifications"]');
+      if (notifButton) {
+        this.dispatchEvent(new CustomEvent('notifications-toggle'));
+        return;
+      }
+
       const appButton = event.target.closest('[data-app-id]');
       if (appButton) {
         this.onAppActivate(appButton.dataset.appId);

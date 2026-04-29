@@ -149,6 +149,14 @@ function registerHealthRoutes(router) {
     });
     return true;
   });
+
+  // GET /api/routes — Route catalog (auto-generated from router)
+  router.add('GET', '/api/routes', async (req, res) => {
+    const routes = router.list ? router.list() : [];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ routes, total: routes.length }));
+    return true;
+  });
 }
 
 module.exports = { registerHealthRoutes };

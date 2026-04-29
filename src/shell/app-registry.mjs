@@ -277,6 +277,16 @@ export const APP_REGISTRY = Object.freeze([
     defaultHeight: 560,
   },
   {
+    id: 'route-catalog',
+    label: 'Route Catalog',
+    icon: appIcon.list,
+    url: '/?view=route-catalog',
+    viewModule: './native-views/route-catalog-view.mjs',
+    category: 'System',
+    defaultWidth: 860,
+    defaultHeight: 640,
+  },
+  {
     id: 'handoffs',
     label: 'Handoffs',
     icon: appIcon.handoff,

@@ -11,6 +11,14 @@ class Router {
   }
 
   /**
+   * List all registered routes (for API catalog).
+   * @returns {Array<{method: string, path: string}>}
+   */
+  list() {
+    return this.routes.map(r => ({ method: r.method, path: r.pattern }));
+  }
+
+  /**
    * Register a route.
    * @param {string} method - HTTP method (GET, POST, PATCH, DELETE)
    * @param {string} pattern - URL pattern, e.g. '/api/tasks/:id/move'

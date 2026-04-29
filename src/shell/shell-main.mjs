@@ -12,6 +12,7 @@ import { createAPIClient } from './api-client.mjs';
 import { createViewState } from './view-state.mjs';
 import { buildDashboardContext } from './agent-context.mjs';
 import { AgentChatPanel } from './agent-chat-panel.mjs';
+import { NotificationCenter } from './notification-center.mjs';
 import { createRealtimeSync } from './realtime-sync.mjs';
 import { setOnlineStatus } from './mutation-manager.mjs';
 import { WidgetRegistry } from './widgets/widget-registry.mjs';
@@ -319,6 +320,11 @@ export function bootstrapShell({
     onThemeToggle: (theme) => applyTheme(theme),
   });
 
+  // Notification center toggle
+  taskbar.addEventListener('notifications-toggle', () => {
+    notifCenter.toggle();
+  });
+
   // Space switcher: open spaces view on click
   taskbar.addEventListener('space-switch', () => {
     const entry = windowManager.getWindowEntry('spaces');
@@ -339,6 +345,10 @@ export function bootstrapShell({
       if (active) taskbar.updateSpaceName(active.name);
     });
   }
+
+  // Notification center
+  const notifCenter = new NotificationCenter();
+  globalThis.__notifCenter = notifCenter;
 
   // Agent chat panel
   const chatPanel = new AgentChatPanel({

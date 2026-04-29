@@ -48,6 +48,23 @@ function qs(req) {
 }
 
 function registerMemoryRoutes(router) {
+  // Security: scrub sensitive patterns from memory content
+  const SECRET_PATTERNS = [
+    /(?:password|passwd|pwd|secret|token|api[_-]?key|auth[_-]?token|private[_-]?key)\s*[:=]\s*['"]?([\w\-]{8,})['"]?/gi,
+    /Bearer\s+[\w\-]{20,}/gi,
+    /(?:sk|pk|ak|ghp|gho|ghs|ghu|github_pat)_[\w]{20,}/gi,
+    /[\w.-]+@[\w.-]+\.[a-z]{2,}/gi,
+  ];
+
+  function scrubContent(content) {
+    if (typeof content !== 'string') return content;
+    let cleaned = content;
+    for (const pattern of SECRET_PATTERNS) {
+      cleaned = cleaned.replace(pattern, (match) => match.slice(0, 4) + '***REDACTED***');
+    }
+    return cleaned;
+  }
+
   // ── GET routes ──────────────────────────────────────────
 
   router.add('GET', '/api/memory/list', async (req, res) => {
