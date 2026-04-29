@@ -1,5 +1,18 @@
 import { ensureNativeRoot, escapeHtml, createStatCard, formatCount } from './helpers.mjs';
 
+const OPENCLAW_API_BASE = '/api/openclaw';
+async function openclawFetch(path, options = {}) {
+  const res = await fetch(`${OPENCLAW_API_BASE}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 const MEMORY_API_BASE = '/api/memory'; // Proxied through task-server
 
 export async function renderMemoryView({ mountNode, api, adapter, stateStore, sync, params = {}, navigateToView}) {
@@ -601,6 +614,102 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
       ${status.scan?.issues?.length ? `<div style="color:#ef4444;margin-top:8px;font-size:0.85rem;">Issues: ${escapeHtml(status.scan.issues.join(', '))}</div>` : ''}
     `;
     content.appendChild(info);
+
+    // Reindex handler
+    const reindexBtn = content.querySelector('#mem-reindex-btn');
+    const actionStatus = content.querySelector('#mem-action-status');
+    if (reindexBtn) {
+      reindexBtn.addEventListener('click', async () => {
+        reindexBtn.disabled = true;
+        reindexBtn.textContent = '⏳ Reindexing...';
+        actionStatus.style.color = 'var(--win11-text-secondary)';
+        actionStatus.textContent = 'Triggering memory reindex via openclaw CLI...';
+        try {
+          const data = await openclawFetch('/memory/index');
+          actionStatus.style.color = '#22c55e';
+          actionStatus.textContent = '✓ Reindex complete: ' + (data.result?.raw || data.result?.stdout || 'OK');
+          reindexBtn.textContent = '🔄 Reindex Memory';
+        } catch (err) {
+          actionStatus.style.color = '#ef4444';
+          actionStatus.textContent = '✗ Reindex failed: ' + err.message;
+          reindexBtn.textContent = '🔄 Reindex Memory';
+        }
+        reindexBtn.disabled = false;
+      });
+    }
+
+    // Promote handler
+    const promoteBtn = content.querySelector('#mem-promote-btn');
+    const promotePreview = content.querySelector('#mem-promote-preview');
+    if (promoteBtn) {
+      promoteBtn.addEventListener('click', async () => {
+        promoteBtn.disabled = true;
+        promoteBtn.textContent = '⏳ Loading...';
+        actionStatus.style.color = 'var(--win11-text-secondary)';
+        actionStatus.textContent = 'Loading promotion candidates...';
+        try {
+          const data = await openclawFetch('/memory/promote?limit=10');
+          const candidates = data.candidates || data.promotions || [];
+          if (candidates.length === 0) {
+            actionStatus.style.color = 'var(--win11-text-secondary)';
+            actionStatus.textContent = 'No promotion candidates found.';
+            promoteBtn.textContent = '⬆️ Promote Memories';
+            promoteBtn.disabled = false;
+            return;
+          }
+          actionStatus.style.color = 'var(--win11-accent)';
+          actionStatus.textContent = `${candidates.length} candidates found. Review below and confirm.`;
+          promoteBtn.textContent = '✅ Apply Promotions';
+
+          // Show preview
+          promotePreview.style.display = 'block';
+          promotePreview.innerHTML = `
+            <div style="font-size:0.85rem;font-weight:600;color:var(--win11-text);margin-bottom:8px;">Promotion Candidates</div>
+            ${candidates.map((c, i) => {
+              const text = c.text || c.candidate || c.content || '';
+              const score = c.score || c.confidence || 0;
+              return `<div style="padding:8px 10px;border:1px solid var(--win11-border);border-radius:6px;margin-bottom:6px;background:var(--win11-surface-solid);">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <span style="font-size:0.78rem;color:var(--win11-accent);">#${i + 1}</span>
+                  <span style="font-size:0.72rem;color:var(--win11-text-tertiary);">Score: ${(score * 100).toFixed(1)}%</span>
+                </div>
+                <div style="font-size:0.82rem;color:var(--win11-text);margin-top:4px;white-space:pre-wrap;max-height:80px;overflow:hidden;">${escapeHtml(text.substring(0, 300))}${text.length > 300 ? '...' : ''}</div>
+              </div>`;
+            }).join('')}
+          `;
+
+          // Second click: apply
+          promoteBtn.onclick = async () => {
+            promoteBtn.disabled = true;
+            promoteBtn.textContent = '⏳ Applying...';
+            actionStatus.textContent = 'Applying promotions...';
+            try {
+              const result = await openclawFetch('/memory/promote', {
+                method: 'POST',
+                body: JSON.stringify({ agent: 'main', limit: 10 }),
+              });
+              const promoted = result.promoted || result.applied || 0;
+              actionStatus.style.color = '#22c55e';
+              actionStatus.textContent = `✓ ${promoted} memories promoted to MEMORY.md.`;
+              promoteBtn.textContent = '⬆️ Promote Memories';
+              promotePreview.style.display = 'none';
+              // Reset to first-click behavior
+              promoteBtn.onclick = null;
+            } catch (err) {
+              actionStatus.style.color = '#ef4444';
+              actionStatus.textContent = '✗ Promote failed: ' + err.message;
+              promoteBtn.textContent = '⬆️ Promote Memories';
+            }
+            promoteBtn.disabled = false;
+          };
+        } catch (err) {
+          actionStatus.style.color = '#ef4444';
+          actionStatus.textContent = '✗ Failed to load candidates: ' + err.message;
+          promoteBtn.textContent = '⬆️ Promote Memories';
+        }
+        promoteBtn.disabled = false;
+      });
+    }
   }
 
   function createStatusRow(label, value, tone = 'default') {

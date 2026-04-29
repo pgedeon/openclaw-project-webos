@@ -1,5 +1,18 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
+const OPENCLAW_API_BASE = '/api/openclaw';
+async function openclawFetch(path, options = {}) {
+  const res = await fetch(`${OPENCLAW_API_BASE}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function renderAgentsView({ mountNode, api, adapter, stateStore, sync, params = {}, navigateToView}) {
   ensureNativeRoot(mountNode, 'agents-view');
   mountNode.innerHTML = '';
@@ -9,6 +22,8 @@ export async function renderAgentsView({ mountNode, api, adapter, stateStore, sy
   root.style.cssText = 'display:flex;flex-direction:column;height:100%;';
 
   let agents = [];
+  let openclawAgents = [];
+  let activeMainTab = 'org'; // 'org' or 'openclaw'
   let projects = [];
   let selectedAgentId = null;
   let cleanupFns = [];
@@ -72,6 +87,10 @@ export async function renderAgentsView({ mountNode, api, adapter, stateStore, sy
           <option value="all">All departments</option>
         </select>
       </div>
+    </div>
+    <div style="display:flex;gap:4px;padding:0 16px;border-bottom:1px solid var(--win11-border);flex-shrink:0;">
+      <button class="av-main-tab active" data-maintab="org" style="padding:8px 16px;cursor:pointer;font-size:0.82rem;border:none;background:none;border-bottom:2px solid var(--win11-accent);color:var(--win11-text);font-weight:600;">Org Agents</button>
+      <button class="av-main-tab" data-maintab="openclaw" style="padding:8px 16px;cursor:pointer;font-size:0.82rem;border:none;background:none;border-bottom:2px solid transparent;color:var(--win11-text-secondary);">OpenClaw Agents</button>
     </div>
     <div id="avGrid" style="flex:1;overflow-y:auto;padding:12px 16px;">
       <div style="padding:32px;text-align:center;color:var(--win11-text-tertiary);">Loading agents...</div>
@@ -576,8 +595,91 @@ export async function renderAgentsView({ mountNode, api, adapter, stateStore, sy
     });
   }
 
+  // Load OpenClaw agents from CLI
+  async function loadOpenclawAgents() {
+    try {
+      const data = await openclawFetch('/agents');
+      openclawAgents = data.agents || [];
+    } catch (e) {
+      openclawAgents = [];
+    }
+  }
+
+  // Main tab switching
+  function switchMainTab(tab) {
+    activeMainTab = tab;
+    root.querySelectorAll('.av-main-tab').forEach(t => {
+      const isActive = t.dataset.maintab === tab;
+      t.classList.toggle('active', isActive);
+      t.style.borderBottomColor = isActive ? 'var(--win11-accent)' : 'transparent';
+      t.style.color = isActive ? 'var(--win11-text)' : 'var(--win11-text-secondary)';
+      t.style.fontWeight = isActive ? '600' : '400';
+    });
+    if (tab === 'openclaw') {
+      renderOpenclawGrid();
+    } else {
+      renderGrid();
+    }
+    root.querySelector('#avDetail').style.display = 'none';
+  }
+
+  function renderOpenclawGrid() {
+    const grid = root.querySelector('#avGrid');
+    const search = (root.querySelector('#avSearch')?.value || '').trim().toLowerCase();
+
+    let filtered = openclawAgents;
+    if (search) {
+      filtered = filtered.filter(a => {
+        const name = (a.name || a.id || '').toLowerCase();
+        const model = (a.model || '').toLowerCase();
+        const workspace = (a.workspace || '').toLowerCase();
+        return name.includes(search) || model.includes(search) || workspace.includes(search);
+      });
+    }
+
+    if (filtered.length === 0) {
+      grid.innerHTML = '<div style="padding:32px;text-align:center;color:var(--win11-text-tertiary);">No OpenClaw agents found.</div>';
+      return;
+    }
+
+    grid.innerHTML = `<div style="font-size:0.82rem;color:var(--win11-text-secondary);margin-bottom:12px;">${filtered.length} agents from <code>openclaw agents list</code></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">
+      ${filtered.map(a => {
+        const isDefault = a.isDefault;
+        const model = a.model || '—';
+        const modelName = model.includes('/') ? model.split('/').slice(-1)[0] : model;
+        const workspace = a.workspace || '';
+        const workspaceName = workspace.split('/').pop() || workspace;
+        const bindings = a.bindings || 0;
+        const routes = a.routes || [];
+        const providers = a.providers || [];
+        return `<div style="
+          background:var(--win11-surface-solid);border:1px solid var(--win11-border);border-radius:8px;padding:12px;
+          border-left:3px solid ${isDefault ? 'var(--win11-accent)' : 'var(--win11-text-tertiary)'};
+        ">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+            <div style="font-weight:600;font-size:0.88rem;color:var(--win11-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(a.name || a.id)}">${escapeHtml(a.name || a.id)}</div>
+            ${isDefault ? '<span style="font-size:0.65rem;padding:1px 6px;border-radius:3px;background:rgba(96,205,255,0.15);color:var(--win11-accent);font-weight:600;">DEFAULT</span>' : ''}
+          </div>
+          <div style="font-size:0.72rem;color:var(--win11-text-tertiary);margin-top:4px;font-family:monospace;">${escapeHtml(a.id)}</div>
+          <div style="display:flex;gap:12px;margin-top:6px;font-size:0.75rem;color:var(--win11-text-secondary);">
+            <span title="Model">🧠 ${escapeHtml(modelName)}</span>
+            <span title="Workspace">📁 ${escapeHtml(workspaceName)}</span>
+            ${bindings > 0 ? `<span>🔗 ${bindings} binding${bindings !== 1 ? 's' : ''}</span>` : ''}
+          </div>
+          ${providers.length > 0 ? `<div style="margin-top:4px;font-size:0.68rem;color:var(--win11-text-tertiary);">${providers.map(p => escapeHtml(p)).join(' · ')}</div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  // Tab click handlers
+  root.querySelectorAll('.av-main-tab').forEach(t => {
+    t.addEventListener('click', () => switchMainTab(t.dataset.maintab));
+  });
+
   // Init
-  await Promise.all([loadAgents(), loadProjects()]);
+  await Promise.all([loadAgents(), loadProjects(), loadOpenclawAgents()]);
 
   return () => { 
     if (syncUnsubscribe) {

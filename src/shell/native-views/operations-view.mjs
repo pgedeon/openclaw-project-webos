@@ -14,6 +14,20 @@ async function cronFetch(path, options = {}) {
   return res.json();
 }
 
+const OPENCLAW_API_BASE = '/api/openclaw';
+
+async function openclawFetch(path, options = {}) {
+  const res = await fetch(`${OPENCLAW_API_BASE}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 import { mutate } from '../mutation-manager.mjs';
 
 export async function renderOperationsView({ mountNode, api, adapter, stateStore, sync, navigateToView, params = {} }) {
@@ -31,6 +45,8 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
   let agents = [];
   let health = {};
   let editingJob = null;
+  let gatewayHealth = null;
+  let backgroundTasks = [];
   let noticeTimer = null;
   let refreshInterval = null;
 
@@ -89,6 +105,7 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
     <div class="ops-tabs">
       <button class="ops-tab active" data-tab="overview">Overview</button>
       <button class="ops-tab" data-tab="cron">Cron Jobs</button>
+      <button class="ops-tab" data-tab="tasks">Background Tasks</button>
     </div>
     <div class="ops-panel" id="opsPanel"></div>
   `;
@@ -131,6 +148,14 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
     const agentPayload = a.status === 'fulfilled' ? a.value : { agents: [] };
     agents = Array.isArray(agentPayload.agents) ? agentPayload.agents : [];
     cronJobs = c.status === 'fulfilled' ? (c.value.jobs || []) : [];
+
+    // Load OpenClaw gateway health and background tasks
+    const [gh, bt] = await Promise.allSettled([
+      openclawFetch('/health').catch(() => null),
+      openclawFetch('/tasks').catch(() => ({ tasks: [] })),
+    ]);
+    gatewayHealth = gh.status === 'fulfilled' ? gh.value : null;
+    backgroundTasks = bt.status === 'fulfilled' ? (bt.value.tasks || []) : [];
 
     // Merge live gateway status into agent data
     if (g.status === 'fulfilled' && g.value && g.value.agents) {
@@ -191,6 +216,7 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
     const panel = root.querySelector('#opsPanel');
     if (activeTab === 'overview') renderOverview(panel);
     else if (activeTab === 'cron') renderCronPanel(panel);
+    else if (activeTab === 'tasks') renderTasksPanel(panel);
   }
 
   function renderOverview(panel) {
@@ -205,6 +231,8 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
         ${createStatCard({ label: 'Agents', value: `${activeAgents}/${agents.length}` }).outerHTML}
         ${createStatCard({ label: 'Cron Jobs', value: formatCount(cronJobs.length) }).outerHTML}
         ${createStatCard({ label: 'Storage', value: health.storage_type || '—' }).outerHTML}
+        ${createStatCard({ label: 'Gateway', value: gatewayHealth?.ok ? 'Connected' : 'Unknown', tone: gatewayHealth?.ok ? 'success' : 'default' }).outerHTML}
+        ${createStatCard({ label: 'BG Tasks', value: formatCount(backgroundTasks.length) }).outerHTML}
       </div>
 
       <div class="ops-section">
@@ -288,6 +316,8 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
               <div style="font-size:0.7rem;color:var(--win11-text-tertiary);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(j.command)}">${escapeHtml(truncate(j.command, 80))}</div>
             </div>
             <span style="font-size:0.7rem;color:var(--win11-text-tertiary);white-space:nowrap;">${j.lastRun ? timeAgo(j.lastRun) : 'never'}</span>
+            <span style="font-size:0.72rem;font-weight:600;padding:2px 6px;border-radius:3px;${j.enabled === false ? 'background:rgba(239,68,68,0.15);color:#ef4444;' : 'background:rgba(34,197,94,0.15);color:#22c55e;'}">${j.enabled === false ? 'OFF' : 'ON'}</span>
+            <button class="ops-btn icon" data-action="${j.enabled === false ? 'enable' : 'disable'}" title="${j.enabled === false ? 'Enable' : 'Disable'}">${j.enabled === false ? '🔘' : '⛔'}</button>
             <button class="ops-btn icon" data-action="run" title="Run now">▶</button>
             <button class="ops-btn icon" data-action="logs" title="View logs">📋</button>
             <button class="ops-btn icon" data-action="edit" title="Edit">✏️</button>
@@ -308,7 +338,23 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
       const id = row.dataset.id;
       const action = btn.dataset.action;
 
-      if (action === 'run') {
+      if (action === 'enable') {
+        await mutate({
+          key: `cron-enable-${id}`,
+          optimisticApply: () => { btn.textContent = '⏳'; },
+          request: () => cronFetch(`/jobs/${encodeURIComponent(id)}/enable`, { method: 'POST' }),
+          onSuccess: async () => { showNotice(`Job "${id}" enabled.`, 'success'); await loadAllData(); renderPanel(); },
+          onError: (err) => showNotice(`Enable failed: ${err.message}`, 'error'),
+        });
+      } else if (action === 'disable') {
+        await mutate({
+          key: `cron-disable-${id}`,
+          optimisticApply: () => { btn.textContent = '⏳'; },
+          request: () => cronFetch(`/jobs/${encodeURIComponent(id)}/disable`, { method: 'POST' }),
+          onSuccess: async () => { showNotice(`Job "${id}" disabled.`, 'success'); await loadAllData(); renderPanel(); },
+          onError: (err) => showNotice(`Disable failed: ${err.message}`, 'error'),
+        });
+      } else if (action === 'run') {
         await mutate({
           key: `cron-run-${id}`,
           optimisticApply: () => { btn.textContent = '⏳'; },
@@ -458,6 +504,43 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
     panel.querySelector('#opsCronCancel')?.addEventListener('click', () => {
       editingJob = null;
       renderCronPanel(panel);
+    });
+  }
+
+  // === Background Tasks Panel ===
+  function renderTasksPanel(panel) {
+    panel.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
+        <h3 style="margin:0;font-size:0.95rem;color:var(--win11-text);">Background Tasks (${backgroundTasks.length})</h3>
+        <button class="ops-btn" id="opsTasksRefresh">↻ Refresh</button>
+      </div>
+      ${backgroundTasks.length > 0 ? `
+        <div class="ops-section" style="padding:0;">
+          ${backgroundTasks.map(t => {
+            const taskId = (t.taskId || '').substring(0, 8);
+            const runtime = t.runtime || 'unknown';
+            const status = t.status || 'unknown';
+            const statusColor = status === 'running' ? '#22c55e' : status === 'succeeded' ? 'var(--win11-accent)' : status === 'failed' ? '#ef4444' : 'var(--win11-text-tertiary)';
+            const created = t.createdAt ? new Date(t.createdAt).toLocaleString() : '';
+            const sourceId = (t.sourceId || '').substring(0, 8);
+            return `<div class="ops-cron-row">
+              <span style="font-family:monospace;font-size:0.75rem;color:var(--win11-accent);min-width:70px;">${escapeHtml(taskId)}...</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.84rem;color:var(--win11-text);">${escapeHtml(runtime)}</div>
+                <div style="font-size:0.7rem;color:var(--win11-text-tertiary);">${created}${sourceId ? ' · source: ' + escapeHtml(sourceId) + '...' : ''}</div>
+              </div>
+              <span style="font-size:0.72rem;font-weight:600;color:${statusColor};">${escapeHtml(status)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      ` : '<div style="padding:24px;text-align:center;color:var(--win11-text-tertiary);">No background tasks found.</div>'}
+    `;
+
+    panel.querySelector('#opsTasksRefresh')?.addEventListener('click', async () => {
+      panel.innerHTML = '<div style="padding:24px;text-align:center;color:var(--win11-text-secondary);">Loading...</div>';
+      const data = await openclawFetch('/tasks').catch(() => ({ tasks: [] }));
+      backgroundTasks = data.tasks || [];
+      renderTasksPanel(panel);
     });
   }
 
