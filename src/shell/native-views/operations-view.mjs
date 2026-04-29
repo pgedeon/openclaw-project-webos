@@ -16,7 +16,7 @@ async function cronFetch(path, options = {}) {
 
 import { mutate } from '../mutation-manager.mjs';
 
-export async function renderOperationsView({ mountNode, api, adapter, stateStore, sync }) {
+export async function renderOperationsView({ mountNode, api, adapter, stateStore, sync, navigateToView }) {
   ensureNativeRoot(mountNode, 'operations-view');
   mountNode.innerHTML = '';
 
@@ -463,7 +463,7 @@ export async function renderOperationsView({ mountNode, api, adapter, stateStore
 
   async function loadLogsInto(container, jobId) {
     try {
-      const data = await cronFetch(`/jobs/${encodeURIComponent(jobId)}/logs`);
+      const data = await cronFetch(`/jobs/${encodeURIComponent(jobId)}/runs`);
       const logs = data.logs || [];
       if (logs.length === 0) {
         container.innerHTML = `<div style="color:var(--win11-text-tertiary);">No logs found.${data.logPath ? `<br><span style="font-size:0.72rem;">${escapeHtml(data.logPath)}</span>` : ''}</div>`;

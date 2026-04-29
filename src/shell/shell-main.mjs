@@ -385,9 +385,10 @@ export function bootstrapShell({
     sync?.refresh?.();
   });
 
-  // Notification center
+  // Notification center — wire navigation (P3)
   const notifCenter = new NotificationCenter();
   globalThis.__notifCenter = notifCenter;
+  notifCenter.setNavigator((viewId, options) => windowManager.openWindow(viewId, options));
 
   // Agent chat panel
   const chatPanel = new AgentChatPanel({

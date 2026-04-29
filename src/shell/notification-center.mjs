@@ -67,6 +67,7 @@ export class NotificationCenter {
     this.activeTab = 'all';
     this.notifications = [];
     this.unreadCount = 0;
+    this._navigateToView = null; // Set by shell-main.mjs (P3)
 
     this.el = document.createElement('div');
     this.el.className = 'nc-panel';
@@ -74,6 +75,9 @@ export class NotificationCenter {
 
     this.render();
   }
+
+  /** Set the navigation callback (called from shell-main.mjs) */
+  setNavigator(fn) { this._navigateToView = fn; }
 
   open() {
     this.isOpen = true;
@@ -118,14 +122,21 @@ export class NotificationCenter {
       'approval:pending': 'approval',
       'workflow:status': 'workflow',
       'task:changed': 'system',
+      'space:changed': 'system',
     };
     const type = typeMap[event.type] || 'system';
-    return this.push({
-      type,
-      title: event.type,
-      description: typeof event.data === 'object' ? JSON.stringify(event.data).slice(0, 120) : String(event.data || '').slice(0, 120),
-      data: event.data,
-    });
+    const d = typeof event.data === 'object' ? (event.data || {}) : {};
+    // Better titles (P3)
+    const titleMap = {
+      'task:blocked': () => `Task blocked: ${d.title || d.task_title || d.task_id?.substring(0,8) || 'Unknown'}`,
+      'approval:pending': () => `Approval needed: ${d.title || d.action || d.task_title || 'Action required'}`,
+      'workflow:status': () => `Workflow ${d.status || 'update'}: ${d.name || d.run_id?.substring(0,8) || 'Run'}`,
+      'task:changed': () => `Task updated: ${d.title || d.task_title || d.name || 'Task'}`,
+      'space:changed': () => `Space changed: ${d.name || d.space?.name || 'Workspace'}`,
+    };
+    const title = (titleMap[event.type] || (() => event.type))();
+    const desc = d.description || d.message || (typeof event.data === 'string' ? event.data.slice(0, 120) : '');
+    return this.push({ type, title, description: desc, data: d });
   }
 
   markRead() {
@@ -197,6 +208,41 @@ export class NotificationCenter {
       });
     });
     this.el.querySelector('#nc-clear')?.addEventListener('click', () => this.clearAll());
+
+    // Click handler for notification items — navigate to entity (P3)
+    this.el.querySelectorAll('.nc-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const n = this.notifications.find(x => x.id === item.dataset.id);
+        if (!n) return;
+        this._handleClick(n);
+      });
+    });
+  }
+
+  /** Navigate to the entity referenced by a notification (P3) */
+  _handleClick(notification) {
+    const nav = this._navigateToView;
+    if (!nav) return;
+
+    const data = notification.data || {};
+    const type = notification.type;
+
+    // Route based on notification type and available data
+    if (data.task_id || data.taskId) {
+      nav('tasks', { params: { taskId: data.task_id || data.taskId } });
+    } else if (data.agent_name || data.agentName || data.agent_id) {
+      nav('agents', { params: { agentName: data.agent_name || data.agentName || data.agent_id } });
+    } else if (data.run_id || data.runId) {
+      nav('workflows', { params: { runId: data.run_id || data.runId } });
+    } else if (data.project_id || data.projectId) {
+      nav('board', { params: { projectId: data.project_id || data.projectId } });
+    } else if (type === 'approval' && data.approval_id) {
+      nav('operations', { params: { tab: 'approvals' } });
+    } else if (type === 'blocker') {
+      nav('operations', { params: { tab: 'health' } });
+    }
+
+    this.close();
   }
 }
 
