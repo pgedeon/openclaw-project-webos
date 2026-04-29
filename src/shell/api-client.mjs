@@ -600,6 +600,40 @@ export function createAPIClient(baseURL = '/api', options = {}) {
         return request(pathWithQuery('/oc/chat/status', sessionId ? { sessionId } : {}));
       },
     },
+
+    // History / Time Travel
+    history: {
+      list(params = {}) { return request(pathWithQuery('/history', params)); },
+      forTask(taskId, params = {}) { return request(pathWithQuery(`/history/${taskId}`, params)); },
+      snapshot(taskId, at) { return request(`/history/${taskId}/snapshot?at=${encodeURIComponent(at)}`); },
+      diff(taskId, from, to) { return request(`/history/${taskId}/diff?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`); },
+    },
+
+    // State Snapshots
+    snapshots: {
+      list(entityType, entityId, params = {}) { return request(pathWithQuery(`/snapshots/${entityType}/${entityId}`, params)); },
+      previewRevert(snapshotId) { return jsonRequest(`/snapshots/${snapshotId}/preview-revert`, { method: 'POST', body: {} }); },
+      revert(snapshotId, actor = 'dashboard') { return jsonRequest(`/snapshots/${snapshotId}/revert`, { method: 'POST', body: { actor } }); },
+    },
+
+    // Spaces
+    spaces: {
+      list() { return request('/spaces'); },
+      get(id) { return request(`/spaces/${id}`); },
+      create(data) { return jsonRequest('/spaces', { method: 'POST', body: data }); },
+      update(id, data) { return jsonRequest(`/spaces/${id}`, { method: 'PUT', body: data }); },
+      delete(id) { return jsonRequest(`/spaces/${id}`, { method: 'DELETE' }); },
+      duplicate(id, slug) { return jsonRequest(`/spaces/${id}/duplicate`, { method: 'POST', body: { slug } }); },
+    },
+
+    // Export / Import
+    exportBundle: {
+      get() { return request('/export'); },
+    },
+    importBundle: {
+      preview(data) { return jsonRequest('/import/preview', { method: 'POST', body: data }); },
+      run(data) { return jsonRequest('/import', { method: 'POST', body: data }); },
+    },
   };
 
   return client;
