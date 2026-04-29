@@ -10,6 +10,7 @@ import {
 } from './view-adapter.mjs';
 import { createAPIClient } from './api-client.mjs';
 import { createViewState } from './view-state.mjs';
+import { initCommandPalette } from './command-palette.mjs';
 import { buildDashboardContext } from './agent-context.mjs';
 import { AgentChatPanel } from './agent-chat-panel.mjs';
 import { NotificationCenter } from './notification-center.mjs';
@@ -384,6 +385,9 @@ export function bootstrapShell({
     // Refresh visible views so they pick up the new activeSpaceId
     sync?.refresh?.();
   });
+
+  // Command palette — Ctrl+K global search (P1)
+  initCommandPalette(apiClient);
 
   // Notification center — wire navigation (P3)
   const notifCenter = new NotificationCenter();
