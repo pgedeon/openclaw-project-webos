@@ -1,7 +1,9 @@
 /**
  * Health, stats, and citation-queue route module.
+ * Enhanced with `openclaw health --json` integration.
  */
 const { URL } = require('url');
+const oc = require('../lib/openclaw-cli');
 
 function registerHealthRoutes(router) {
   // GET /api/health
@@ -54,7 +56,7 @@ function registerHealthRoutes(router) {
     return true;
   });
 
-  // GET /api/health-status
+  // GET /api/health-status — unified health (dashboard-local + openclaw gateway)
   router.add('GET', '/api/health-status', async (req, res, ctx) => {
     try {
       const gatewaySnapshot = ctx.readGatewayStatusSnapshot();
@@ -126,9 +128,7 @@ function registerHealthRoutes(router) {
             note: cronData.total_errors > 0 ? `${cronData.total_errors} errors across ${cronData.details.length} jobs` : 'All cron jobs healthy',
           };
         }
-      } catch (_) {
-        // cron health file not available — skip silently
-      }
+      } catch (_) { /* skip */ }
 
       ctx.sendJSON(res, 200, healthData);
     } catch (err) {
@@ -137,20 +137,122 @@ function registerHealthRoutes(router) {
     return true;
   });
 
-  // GET /api/auth/self — returns current auth mode and actor info
-  // Excluded from token auth in task-server.js middleware
-  router.add('GET', '/api/auth/self', async (req, res, ctx) => {
-    const hasToken = !!(process.env.DASHBOARD_AUTH_TOKEN);
-    ctx.sendJSON(res, 200, {
-      mode: hasToken ? 'token' : 'none',
-      actor: 'dashboard-operator',
-      role: 'operator',
-      authenticated: true,
-    });
+  // GET /api/openclaw/health — direct proxy to `openclaw health --json`
+  router.add('GET', '/api/openclaw/health', async (req, res, ctx) => {
+    try {
+      const data = await oc.health();
+      ctx.sendJSON(res, 200, {
+        source: 'openclaw-cli',
+        timestamp: new Date().toISOString(),
+        ok: data.ok || false,
+        channels: data.channels || {},
+        agents: data.agents || [],
+        heartbeatSeconds: data.heartbeatSeconds,
+        defaultAgentId: data.defaultAgentId,
+      });
+    } catch (err) {
+      console.error('[Health] CLI health failed:', err);
+      ctx.sendJSON(res, 502, { error: 'Failed to get OpenClaw health', details: err.message });
+    }
     return true;
   });
 
-  // GET /api/auth/self — Return current auth status
+  // GET /api/openclaw/tasks — background tasks from `openclaw tasks list`
+  router.add('GET', '/api/openclaw/tasks', async (req, res, ctx) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const filters = {};
+      if (url.searchParams.get('runtime')) filters.runtime = url.searchParams.get('runtime');
+      if (url.searchParams.get('status')) filters.status = url.searchParams.get('status');
+      const data = await oc.tasksList(filters);
+      ctx.sendJSON(res, 200, {
+        source: 'openclaw-cli',
+        timestamp: new Date().toISOString(),
+        count: data.count || (data.tasks || []).length,
+        tasks: data.tasks || [],
+      });
+    } catch (err) {
+      console.error('[Tasks] CLI tasks list failed:', err);
+      ctx.sendJSON(res, 502, { error: 'Failed to list tasks', details: err.message });
+    }
+    return true;
+  });
+
+  // GET /api/openclaw/tasks/audit — stale/broken task audit
+  router.add('GET', '/api/openclaw/tasks/audit', async (req, res, ctx) => {
+    try {
+      const data = await oc.tasksAudit();
+      ctx.sendJSON(res, 200, { source: 'openclaw-cli', ...data });
+    } catch (err) {
+      console.error('[Tasks] CLI audit failed:', err);
+      ctx.sendJSON(res, 502, { error: 'Failed to audit tasks', details: err.message });
+    }
+    return true;
+  });
+
+  // GET /api/openclaw/agents — agent list from `openclaw agents list`
+  router.add('GET', '/api/openclaw/agents', async (req, res, ctx) => {
+    try {
+      const data = await oc.agentsList();
+      // CLI returns an array directly
+      const agents = Array.isArray(data) ? data : (data.agents || []);
+      ctx.sendJSON(res, 200, {
+        source: 'openclaw-cli',
+        timestamp: new Date().toISOString(),
+        agents,
+      });
+    } catch (err) {
+      console.error('[Agents] CLI agents list failed:', err);
+      ctx.sendJSON(res, 502, { error: 'Failed to list agents', details: err.message });
+    }
+    return true;
+  });
+
+  // POST /api/openclaw/memory/index — trigger memory reindex
+  router.add('POST', '/api/openclaw/memory/index', async (req, res, ctx) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const agentId = url.searchParams.get('agent') || 'main';
+      const data = await oc.memoryIndex(agentId);
+      ctx.sendJSON(res, 200, { source: 'openclaw-cli', success: true, agentId, result: data });
+    } catch (err) {
+      console.error('[Memory] CLI reindex failed:', err);
+      ctx.sendJSON(res, 502, { error: 'Failed to reindex memory', details: err.message });
+    }
+    return true;
+  });
+
+  // GET /api/openclaw/memory/promote — preview promotion candidates
+  // POST /api/openclaw/memory/promote — apply promotions
+  router.add('GET', '/api/openclaw/memory/promote', async (req, res, ctx) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const agentId = url.searchParams.get('agent') || 'main';
+      const limit = parseInt(url.searchParams.get('limit')) || 10;
+      const data = await oc.memoryPromote(agentId, { limit });
+      ctx.sendJSON(res, 200, { source: 'openclaw-cli', agentId, ...data });
+    } catch (err) {
+      console.error('[Memory] CLI promote preview failed:', err);
+      ctx.sendJSON(res, 502, { error: 'Failed to preview promotions', details: err.message });
+    }
+    return true;
+  });
+
+  router.add('POST', '/api/openclaw/memory/promote', async (req, res, ctx) => {
+    try {
+      let body = {};
+      try { body = JSON.parse(await ctx.readBody(req)); } catch (_) {}
+      const agentId = body.agent || 'main';
+      const data = await oc.memoryPromote(agentId, { apply: true, limit: body.limit });
+      ctx.sendJSON(res, 200, { source: 'openclaw-cli', success: true, agentId, ...data });
+    } catch (err) {
+      console.error('[Memory] CLI promote apply failed:', err);
+      ctx.sendJSON(res, 502, { error: 'Failed to apply promotions', details: err.message });
+    }
+    return true;
+  });
+
+  // GET /api/auth/self — returns current auth mode and actor info
   router.add('GET', '/api/auth/self', async (req, res) => {
     const authHeader = req.headers['authorization'] || '';
     const token = (authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '').trim();
@@ -165,7 +267,7 @@ function registerHealthRoutes(router) {
     return true;
   });
 
-  // GET /api/routes — Route catalog (auto-generated from router)
+  // GET /api/routes — Route catalog
   router.add('GET', '/api/routes', async (req, res) => {
     const routes = router.list ? router.list() : [];
     res.writeHead(200, { 'Content-Type': 'application/json' });
