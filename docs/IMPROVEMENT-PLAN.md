@@ -193,7 +193,7 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 > These are valid ideas but not priorities right now.
 
 ### Multi-User Auth (P3)
-- [ ] Token-mode hardening: document auth env vars, add `/api/auth/self`
+- [x] Token-mode hardening: document auth env vars, add `/api/auth/self`
 - [ ] Full auth deferred until multi-operator requirement exists
 - **Complexity:** L for full auth | S for token hardening
 
@@ -216,7 +216,7 @@ These were discovered by Codex from the actual codebase. Schedule when capacity 
 
 - [x] **Notification Center** — taskbar bell → panel with blockers, approvals, workflow events, SSE
 - [x] **Route Catalog View** — auto-generated API inventory from `routes/*` for operators
-- [ ] **Workflow Routing Admin** — UI for `workflow_agent_routing` table
+- [x] **Workflow Routing Admin** — UI for `workflow_agent_routing` table
 - [x] **Memory Safety Guard** — wire `src/security` scrubbing into memory API writes
 - [ ] **Docs Drift Widget** — widget showing whether docs match source counts
 - [ ] **Dispatcher Live Feed** — SSE from `GatewayWorkflowDispatcherV2` → workflows view

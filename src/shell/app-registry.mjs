@@ -287,6 +287,16 @@ export const APP_REGISTRY = Object.freeze([
     defaultHeight: 640,
   },
   {
+    id: 'workflow-routing',
+    label: 'Workflow Routing',
+    icon: appIcon.shuffle,
+    url: '/?view=workflow-routing',
+    viewModule: './native-views/workflow-routing-view.mjs',
+    category: 'System',
+    defaultWidth: 900,
+    defaultHeight: 520,
+  },
+  {
     id: 'handoffs',
     label: 'Handoffs',
     icon: appIcon.handoff,

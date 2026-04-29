@@ -150,6 +150,21 @@ function registerHealthRoutes(router) {
     return true;
   });
 
+  // GET /api/auth/self — Return current auth status
+  router.add('GET', '/api/auth/self', async (req, res) => {
+    const authHeader = req.headers['authorization'] || '';
+    const token = (authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '').trim();
+    const expectedToken = process.env.DASHBOARD_AUTH_TOKEN || '';
+    const authenticated = token && token === expectedToken;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      authenticated,
+      mode: expectedToken ? 'token' : 'open',
+      user: authenticated ? 'dashboard-operator' : null,
+    }));
+    return true;
+  });
+
   // GET /api/routes — Route catalog (auto-generated from router)
   router.add('GET', '/api/routes', async (req, res) => {
     const routes = router.list ? router.list() : [];

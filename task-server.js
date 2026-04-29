@@ -66,6 +66,7 @@ const { registerMemoryRoutes } = require('./routes/memory-routes');
 const { registerHistoryRoutes } = require('./routes/history-routes');
 const { registerExportRoutes } = require('./routes/export-routes');
 const { registerSpaceRoutes } = require('./routes/space-routes');
+const { registerWorkflowRoutingRoutes } = require('./routes/workflow-routing-routes');
 const SettingsStore = require('./lib/settings-store');
 
 function loadDashboardEnv() {
@@ -665,6 +666,7 @@ registerMemoryRoutes(router);
 registerHistoryRoutes(router, settingsDeps);
 registerExportRoutes(router, settingsDeps, settingsStore);
 registerSpaceRoutes(router, settingsDeps);
+registerWorkflowRoutingRoutes(router, settingsDeps);
 const server = http.createServer(async (req, res) => {
   const timestamp = new Date().toISOString();
   const url = req.url.split('?')[0];
