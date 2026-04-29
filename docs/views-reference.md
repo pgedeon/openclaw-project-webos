@@ -291,6 +291,35 @@ Cron job management. Documented in the [User Guide — Cron View](user-guide.md#
 
 ### Diagnostics
 
+### History
+
+**File:** `src/shell/native-views/history-view.mjs`
+**App ID:** `history`
+**Category:** Operations
+
+Two-pane history/diff UI for browsing audit log entries and state snapshots.
+
+- Tabbed interface: Audit Log + State Snapshots
+- Filter by actor, action type
+- Per-task history drilling
+- Snapshot preview and revert
+- API: `GET /api/history`, `GET /api/snapshots/:type/:id`
+
+### Spaces
+
+**File:** `src/shell/native-views/spaces-view.mjs`
+**App ID:** `spaces`
+**Category:** System
+
+Multi-workspace management UI. Create, edit, duplicate, and delete workspaces.
+
+- Card grid layout with icon/color pickers
+- Modal forms for create/edit
+- Default workspace protection (cannot delete)
+- Taskbar space switcher integration
+- API: `GET/POST/PUT/DELETE /api/spaces`
+
+
 **Category:** Operations · **ID:** `diagnostics` · **Default size:** 1080×720
 
 System Operations Center for monitoring, diagnosing, and repairing failing components.

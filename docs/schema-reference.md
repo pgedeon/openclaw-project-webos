@@ -128,12 +128,14 @@ Tracks all significant changes to tasks.
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | `UUID` | PK, default `uuid_generate_v4()` | |
-| `task_id` | `UUID` | FK → `tasks(id)` ON DELETE CASCADE, NOT NULL | |
+| `task_id` | `UUID` | FK → `tasks(id)` ON DELETE CASCADE, nullable | Nullable for system-level entries |
 | `actor` | `TEXT` | NOT NULL | User or agent name |
-| `action` | `TEXT` | NOT NULL | `create`, `update`, `delete`, `claim`, `release`, `move`, etc. |
+| `action` | `TEXT` | NOT NULL | `create`, `update`, `delete`, `claim`, `release`, `move`, `import`, etc. |
 | `old_value` | `JSONB` | nullable | Field snapshot before change |
 | `new_value` | `JSONB` | nullable | Field snapshot after change |
 | `timestamp` | `TIMESTAMPTZ` | NOT NULL, default `NOW()` | |
+| `entity_type` | `TEXT` | default `'task'` | Entity type for non-task audit entries |
+| `correlation_id` | `UUID` | nullable | Groups related changes |
 
 **Indexes:** `task_id`, `timestamp`, `actor`, `action` *(20260216)*, `(actor, action)` *(20260216)*
 
@@ -564,6 +566,51 @@ All tables with `updated_at` columns have auto-update triggers:
 
 ---
 
+## Time Travel
+
+#### `state_snapshots`
+
+Records full entity state at each mutation for point-in-time recovery and undo.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `UUID` | PK, default `uuid_generate_v4()` | |
+| `entity_type` | `TEXT` | NOT NULL | `'task'`, `'project'`, `'workflow'`, `'view'`, `'setting'`, `'system'` |
+| `entity_id` | `UUID` | NOT NULL | Entity UUID |
+| `action` | `TEXT` | NOT NULL | `create`, `update`, `delete`, `move`, `archive`, `restore`, `revert`, `import` |
+| `state` | `JSONB` | NOT NULL | Full entity state at this point |
+| `actor` | `TEXT` | NOT NULL, default `'system'` | Who made the change |
+| `correlation_id` | `UUID` | nullable | Links related snapshots |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, default `NOW()` | |
+
+**Indexes:** `(entity_type, entity_id)`, `created_at DESC`, `action`, `correlation_id`
+
+---
+
+## Spaces / Workspaces
+
+#### `workspaces` (extended)
+
+Multi-workspace support with per-space configuration.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `UUID` | PK, default `gen_random_uuid()` | |
+| `name` | `VARCHAR(255)` | NOT NULL | Display name |
+| `slug` | `VARCHAR(100)` | NOT NULL, UNIQUE | URL-safe identifier |
+| `icon` | `TEXT` | default `'📁'` | Emoji icon |
+| `color` | `TEXT` | default `'#0078d4'` | Brand color |
+| `description` | `TEXT` | default `''` | What the space is for |
+| `settings` | `JSONB` | default `'{}'` | Per-space settings |
+| `is_default` | `BOOLEAN` | default `false` | Cannot be deleted |
+| `sort_order` | `INT` | default `0` | Display order |
+| `created_at` | `TIMESTAMPTZ` | default `NOW()` | |
+| `updated_at` | `TIMESTAMPTZ` | default `NOW()` | Auto-updated via trigger |
+
+**Referenced by:** `tasks.workspace_id`, `cron_jobs.workspace_id`
+
+---
+
 ## Migration History
 
 | # | Migration | Date | Description |
@@ -588,6 +635,8 @@ All tables with `updated_at` columns have auto-update triggers:
 | 20260216a | `20260216_add_agent_observability.sql` | 2026-02-16 | Add `agent_heartbeats` and `task_runs` tables, `retry_count` on tasks |
 | 20260216b | `20260216_add_archive_deleted_to_tasks.sql` | 2026-02-16 | Add `archived_at` and `deleted_at` to tasks |
 | 20260216c | `20260216_add_audit_log_search_indexes.sql` | 2026-02-16 | Add `action` and `(actor, action)` indexes to audit_log |
+| 20260428a | `20260428_add_state_snapshots.sql` | 2026-04-28 | Add `state_snapshots` table, extend `audit_log` with `entity_type`, `correlation_id` |
+| 20260429a | `20260429_extend_workspaces.sql` | 2026-04-29 | Extend `workspaces` with `icon`, `color`, `description`, `is_default`, `sort_order` |
 | 20260216d | `20260216_add_cron_job_runs.sql` | 2026-02-16 | Add `cron_job_runs` table |
 | 20260216e | `20260216_add_saved_views.sql` | 2026-02-16 | Add `saved_views` table |
 | 20260216f | `20260216_add_updated_at_index_to_tasks.sql` | 2026-02-16 | Add `updated_at` index to tasks for incremental sync |

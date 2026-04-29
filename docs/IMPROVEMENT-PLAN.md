@@ -146,8 +146,8 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 - [x] **EXP-2:** Add `routes/export-routes.js` — `GET /api/export?scope=`, `POST /api/import/preview`, `POST /api/import`
 - [x] **EXP-3:** Extend `storage/asana.js` — additive upsert methods (not destructive `importData()`)
 - [x] **EXP-4:** Add import preview UI to `settings-view.mjs`
-- [ ] **EXP-5:** Add audit/history entries for import operations
-- [ ] **EXP-6:** Update docs
+- [x] **EXP-5:** Add audit/history entries for import operations
+- [x] **EXP-6:** Update docs
 
 **Complexity:** M | **Dependencies:** Time Travel (for rollback), DOC corrections
 

@@ -1612,6 +1612,137 @@ Inject a follow-up message into an existing scan run's agent session.
 
 ---
 
+
+## History / Time Travel API
+
+### `GET /api/history`
+
+List recent changes across all entities.
+
+**Query parameters:** `limit` (max 100), `actor`, `action`, `entity_type`
+
+**Response:** `{ entries: [...], total: number }`
+
+### `GET /api/history/:taskId`
+
+Full audit history for a specific task.
+
+**Query parameters:** `limit` (max 200)
+
+**Response:** `{ taskId, entries: [...], total }`
+
+### `GET /api/history/:taskId/snapshot`
+
+Point-in-time state from snapshots.
+
+**Query parameters:** `at` (ISO timestamp, required)
+
+**Response:** `{ snapshot: object, exact: boolean }`
+
+### `GET /api/history/:taskId/diff`
+
+Diff between two points in time.
+
+**Query parameters:** `from`, `to` (ISO timestamps, required)
+
+**Response:** `{ taskId, changes: [{ field, from, to }], from, to }`
+
+### `GET /api/snapshots/:entityType/:entityId`
+
+List state snapshots for any entity.
+
+**Query parameters:** `limit` (max 200)
+
+**Response:** `{ snapshots: [...], total }`
+
+### `POST /api/snapshots/:snapshotId/preview-revert`
+
+Preview what reverting to a snapshot would change (no side effects).
+
+**Response:** `{ snapshot, currentState, snapshotState }`
+
+### `POST /api/snapshots/:snapshotId/revert`
+
+Revert an entity to a previous snapshot state. Records pre-revert and revert snapshots.
+
+**Body:** `{ actor: string }`
+
+**Response:** `{ reverted: true, entityType, entityId }`
+
+---
+
+## Export / Import API
+
+### `GET /api/export`
+
+Export the entire dashboard as a JSON bundle.
+
+**Response:** `{ version, exportedAt, projects, tasks, workflows, auditLog, settings, counts }`
+
+### `POST /api/import/preview`
+
+Preview what an import would do without applying it.
+
+**Body:** `{ version, projects?, tasks?, workflows?, auditLog?, settings? }`
+
+**Response:** `{ preview: { projects, tasks, workflows, auditLog } }`
+
+### `POST /api/import`
+
+Import a bundle. Supports `merge` (default) and `replace` modes.
+
+**Body:** `{ version, mode, projects?, tasks?, workflows?, auditLog?, settings? }`
+
+**Response:** `{ imported: { projects, tasks, workflows, auditLog }, mode }`
+
+---
+
+## Spaces API
+
+### `GET /api/spaces`
+
+List all workspaces.
+
+**Response:** `{ spaces: [...] }`
+
+### `GET /api/spaces/:id`
+
+Get a single workspace.
+
+**Response:** Workspace object
+
+### `POST /api/spaces`
+
+Create a new workspace.
+
+**Body:** `{ name, slug?, icon?, color?, description?, settings? }`
+
+**Response:** Workspace object (201)
+
+### `PUT /api/spaces/:id`
+
+Update a workspace.
+
+**Body:** `{ name?, slug?, icon?, color?, description?, settings?, sort_order?, is_default? }`
+
+**Response:** Updated workspace
+
+### `DELETE /api/spaces/:id`
+
+Delete a workspace (cannot delete default).
+
+**Response:** `{ deleted: true }`
+
+### `POST /api/spaces/:id/duplicate`
+
+Duplicate a workspace.
+
+**Body:** `{ slug? }`
+
+**Response:** New workspace (201)
+
+---
+
 ## Governance Module (Library)
 
 `governance.js` is a **library module**, not a standalone API server. It is
