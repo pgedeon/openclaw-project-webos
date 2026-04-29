@@ -166,7 +166,8 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
   const det = $('#kbDet');
 
   // ── Load projects (space-scoped if active) ──────────────────────
-  const _activeSpaceId = stateStore?.getState?.('activeSpaceId') || params.projectId ? null : null;
+  const requestedProjectId = params.projectId || '';
+  const _activeSpaceId = requestedProjectId ? null : (stateStore?.getState?.('activeSpaceId') || null);
   const _spaceFilter = _activeSpaceId ? `?workspace_id=${encodeURIComponent(_activeSpaceId)}` : '';
   try {
     const r = await fetch('/api/projects' + _spaceFilter, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
@@ -199,7 +200,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
 
   // Auto-select first project or default
   if (projects.length > 0) {
-    currentProjectId = projects[0].id;
+    currentProjectId = projects.some(p => p.id === requestedProjectId) ? requestedProjectId : projects[0].id;
     projSel.value = currentProjectId;
   }
 

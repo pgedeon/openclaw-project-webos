@@ -853,6 +853,11 @@ export class WindowManager extends EventTarget {
 
     return new Promise((resolve) => {
       window.setTimeout(() => {
+        // Fix 12: run cleanup before removing
+        if (typeof entry._cleanup === 'function') {
+          try { entry._cleanup(); } catch (e) { console.warn(`Cleanup failed for ${appId}:`, e); }
+          entry._cleanup = null;
+        }
         entry.element.remove();
         this.windows.delete(appId);
 

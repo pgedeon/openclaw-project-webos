@@ -386,7 +386,18 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
     try {
       const res = await api.workflows.runs({ limit: 50 });
       runs = Array.isArray(res?.runs) ? res.runs : (Array.isArray(res) ? res : []);
+      // Fix 8: fetch specific run if deep-linked
+      if (params.runId && !runs.some(r => r.id === params.runId)) {
+        try { runs.unshift(await api.workflows.get(params.runId)); } catch {}
+      }
       renderRuns();
+      // Scroll to deep-linked run
+      if (params.runId) {
+        requestAnimationFrame(() => {
+          const el = document.querySelector(`[data-run-id="${CSS.escape(params.runId)}"]`);
+          if (el) { el.style.background = 'rgba(0,120,212,.12)'; el.scrollIntoView({ block: 'center' }); }
+        });
+      }
     } catch (e) { /* ok */ }
   }
 

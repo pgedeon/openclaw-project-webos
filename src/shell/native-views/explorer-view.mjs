@@ -290,8 +290,9 @@ export async function renderExplorerView({ mountNode, stateStore, navigateToView
     if (rect.bottom > window.innerHeight) contextMenu.style.top = `${y - rect.height}px`;
   }
 
-  document.addEventListener('click', hideContextMenu);
-  document.addEventListener('contextmenu', (e) => {
+  // Fix 13: named listeners for cleanup
+  const onDocClick = hideContextMenu;
+  const onDocContextMenu = (e) => {
     const row = e.target.closest('.ex-file-row');
     if (row && row.dataset.path) {
       e.preventDefault();
@@ -301,7 +302,9 @@ export async function renderExplorerView({ mountNode, stateStore, navigateToView
       e.preventDefault();
       showContextMenu(e.clientX, e.clientY, null);
     }
-  });
+  };
+  document.addEventListener('click', onDocClick);
+  document.addEventListener('contextmenu', onDocContextMenu);
 
   // --- Navigation ---
 
@@ -589,6 +592,14 @@ export async function renderExplorerView({ mountNode, stateStore, navigateToView
 
   // --- Init ---
   await navigateTo('');
+
+  // Fix 13: return cleanup to prevent listener leaks
+  return () => {
+    hideContextMenu();
+    document.removeEventListener('click', onDocClick);
+    document.removeEventListener('contextmenu', onDocContextMenu);
+    mountNode.innerHTML = '';
+  };
 }
 
 export default renderExplorerView;

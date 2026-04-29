@@ -387,7 +387,7 @@ export function bootstrapShell({
   });
 
   // Command palette — Ctrl+K global search (P1)
-  initCommandPalette(apiClient);
+  const _paletteCleanup = initCommandPalette(apiClient);
 
   // Notification center — wire navigation (P3)
   const notifCenter = new NotificationCenter();
@@ -633,6 +633,7 @@ export function bootstrapShell({
     widgetsReady,
     applyTheme,
     destroy() {
+    if (_paletteCleanup) _paletteCleanup();
       shellDestroyed = true;
       welcomeWidget.removeEventListener('click', handleWelcomeClick);
       if (welcomeWidget._cleanupWelcome) {

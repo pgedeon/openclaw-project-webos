@@ -1,6 +1,6 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
-const CRON_ADMIN_BASE = 'http://127.0.0.1:3878/api/cron-admin';
+const CRON_ADMIN_BASE = '/api/cron';
 
 async function cronFetch(path, options = {}) {
   const res = await fetch(`${CRON_ADMIN_BASE}${path}`, {
@@ -16,7 +16,7 @@ async function cronFetch(path, options = {}) {
 
 import { mutate } from '../mutation-manager.mjs';
 
-export async function renderOperationsView({ mountNode, api, adapter, stateStore, sync, navigateToView }) {
+export async function renderOperationsView({ mountNode, api, adapter, stateStore, sync, navigateToView, params = {} }) {
   ensureNativeRoot(mountNode, 'operations-view');
   mountNode.innerHTML = '';
 

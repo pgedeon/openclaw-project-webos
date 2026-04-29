@@ -134,15 +134,12 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
   // === State ===
   let tasks = [];
   // Deep-link params (P2/P5): auto-select task or filter by project
-  let initialTaskId = params.taskId || null;
-  let initialProjectId = params.projectId || null;
-  if (initialProjectId) currentProjectId = initialProjectId;
-
   // Space scope (P4): filter by active space's projects
   let activeSpaceId = stateStore?.getState?.('activeSpaceId') || null;
   let spaceProjectIds = null; // null = all projects, array = space-scoped
   let projects = [];
-  let currentProjectId = null;
+  let currentProjectId = params.projectId || null;
+  let initialTaskId = params.taskId || null;
   let currentFilter = 'all';
   let searchQuery = '';
   let categoryFilter = 'all';
@@ -428,11 +425,18 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       cachedAgents.map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name || a.id)}</option>`).join('');
   }
 
+  function buildScopedTaskParams() {
+    const query = buildTaskListParams(currentProjectId);
+    const wsId = stateStore?.getState?.('activeSpaceId');
+    if (wsId && (!currentProjectId || currentProjectId === 'all')) query.workspace_id = wsId;
+    return query;
+  }
+
   async function loadTasks() {
     isLoading = true;
     renderList();
     try {
-      const params = buildTaskListParams(currentProjectId);
+      const params = buildScopedTaskParams();
       const res = await api.tasks.list(params);
       tasks = Array.isArray(res) ? res : [];
     } catch (e) {
@@ -1186,9 +1190,13 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
   // === Init ===
   await loadProjects();
   await loadTaskOptions();
+  // Fix 6: Handle agentFilter from agent navigation
+  if (params.agentFilter) {
+    searchQuery = params.agentFilter;
+  }
   await loadTasks();
 
-  return () => { globalThis.removeEventListener('space:changed', onSpaceChanged);
+  return () => {
     if (syncUnsubscribe) syncUnsubscribe();
     cleanupFns.forEach(fn => fn());
     cleanupFns = [];

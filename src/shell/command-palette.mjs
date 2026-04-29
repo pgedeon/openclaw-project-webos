@@ -156,7 +156,8 @@ function close() {
 }
 
 export function initCommandPalette(api) {
-  document.addEventListener('keydown', (e) => {
+  let searchSeq = 0;
+  const onKeyDown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
       if (palette) { close(); return; }
@@ -179,9 +180,13 @@ export function initCommandPalette(api) {
       input.addEventListener('input', () => {
         clearTimeout(debounce);
         debounce = setTimeout(async () => {
+          const seq = ++searchSeq;
           const q = input.value.trim();
           if (!q) { results = []; renderResults([], q); return; }
-          results = await searchAll(api, q);
+          const next = await searchAll(api, q);
+          // Fix 14: guard against stale results after close
+          if (!palette || seq !== searchSeq) return;
+          results = next;
           activeIndex = 0;
           renderResults(results, q);
         }, 200);
@@ -199,7 +204,14 @@ export function initCommandPalette(api) {
 
       input.focus();
     }
-  });
+  };
+  document.addEventListener('keydown', onKeyDown);
+
+  // Fix 14: return cleanup for shell.destroy()
+  return () => {
+    document.removeEventListener('keydown', onKeyDown);
+    close();
+  };
 }
 
 export default initCommandPalette;

@@ -158,7 +158,7 @@ export async function renderMemoryView({ mountNode, api, adapter, stateStore, sy
 
     content.innerHTML = '<div class="mem-loading">Searching...</div>';
     try {
-      const resp = await fetch(`${MEMORY_API_BASE}/search?q=${encodeURIComponent(query, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`);
+      const resp = await fetch(`${MEMORY_API_BASE}/search?q=${encodeURIComponent(query)}`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       const data = await resp.json();
       searchResults = data.hits || []; console.log('[MemoryView] searchResults:', searchResults.length);
       renderContent();

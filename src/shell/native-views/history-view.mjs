@@ -75,12 +75,12 @@ export async function renderHistoryView({ mountNode, api, params = {}, navigateT
     }
   }
 
-  // Deep-link: auto-load task history if taskId param provided (P2/P9)
-  if (params.taskId) {
-    loadData({ task_id: params.taskId });
-  } else {
-    loadData({});
-  }
+  // Deep-link: auto-load from params (P2/P9 + Fix 7)
+  const initialQuery = {};
+  if (params.taskId) initialQuery.task_id = params.taskId;
+  if (params.actor) initialQuery.actor = params.actor;
+  if (params.action) initialQuery.action = params.action;
+  loadData(initialQuery);
 
   async function loadSnapshots() {
     container.innerHTML = '<div class="hist-loading">Loading snapshots...</div>';

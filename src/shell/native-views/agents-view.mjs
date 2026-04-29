@@ -166,6 +166,17 @@ export async function renderAgentsView({ mountNode, api, adapter, stateStore, sy
       updateDeptFilter();
       renderStats(blockers);
       renderGrid();
+
+      // Fix 5: Auto-select agent from deep-link params
+      if (params.agentName) {
+        const wanted = String(params.agentName).toLowerCase();
+        const match = agents.find(a => [a.id, a.agentId, a.name, a.displayName].some(v => String(v || '').toLowerCase() === wanted));
+        if (match) {
+          selectedAgentId = match.id || match.agentId || match.name;
+          renderGrid();
+          renderDetail();
+        }
+      }
     } catch (err) {
       root.querySelector('#avGrid').innerHTML = `<div style="padding:24px;color:#ef4444;">Error loading agents: ${escapeHtml(err.message)}</div>`;
     }
