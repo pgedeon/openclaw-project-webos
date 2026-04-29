@@ -1023,6 +1023,32 @@ server.listen(PORT, '0.0.0.0', async () => {
 
   // Initialize Asana storage
   await initAsanaStorage();
+
+  // Periodic gateway status sync — write gateway-status.json for health checks
+  async function syncGatewayStatus() {
+    try {
+      if (!gatewayClient || !gatewayClient.connected) {
+        // Write placeholder so health knows we're trying
+        fs.writeFileSync(GATEWAY_STATUS_FILE, JSON.stringify({ syncedAt: new Date().toISOString(), agents: [], agentCount: 0 }));
+        return;
+      }
+      const agents = await gatewayClient._request('agents.list', {});
+      const status = {
+        syncedAt: new Date().toISOString(),
+        agents: Array.isArray(agents) ? agents : [],
+        agentCount: Array.isArray(agents) ? agents.length : 0,
+      };
+      fs.writeFileSync(GATEWAY_STATUS_FILE, JSON.stringify(status, null, 2));
+      console.log(`[gateway-sync] Wrote status: ${status.agentCount} agents`);
+    } catch (e) {
+      console.warn('[gateway-sync] Failed:', e.message);
+      try {
+        fs.writeFileSync(GATEWAY_STATUS_FILE, JSON.stringify({ syncedAt: new Date().toISOString(), error: e.message }));
+      } catch {}
+    }
+  }
+  setInterval(syncGatewayStatus, 60000); // every 60s
+  setTimeout(syncGatewayStatus, 3000);   // initial sync after 3s
 }).on('error', (err) => {
   console.error(`❌ Server error: ${err.message}`);
   if (err.code === 'EADDRINUSE') {
