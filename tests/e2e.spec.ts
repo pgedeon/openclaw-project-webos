@@ -14,6 +14,12 @@ async function isServerUp(): Promise<boolean> {
   });
 }
 
+// Auth headers for API requests
+const AUTH_TOKEN = 'd3ef40609d190501b71f01e1e57b092697c3a1e09e0272fd920e1e37cbabbcef';
+function authHeaders(): Record<string, string> {
+  return { 'Authorization': `Bearer ${AUTH_TOKEN}` };
+}
+
 // ===== DESKTOP SHELL TESTS =====
 
 test.describe('OpenClaw Desktop Shell', () => {
@@ -426,6 +432,256 @@ test.describe('Error Handling', () => {
     await page.waitForTimeout(1000);
     // Filter out known non-critical errors
     const critical = errors.filter(e => !e.includes('task-options'));
+    expect(critical).toHaveLength(0);
+  });
+});
+
+// ===== NEW FEATURE API TESTS =====
+
+test.describe('History / Time Travel API', () => {
+
+  test.beforeEach(async ({ page }) => {
+    const up = await isServerUp();
+    if (!up) test.skip('Dashboard server not running');
+  });
+
+  test('GET /api/history returns entries', async ({ request }) => {
+    const resp = await request.get(`${BASE_URL}/api/history?limit=5`, { headers: authHeaders() });
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(body).toHaveProperty('entries');
+    expect(Array.isArray(body.entries)).toBe(true);
+  });
+
+  test('GET /api/history supports action filter', async ({ request }) => {
+    const resp = await request.get(`${BASE_URL}/api/history?action=create&limit=3`, { headers: authHeaders() });
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(body.entries).toBeDefined();
+  });
+
+  test('snapshots endpoint returns valid structure', async ({ request }) => {
+    // Create a task first to guarantee a snapshot exists
+    const createResp = await request.post(`${BASE_URL}/api/tasks`, {
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      data: { title: 'E2E Snapshot Test', project_id: 'fef111bf-815e-460a-b4a1-b1012be81375', status: 'backlog' },
+    });
+    expect(createResp.status()).toBe(201);
+    const task = await createResp.json();
+
+    // Move it to trigger a move snapshot
+    await request.post(`${BASE_URL}/api/tasks/${task.id}/move`, {
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      data: { status: 'in_progress' },
+    });
+
+    // Check snapshots
+    const snapResp = await request.get(`${BASE_URL}/api/snapshots/task/${task.id}`, { headers: authHeaders() });
+    expect(snapResp.status()).toBe(200);
+    const snapBody = await snapResp.json();
+    expect(snapBody.total).toBeGreaterThanOrEqual(1);
+    expect(snapBody.snapshots[0]).toHaveProperty('action');
+    expect(snapBody.snapshots[0]).toHaveProperty('state');
+
+    // Cleanup
+    await request.post(`${BASE_URL}/api/tasks/${task.id}/archive`, { headers: authHeaders() });
+  });
+
+  test('snapshot revert restores task state', async ({ request }) => {
+    // Create and move
+    const createResp = await request.post(`${BASE_URL}/api/tasks`, {
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      data: { title: 'E2E Revert Test', project_id: 'fef111bf-815e-460a-b4a1-b1012be81375', status: 'backlog' },
+    });
+    const task = await createResp.json();
+
+    await request.post(`${BASE_URL}/api/tasks/${task.id}/move`, {
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      data: { status: 'in_progress' },
+    });
+
+    // Get create snapshot
+    const snapResp = await request.get(`${BASE_URL}/api/snapshots/task/${task.id}`, { headers: authHeaders() });
+    const snapshots = (await snapResp.json()).snapshots;
+    const createSnap = snapshots.find((s: any) => s.action === 'create');
+    expect(createSnap).toBeDefined();
+
+    // Revert
+    const revertResp = await request.post(`${BASE_URL}/api/snapshots/${createSnap.id}/revert`, {
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      data: { actor: 'e2e-test' },
+    });
+    expect(revertResp.status()).toBe(200);
+    const revertBody = await revertResp.json();
+    expect(revertBody.reverted).toBe(true);
+
+    // Verify task is back to backlog
+    const taskResp = await request.get(`${BASE_URL}/api/tasks/${task.id}`, { headers: authHeaders() });
+    const updatedTask = await taskResp.json();
+    expect(updatedTask.status).toBe('backlog');
+
+    // Cleanup
+    await request.post(`${BASE_URL}/api/tasks/${task.id}/archive`, { headers: authHeaders() });
+  });
+});
+
+test.describe('Spaces API', () => {
+
+  test.beforeEach(async ({ page }) => {
+    const up = await isServerUp();
+    if (!up) test.skip('Dashboard server not running');
+  });
+
+  test('GET /api/spaces returns workspaces', async ({ request }) => {
+    const resp = await request.get(`${BASE_URL}/api/spaces`, { headers: authHeaders() });
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(body.spaces.length).toBeGreaterThanOrEqual(1);
+    expect(body.spaces[0]).toHaveProperty('name');
+    expect(body.spaces[0]).toHaveProperty('slug');
+  });
+
+  test('POST /api/spaces creates and DELETE removes', async ({ request }) => {
+    const createResp = await request.post(`${BASE_URL}/api/spaces`, {
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      data: { name: 'E2E Test Space', icon: '🧪', color: '#0078d4', description: 'Created by e2e test' },
+    });
+    expect(createResp.status()).toBe(201);
+    const space = await createResp.json();
+    expect(space.name).toBe('E2E Test Space');
+    expect(space.icon).toBe('🧪');
+
+    // Duplicate
+    const dupResp = await request.post(`${BASE_URL}/api/spaces/${space.id}/duplicate`, {
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      data: {},
+    });
+    expect(dupResp.status()).toBe(201);
+    const dup = await dupResp.json();
+    expect(dup.name).toContain('Copy');
+
+    // Delete original
+    const delResp = await request.delete(`${BASE_URL}/api/spaces/${space.id}`, { headers: authHeaders() });
+    expect(delResp.status()).toBe(200);
+
+    // Delete duplicate
+    await request.delete(`${BASE_URL}/api/spaces/${dup.id}`, { headers: authHeaders() });
+
+    // Cannot delete default
+    const defaultResp = await request.get(`${BASE_URL}/api/spaces`, { headers: authHeaders() });
+    const defaultSpace = (await defaultResp.json()).spaces.find((s: any) => s.is_default);
+    if (defaultSpace) {
+      const failDel = await request.delete(`${BASE_URL}/api/spaces/${defaultSpace.id}`, { headers: authHeaders() });
+      expect(failDel.status()).toBe(403);
+    }
+  });
+});
+
+test.describe('Export / Import API', () => {
+
+  test.beforeEach(async ({ page }) => {
+    const up = await isServerUp();
+    if (!up) test.skip('Dashboard server not running');
+  });
+
+  test('GET /api/export returns full bundle', async ({ request }) => {
+    const resp = await request.get(`${BASE_URL}/api/export`, { headers: authHeaders() });
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    // Export returns bundle data
+    expect(body).toBeDefined();
+    const hasData = body.projects || body.tasks || body.version;
+    expect(hasData).toBeTruthy();
+  });
+
+  test('POST /api/import/preview returns preview', async ({ request }) => {
+    const resp = await request.post(`${BASE_URL}/api/import/preview`, {
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      data: { version: 1, projects: [], tasks: [], workflows: [], auditLog: [] },
+    });
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(body).toBeDefined();
+  });
+});
+
+test.describe('Route Catalog & Auth', () => {
+
+  test.beforeEach(async ({ page }) => {
+    const up = await isServerUp();
+    if (!up) test.skip('Dashboard server not running');
+  });
+
+  test('GET /api/routes returns all registered routes', async ({ request }) => {
+    const resp = await request.get(`${BASE_URL}/api/routes`, { headers: authHeaders() });
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(body.total).toBeGreaterThanOrEqual(90);
+    expect(body.routes[0]).toHaveProperty('method');
+    expect(body.routes[0]).toHaveProperty('path');
+  });
+
+  test('GET /api/auth/self returns auth status', async ({ request }) => {
+    const resp = await request.get(`${BASE_URL}/api/auth/self`, { headers: authHeaders() });
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(body).toHaveProperty('authenticated');
+    expect(body).toHaveProperty('mode');
+  });
+
+  test('Workflow routing returns rules', async ({ request }) => {
+    const resp = await request.get(`${BASE_URL}/api/workflow-routing`, { headers: authHeaders() });
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(body.routes.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+test.describe('Memory API', () => {
+
+  test.beforeEach(async ({ page }) => {
+    const up = await isServerUp();
+    if (!up) test.skip('Dashboard server not running');
+  });
+
+  test('memory context endpoint returns data', async ({ request }) => {
+    const resp = await request.get(`${BASE_URL}/api/memory/context?limit=3`, { headers: authHeaders() });
+    expect(resp.status()).toBe(200);
+  });
+});
+
+test.describe('New Views Render', () => {
+
+  test.beforeEach(async ({ page }) => {
+    const up = await isServerUp();
+    if (!up) test.skip('Dashboard server not running');
+    await page.goto(`${BASE_URL}/index.html`, { waitUntil: 'networkidle', timeout: 15000 });
+  });
+
+  test('spaces view opens without JS errors', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    await page.goto(`${BASE_URL}/index.html?view=spaces`, { waitUntil: 'networkidle', timeout: 15000 });
+    await page.waitForTimeout(3000);
+    const critical = errors.filter(e => !e.includes('task-options') && !e.includes('network'));
+    expect(critical).toHaveLength(0);
+  });
+
+  test('history view opens without JS errors', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    await page.goto(`${BASE_URL}/index.html?view=history`, { waitUntil: 'networkidle', timeout: 15000 });
+    await page.waitForTimeout(3000);
+    const critical = errors.filter(e => !e.includes('task-options') && !e.includes('network'));
+    expect(critical).toHaveLength(0);
+  });
+
+  test('route catalog view opens without JS errors', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    await page.goto(`${BASE_URL}/index.html?view=route-catalog`, { waitUntil: 'networkidle', timeout: 15000 });
+    await page.waitForTimeout(3000);
+    const critical = errors.filter(e => !e.includes('task-options') && !e.includes('network'));
     expect(critical).toHaveLength(0);
   });
 });
