@@ -217,7 +217,10 @@ export async function renderNotepadView({ mountNode, stateStore }) {
     try {
       const res = await fetch(`${FS_API}/file`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}`,
+        },
         body: JSON.stringify({ path: tab.path, content: tab.content }),
       });
       const data = await res.json();
@@ -285,7 +288,9 @@ export async function renderNotepadView({ mountNode, stateStore }) {
     }
 
     try {
-      const res = await fetch(`${FS_API}/file?path=${encodeURIComponent(path, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } })}`);
+      const res = await fetch(`${FS_API}/file?path=${encodeURIComponent(path)}`, {
+        headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` },
+      });
       const data = await res.json();
 
       if (!res.ok) {
