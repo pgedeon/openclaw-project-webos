@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused standalone coverage for agent route handlers.
 - Added focused standalone coverage for Bing Webmaster route handlers.
 - Added focused standalone coverage and API documentation for chat route handlers.
+- Added focused standalone coverage and API documentation for workflow routing admin route handlers.
+
+### Fixed
+- Fixed workflow routing admin handlers so validation and missing-database responses are consistently reported as handled by the router.
 
 ## [2.0.0-rc.4] – 2026-03-23
 

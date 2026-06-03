@@ -102,6 +102,10 @@
   - [GET /api/workflow-runs/stuck](#get-apiworkflow-runsstuck)
   - [GET /api/workflow-runs/active](#get-apiworkflow-runsactive)
   - [POST /api/workflow-runs/cleanup-timeouts](#post-apiworkflow-runscleanup-timeouts)
+- [Workflow Routing API](#workflow-routing-api)
+  - [GET /api/workflow-routing](#get-apiworkflow-routing)
+  - [PUT /api/workflow-routing](#put-apiworkflow-routing)
+  - [DELETE /api/workflow-routing/:type](#delete-apiworkflow-routingtype)
 - [Workflow Templates API](#workflow-templates-api)
   - [GET /api/workflow-templates](#get-apiworkflow-templates)
   - [GET /api/workflow-templates/:name](#get-apiworkflow-templatesname)
@@ -1522,6 +1526,66 @@ List currently active (running/in-progress) workflow runs.
 
 Cleanup zombie sessions — marks runs as timed out if their gateway sessions are
 no longer active.
+
+---
+
+## Workflow Routing API
+
+Workflow routing rules map workflow types to target agents for dispatcher
+assignment.
+
+### `GET /api/workflow-routing`
+
+List all workflow routing rules ordered by descending priority.
+
+**Response** `200`:
+
+```json
+{
+  "routes": [
+    {
+      "workflow_type": "citation-improvement",
+      "agent_id": "affiliate-editorial",
+      "priority": 10,
+      "max_concurrent": 1,
+      "timeout_minutes": 60
+    }
+  ]
+}
+```
+
+### `PUT /api/workflow-routing`
+
+Create or update a routing rule for a workflow type.
+
+**Body**:
+
+```json
+{
+  "workflow_type": "citation-improvement",
+  "agent_id": "affiliate-editorial",
+  "priority": 10,
+  "max_concurrent": 1,
+  "timeout_minutes": 60
+}
+```
+
+`workflow_type` and `agent_id` are required. Omitted numeric fields default to
+`priority: 5`, `max_concurrent: 1`, and `timeout_minutes: 60`.
+
+**Response** `200` with the inserted or updated routing row.
+
+### `DELETE /api/workflow-routing/:type`
+
+Delete the routing rule for a workflow type.
+
+**Response** `200`:
+
+```json
+{ "deleted": true }
+```
+
+Returns `404` when no rule exists for `type`.
 
 ---
 
