@@ -6,6 +6,8 @@
 
 ## Table of Contents
 
+- [Authentication API](#authentication-api)
+  - [GET /api/auth/self](#get-apiauthself)
 - [Microservice Ports](#microservice-ports)
 - [Cron Manager API (Port 3878)](#cron-manager-api-port-3878)
   - [GET /health](#get-health)
@@ -118,6 +120,41 @@
   - [POST /api/system-scan/run](#post-apisystem-scanrun)
   - [POST /api/system-scan/followup](#post-apisystem-scanfollowup)
 - [Governance Module (Library)](#governance-module-library)
+
+## Authentication API
+
+The dashboard uses single-operator bearer token auth. Full login/session/RBAC auth is deferred until a multi-operator requirement exists. See [Auth Reference](auth-reference.md).
+
+### GET /api/auth/self
+
+Returns the current auth mode, effective actor, and deferred full-auth policy. This endpoint is public so the shell can validate whether its injected token is usable.
+
+**Response:**
+
+```json
+{
+  "authenticated": true,
+  "mode": "token",
+  "actor": "dashboard-operator",
+  "role": "operator",
+  "user": "dashboard-operator",
+  "tokenRequired": true,
+  "supportedSchemes": ["bearer-token"],
+  "publicRoutes": ["/api/health", "/api/auth/self"],
+  "capabilities": {
+    "bearerToken": true,
+    "singleOperator": true,
+    "sessions": false,
+    "rbac": false,
+    "multiOperator": false
+  },
+  "deferred": {
+    "fullAuth": true,
+    "until": "multi-operator requirement exists",
+    "reason": "Full auth is deferred until a multi-operator requirement exists."
+  }
+}
+```
 
 ---
 

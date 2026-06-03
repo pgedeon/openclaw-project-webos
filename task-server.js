@@ -67,6 +67,7 @@ const { registerHistoryRoutes } = require('./routes/history-routes');
 const { registerExportRoutes } = require('./routes/export-routes');
 const { registerSpaceRoutes } = require('./routes/space-routes');
 const { registerWorkflowRoutingRoutes } = require('./routes/workflow-routing-routes');
+const { timingSafeTokenEqual } = require('./routes/auth-policy');
 const SettingsStore = require('./lib/settings-store');
 
 function loadDashboardEnv() {
@@ -688,7 +689,7 @@ const server = http.createServer(async (req, res) => {
 
 
   // ── AUTH MIDDLEWARE ──────────────────────────────────────
-  // Require Bearer token for all /api/* routes (except /api/health)
+  // Require Bearer token for all /api/* routes (except /api/health and /api/auth/self)
   // when DASHBOARD_AUTH_TOKEN is set in environment
   // SSE endpoints (/api/events) can also authenticate via ?token= query param
   if (DASHBOARD_AUTH_TOKEN && url.startsWith('/api/') && url !== '/api/health' && url !== '/api/auth/self') {
@@ -700,11 +701,7 @@ const server = http.createServer(async (req, res) => {
       const tokenParam = qs.split('&').find(p => p.startsWith('token='));
       if (tokenParam) token = decodeURIComponent(tokenParam.split('=')[1]);
     }
-    // Constant-time comparison to prevent timing attacks
-    const crypto = require('crypto');
-    const tokenMatch = token && DASHBOARD_AUTH_TOKEN &&
-      token.length === DASHBOARD_AUTH_TOKEN.length &&
-      crypto.timingSafeEqual(Buffer.from(token), Buffer.from(DASHBOARD_AUTH_TOKEN));
+    const tokenMatch = timingSafeTokenEqual(token, DASHBOARD_AUTH_TOKEN);
     if (!tokenMatch) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized', message: 'Valid Bearer token required' }));

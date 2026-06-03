@@ -3,7 +3,7 @@
 Comprehensive documentation for the REST API provided by `task-server.js`.
 
 **Base URL:** `http://localhost:3876` (adjust `PORT` as needed)  
-**Authentication:** None by default; place behind a reverse proxy or VPN in production.  
+**Authentication:** Bearer token when `DASHBOARD_AUTH_TOKEN` is set; `/api/health` and `/api/auth/self` are public. See [Auth Reference](auth-reference.md).  
 **Content‑Type:** JSON for request/response bodies unless noted.  
 **Pagination:** `?page=` and `?limit=` parameters where applicable (defaults: page=1, limit=50).
 
@@ -85,6 +85,33 @@ Returns basic service health.
   "asana_storage": "enabled|disabled",
   "storage_type": "postgres|json",
   "port": 3876
+}
+```
+
+### `GET /api/auth/self`
+
+Returns the current auth mode and single-operator policy. This endpoint is public so the shell can detect whether its injected bearer token is valid.
+
+**Response:**
+
+```json
+{
+  "authenticated": true,
+  "mode": "token",
+  "actor": "dashboard-operator",
+  "role": "operator",
+  "tokenRequired": true,
+  "capabilities": {
+    "bearerToken": true,
+    "singleOperator": true,
+    "sessions": false,
+    "rbac": false,
+    "multiOperator": false
+  },
+  "deferred": {
+    "fullAuth": true,
+    "until": "multi-operator requirement exists"
+  }
 }
 ```
 

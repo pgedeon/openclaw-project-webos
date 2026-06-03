@@ -4,6 +4,7 @@
  */
 const { URL } = require('url');
 const oc = require('../lib/openclaw-cli');
+const { getSelfAuthState } = require('./auth-policy');
 
 function registerHealthRoutes(router) {
   // GET /api/health
@@ -254,16 +255,8 @@ function registerHealthRoutes(router) {
 
   // GET /api/auth/self — returns current auth mode and actor info
   router.add('GET', '/api/auth/self', async (req, res) => {
-    const authHeader = req.headers['authorization'] || '';
-    const token = (authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '').trim();
-    const expectedToken = process.env.DASHBOARD_AUTH_TOKEN || '';
-    const authenticated = token && token === expectedToken;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      authenticated,
-      mode: expectedToken ? 'token' : 'open',
-      user: authenticated ? 'dashboard-operator' : null,
-    }));
+    res.end(JSON.stringify(getSelfAuthState(req)));
     return true;
   });
 

@@ -5,6 +5,14 @@ All notable changes to the Project Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Codified current auth as single-operator bearer-token mode and exposed deferred full-auth policy metadata from `/api/auth/self`.
+
+### Added
+- Added auth reference documentation and focused auth policy regression coverage.
+
 ## [2.0.0-rc.4] – 2026-03-23
 
 ### Added

@@ -48,7 +48,7 @@ A Windows 11-style desktop environment for managing OpenClaw agent workflows —
 
 ### Desktop Shell
 - **Windows 11 aesthetic** — frosted glass taskbar, start menu with app grid, draggable/resizable windows
-- **26 windowed apps** — each feature is a self-contained view launched as a desktop window
+- **31 windowed apps** — each feature is a self-contained view launched as a desktop window
 - **18 desktop widgets** — always-on data panels (clock, health, task pulse, agent fleet, etc.)
 - **Start menu** — searchable app grid organized by category (Work, Operations, System, Integration)
 - **Taskbar** — live clock, system tray, running app indicators, theme toggle
@@ -115,7 +115,7 @@ Lightweight text editor window for viewing and editing files from the Explorer o
 | Document | Description |
 |----------|-------------|
 | [User Guide](docs/user-guide.md) | Desktop usage — tasks, board, timeline, agents, audit, cron |
-| [Views Reference](docs/views-reference.md) | All 23 desktop views — features, API calls, UI elements |
+| [Views Reference](docs/views-reference.md) | All 31 desktop views — features, API calls, UI elements |
 | [Widget Catalog](docs/widget-catalog.md) | All 18 desktop widgets — manifests, sizes, data sources |
 | [Admin Guide](docs/admin-guide.md) | Operator guide for administration and monitoring |
 
@@ -125,6 +125,7 @@ Lightweight text editor window for viewing and editing files from the Explorer o
 |----------|-------------|
 | [Core API](docs/api.md) | Task CRUD, projects, agents, dependencies |
 | [Complete API Reference](docs/api-reference-complete.md) | All supplementary APIs — services, catalog, org, metrics, diagnostics, governance, filesystem, memory, cron |
+| [Auth Reference](docs/auth-reference.md) | Current bearer-token mode and deferred full-auth policy |
 
 ### Architecture & Internals
 

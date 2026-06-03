@@ -10,6 +10,7 @@ Modular route handlers registered on the task-server.js router. Each file owns a
 |------|--------|--------|
 | `router.js` | — | Prefix-matching router with :param support |
 | `health-routes.js` | `/api/health`, `/api/health-status`, `/api/stats` | System health |
+| `auth-policy.js` | — | Single-operator bearer token auth policy helpers |
 | `task-routes.js` | `/api/tasks/*` | Task CRUD, history, bulk ops |
 | `project-routes.js` | `/api/projects/*` | Project CRUD |
 | `view-routes.js` | `/api/views/*` | Board/timeline/agent views, saved views |
@@ -43,5 +44,6 @@ module.exports = { registerMyRoutes };
 ## Conventions
 
 - Registration order matters — specific routes before catch-alls
-- All routes are authenticated via Bearer token middleware in task-server.js (except `/api/health`)
+- All routes are authenticated via Bearer token middleware in task-server.js (except `/api/health` and `/api/auth/self`)
+- Full login/session/RBAC auth is deferred until a multi-operator requirement exists; keep route modules in single-operator token mode until then
 - Route files should not import `pg` directly — use `ctx.asanaStorage`

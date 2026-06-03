@@ -14,6 +14,10 @@ The OpenClaw Dashboard is configured via environment variables. A template is pr
 |----------|----------|---------|-------------|-----------|
 | `PORT` | No | `3876` | HTTP port for the dashboard server | `task-server.js` |
 | `HOST` | No | `127.0.0.1` | Bind address for the dashboard server | `task-server.js` |
+| `DASHBOARD_AUTH_TOKEN` | Yes* | — | Bearer token for `/api/*` routes except `/api/health` and `/api/auth/self` (*required unless `REQUIRE_AUTH=false` is set) | `task-server.js` |
+| `REQUIRE_AUTH` | No | `true` | Set to `false` only for explicitly open local development without `DASHBOARD_AUTH_TOKEN` | `task-server.js` |
+
+The current auth mode is single-operator bearer token auth. Full login/session/RBAC auth is deferred until a multi-operator requirement exists. See [Auth Reference](auth-reference.md).
 
 ### Storage
 
@@ -70,6 +74,9 @@ These variables are used by operational scripts and can be set in the environmen
 
 ```bash
 PORT=3876
+DASHBOARD_AUTH_TOKEN=change-this-dashboard-token
+# Set REQUIRE_AUTH=false only for explicitly open local development.
+# REQUIRE_AUTH=false
 STORAGE_TYPE=postgres
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
