@@ -122,6 +122,9 @@
 - [Sessions API](#sessions-api)
   - [GET /api/sessions/active](#get-apisessionsactive)
   - [POST /api/sessions/:id/heartbeat](#post-apisessionsidheartbeat)
+- [Dashboard Agent Chat API](#dashboard-agent-chat-api)
+  - [POST /api/agent/chat](#post-apiagentchat)
+  - [GET /api/agent/chat/history](#get-apiagentchathistory)
 - [System Scan API](#system-scan-api)
   - [POST /api/system-scan/run](#post-apisystem-scanrun)
   - [POST /api/system-scan/followup](#post-apisystem-scanfollowup)
@@ -1705,6 +1708,51 @@ List currently active gateway sessions associated with workflow runs.
 ### `POST /api/sessions/:id/heartbeat`
 
 Record a heartbeat for a session, keeping it marked as active.
+
+---
+
+## Dashboard Agent Chat API
+
+### `POST /api/agent/chat`
+
+Send a dashboard-scoped message through the OpenClaw gateway. When dashboard context is provided, the server prefixes the message with the active view, space, project count, and recent task count before forwarding it to the gateway.
+
+**Body:**
+
+```json
+{
+  "message": "Summarize current blockers",
+  "sessionKey": "dashboard-agent",
+  "context": {
+    "activeView": "tasks",
+    "activeSpace": { "name": "Platform" },
+    "stats": { "projects": 3, "recentTasks": 8 }
+  }
+}
+```
+
+`message` is required. `sessionKey` defaults to `dashboard-agent`.
+
+### `GET /api/agent/chat/history`
+
+Return recent history for the dashboard agent session.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | number | `50` | Maximum history entries to request from the gateway |
+
+**Response** `200`:
+
+```json
+{
+  "history": [
+    { "role": "user", "content": "Summarize current blockers" },
+    { "role": "assistant", "content": "Two blockers need attention." }
+  ]
+}
+```
 
 ---
 
