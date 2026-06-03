@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused standalone coverage for agent route handlers.
 - Added focused standalone coverage for Bing Webmaster route handlers.
 - Added focused standalone coverage and API documentation for chat route handlers.
+- Added focused standalone coverage and API documentation for the SSE event stream route.
 - Added focused standalone coverage and API documentation for workflow routing admin route handlers.
 
 ### Fixed
