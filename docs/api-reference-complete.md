@@ -8,6 +8,8 @@
 
 - [Authentication API](#authentication-api)
   - [GET /api/auth/self](#get-apiauthself)
+- [Realtime Events API](#realtime-events-api)
+  - [GET /api/events](#get-apievents)
 - [Bing Webmaster API](#bing-webmaster-api)
   - [GET /api/bing/quota](#get-apibingquota)
   - [POST /api/bing/submit](#post-apibingsubmit)
@@ -167,6 +169,39 @@ Returns the current auth mode, effective actor, and deferred full-auth policy. T
     "reason": "Full auth is deferred until a multi-operator requirement exists."
   }
 }
+```
+
+---
+
+## Realtime Events API
+
+### `GET /api/events`
+
+Opens a Server-Sent Events stream for browser clients that need live dashboard updates. The stream sends an initial comment frame, periodic heartbeat comments, and named events broadcast by task, project, space, gateway, and chat route handlers.
+
+When `DASHBOARD_AUTH_TOKEN` is configured, this endpoint accepts either the standard `Authorization: Bearer <token>` header or `?token=<token>` for `EventSource` clients.
+
+**Response** `200`:
+
+Headers:
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `text/event-stream` |
+| `Cache-Control` | `no-cache` |
+| `Connection` | `keep-alive` |
+
+Initial frame:
+
+```text
+: connected
+```
+
+Event frame shape:
+
+```text
+event: task:changed
+data: {"action":"update","taskId":"task-1"}
 ```
 
 ---
