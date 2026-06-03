@@ -159,9 +159,13 @@ See `DEVELOPER_GUIDE.md` → "Adding a New View"
 ## Security
 
 - All credentials via environment variables (`.env`)
+- Dashboard API auth is single-operator bearer token mode via `DASHBOARD_AUTH_TOKEN`
+- `/api/health` and `/api/auth/self` are public; other `/api/*` routes require the bearer token when configured
+- Full login/session/RBAC auth is deferred until a multi-operator requirement exists
 - Secret scanning pipeline in `src/security/`
 - No hardcoded credentials in codebase
 - CORS headers configured per-origin
+- See `docs/auth-reference.md` for the current auth contract
 - See `.env.example` for all configurable settings
 
 ## Support

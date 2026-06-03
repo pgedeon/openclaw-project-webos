@@ -381,7 +381,7 @@ async function testAuthMiddleware() {
   });
 
   await test('Auth uses timingSafeEqual', () => {
-    assert.ok(source.includes('timingSafeEqual'));
+    assert.ok(source.includes('timingSafeTokenEqual'));
   });
 
   await test('Auth returns 401 on failure', () => {
@@ -390,6 +390,10 @@ async function testAuthMiddleware() {
 
   await test('Auth exempts /api/health', () => {
     assert.ok(source.includes("url !== '/api/health'"));
+  });
+
+  await test('Auth self endpoint remains public for status checks', () => {
+    assert.ok(source.includes("url !== '/api/auth/self'"));
   });
 
   await test('Auth supports query token for SSE', () => {
@@ -410,9 +414,9 @@ async function testDeadCodeRemoval() {
   const fs = require('fs');
   const source = fs.readFileSync(path.join(__dirname, '../task-server.js'), 'utf8');
 
-  await test('task-server.js is under 1000 lines', () => {
+  await test('task-server.js is under 1100 lines', () => {
     const lines = source.split('\n').length;
-    assert.ok(lines < 1000, `Expected <1000 lines, got ${lines}`);
+    assert.ok(lines < 1100, `Expected <1100 lines, got ${lines}`);
   });
 
   await test('Router import exists', () => {

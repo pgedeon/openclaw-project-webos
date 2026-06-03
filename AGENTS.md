@@ -9,7 +9,7 @@ Win11-style desktop environment for managing OpenClaw agent workflows. Served en
 - **No build step.** All frontend code is vanilla ES modules loaded directly by the browser.
 - **No framework.** No React, Vue, Svelte, etc. Pure DOM manipulation.
 - **PostgreSQL backend.** All persistent data lives in PostgreSQL via `storage/asana.js`.
-- **Bearer token auth.** Single `DASHBOARD_AUTH_TOKEN` for all API routes except `/api/health`.
+- **Bearer token auth.** Single `DASHBOARD_AUTH_TOKEN` for all API routes except `/api/health` and `/api/auth/self`.
 - **Multiple Node servers.** task-server (3876), cron-manager (3878), memory-api (3879), filesystem-api (3880). All proxy through task-server for browser access.
 
 ## Directory Ownership

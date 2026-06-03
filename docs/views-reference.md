@@ -1,8 +1,8 @@
 # Views Reference — All Desktop Windows
 
-The OpenClaw Project WebOS exposes **23 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
+The OpenClaw Project WebOS exposes **31 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
 
-Views are organized into three categories in the start menu: **Work**, **Operations**, and **Admin**.
+Views are organized into four categories in the start menu: **Work**, **Operations**, **System**, and **Admin**.
 
 > **Already documented in detail** in [user-guide.md](user-guide.md): Tasks, Board, Timeline, Agent, Audit, and Cron views. These are briefly cross-referenced below but not re-documented.
 
@@ -15,6 +15,7 @@ Views are organized into three categories in the start menu: **Work**, **Operati
 - [Board](#board) ✓ (see user-guide.md)
 - [Timeline](#timeline) ✓ (see user-guide.md)
 - [Agents](#agents) ✓ (see user-guide.md)
+- [Sessions](#sessions)
 - [Requests](#requests)
 - [Publish](#publish)
 - [Approvals](#approvals)
@@ -27,9 +28,16 @@ Views are organized into three categories in the start menu: **Work**, **Operati
 - [Runbooks](#runbooks)
 - [Memory](#memory)
 - [Handoffs](#handoffs)
+- [History](#history)
 - [Audit](#audit) ✓ (see user-guide.md)
 - [Cron](#cron) ✓ (see user-guide.md)
 - [Diagnostics](#diagnostics)
+
+### System
+- [Spaces](#spaces)
+- [Route Catalog](#route-catalog)
+- [Workflow Routing](#workflow-routing)
+- [Docs Drift](#docs-drift)
 
 ### Admin
 - [Departments](#departments)
@@ -38,6 +46,8 @@ Views are organized into three categories in the start menu: **Work**, **Operati
 - [Skills & Tools](#skills--tools)
 - [Workflows](#workflows)
 - [Operations](#operations)
+- [Bing Webmaster](#bing-webmaster)
+- [Settings](#settings)
 
 ### Internal
 - [Agent Queue](#agent-queue)
@@ -289,8 +299,6 @@ Full audit trail. Documented in the [User Guide — Audit View](user-guide.md#au
 
 Cron job management. Documented in the [User Guide — Cron View](user-guide.md#cron-view).
 
-### Diagnostics
-
 ### History
 
 **File:** `src/shell/native-views/history-view.mjs`
@@ -304,6 +312,8 @@ Two-pane history/diff UI for browsing audit log entries and state snapshots.
 - Per-task history drilling
 - Snapshot preview and revert
 - API: `GET /api/history`, `GET /api/snapshots/:type/:id`
+
+---
 
 ### Spaces
 
@@ -319,6 +329,58 @@ Multi-workspace management UI. Create, edit, duplicate, and delete workspaces.
 - Taskbar space switcher integration
 - API: `GET/POST/PUT/DELETE /api/spaces`
 
+### Route Catalog
+
+**Category:** System · **ID:** `route-catalog` · **Default size:** 1080×720
+
+Operator-facing API inventory generated from registered task-server routes.
+
+**Features:**
+- **Route list** — displays registered route method/path pairs from `GET /api/routes`
+- **Search and filtering** — narrow routes by method, path, or API area
+- **Coverage hints** — helps compare implemented routes with API documentation
+
+**API endpoints used:**
+- `GET /api/routes`
+
+---
+
+### Workflow Routing
+
+**Category:** System · **ID:** `workflow-routing` · **Default size:** 1120×720
+
+Administration view for workflow-to-agent routing policy.
+
+**Features:**
+- **Routing table** — lists workflow routing rules and target agents
+- **Rule editing** — update routing priority, agent assignment, and activation status
+- **Operational visibility** — inspect routing metadata used by workflow dispatch
+
+**API endpoints used:**
+- `GET /api/workflow-routing`
+- `PUT /api/workflow-routing`
+- `DELETE /api/workflow-routing/:workflow_type`
+
+---
+
+### Docs Drift
+
+**Category:** System · **ID:** `docs-drift` · **Default size:** 1080×720
+
+Documentation drift monitor for route, view, widget, and schema coverage checks.
+
+**Features:**
+- **Drift summary** — shows current docs drift status and recent check output
+- **Route coverage view** — highlights routes that may need API reference entries
+- **Registry coverage view** — compares app and widget registries against docs
+
+**API endpoints used:**
+- `GET /api/routes`
+- `GET /api/stats`
+
+---
+
+### Diagnostics
 
 **Category:** Operations · **ID:** `diagnostics` · **Default size:** 1080×720
 
