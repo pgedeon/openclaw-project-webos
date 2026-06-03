@@ -8,6 +8,12 @@
 
 - [Authentication API](#authentication-api)
   - [GET /api/auth/self](#get-apiauthself)
+- [Bing Webmaster API](#bing-webmaster-api)
+  - [GET /api/bing/quota](#get-apibingquota)
+  - [POST /api/bing/submit](#post-apibingsubmit)
+  - [POST /api/bing/submit-batch](#post-apibingsubmit-batch)
+  - [POST /api/bing/indexnow](#post-apibingindexnow)
+  - [GET /api/bing/status](#get-apibingstatus)
 - [Microservice Ports](#microservice-ports)
 - [Cron Manager API (Port 3878)](#cron-manager-api-port-3878)
   - [GET /health](#get-health)
@@ -152,6 +158,100 @@ Returns the current auth mode, effective actor, and deferred full-auth policy. T
     "fullAuth": true,
     "until": "multi-operator requirement exists",
     "reason": "Full auth is deferred until a multi-operator requirement exists."
+  }
+}
+```
+
+---
+
+## Bing Webmaster API
+
+The task server exposes a server-side proxy for Bing Webmaster URL submission and IndexNow calls. These routes require `BING_WEBMASTER_API_KEY`; when the key is absent, the route module does not register `/api/bing/*` routes.
+
+### GET /api/bing/quota
+
+Returns the Bing URL submission quota for a site.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `siteUrl` | string | `https://3dput.com` | Site URL registered in Bing Webmaster Tools |
+
+**Response:**
+
+```json
+{
+  "ok": true,
+  "quota": {
+    "dailyQuota": 100,
+    "used": 3
+  }
+}
+```
+
+### POST /api/bing/submit
+
+Submits one URL through Bing Webmaster Tools.
+
+**Body:**
+
+```json
+{
+  "siteUrl": "https://3dput.com",
+  "url": "https://3dput.com/page"
+}
+```
+
+`url` is required. `siteUrl` defaults to `https://3dput.com`.
+
+### POST /api/bing/submit-batch
+
+Submits up to 500 URLs through Bing Webmaster Tools.
+
+**Body:**
+
+```json
+{
+  "siteUrl": "https://3dput.com",
+  "urls": [
+    "https://3dput.com/page-a",
+    "https://3dput.com/page-b"
+  ]
+}
+```
+
+`urls` must be a non-empty array. Requests with more than 500 URLs return `400`.
+
+### POST /api/bing/indexnow
+
+Submits URLs through the WordPress IndexNow plugin proxy configured by `WORDPRESS_API_URL`, `WORDPRESS_USER`, and `WORDPRESS_APP_PASS`.
+
+**Body:**
+
+```json
+{
+  "urls": [
+    "https://3dput.com/page-a",
+    "https://3dput.com/page-b"
+  ]
+}
+```
+
+Returns `200` when every URL succeeds, or `207` when at least one URL is rejected by the upstream IndexNow endpoint.
+
+### GET /api/bing/status
+
+Checks whether the configured Bing API key can read quota information for the default site.
+
+**Response:**
+
+```json
+{
+  "ok": true,
+  "apiKeyConfigured": true,
+  "quota": {
+    "remaining": 12
   }
 }
 ```

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added auth reference documentation and focused auth policy regression coverage.
 - Added focused standalone coverage for agent route handlers.
+- Added focused standalone coverage for Bing Webmaster route handlers.
 
 ## [2.0.0-rc.4] – 2026-03-23
 
