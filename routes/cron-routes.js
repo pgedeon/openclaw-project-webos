@@ -4,11 +4,18 @@
  */
 const oc = require('../lib/openclaw-cli');
 
+function assertCliSuccess(data) {
+  if (data && typeof data.error === 'string' && data.error.trim()) {
+    throw new Error(data.error);
+  }
+}
+
 function registerCronRoutes(router) {
   // GET /api/cron/jobs — list all cron jobs from gateway scheduler
   router.add('GET', '/api/cron/jobs', async (req, res, ctx) => {
     try {
       const data = await oc.cronList();
+      assertCliSuccess(data);
       // Normalize: CLI returns { jobs: [...] }, keep that shape
       const jobs = (data.jobs || []).map(j => ({
         id: j.id,
@@ -36,6 +43,7 @@ function registerCronRoutes(router) {
   router.add('GET', '/api/cron/jobs/:id/runs', async (req, res, ctx, params) => {
     try {
       const data = await oc.cronRuns(params.id, 10);
+      assertCliSuccess(data);
       const runs = data.runs || data || [];
       ctx.sendJSON(res, 200, { runs });
     } catch (err) {
@@ -49,6 +57,7 @@ function registerCronRoutes(router) {
   router.add('POST', '/api/cron/jobs/:id/run', async (req, res, ctx, params) => {
     try {
       const data = await oc.cronRun(params.id);
+      assertCliSuccess(data);
       ctx.sendJSON(res, 202, { success: true, message: 'Job triggered', data });
     } catch (err) {
       console.error(`[Cron] Failed to run job ${params.id}:`, err);
@@ -61,6 +70,7 @@ function registerCronRoutes(router) {
   router.add('POST', '/api/cron/jobs/:id/enable', async (req, res, ctx, params) => {
     try {
       const data = await oc.cronEnable(params.id);
+      assertCliSuccess(data);
       ctx.sendJSON(res, 200, { success: true, data });
     } catch (err) {
       console.error(`[Cron] Failed to enable job ${params.id}:`, err);
@@ -73,6 +83,7 @@ function registerCronRoutes(router) {
   router.add('POST', '/api/cron/jobs/:id/disable', async (req, res, ctx, params) => {
     try {
       const data = await oc.cronDisable(params.id);
+      assertCliSuccess(data);
       ctx.sendJSON(res, 200, { success: true, data });
     } catch (err) {
       console.error(`[Cron] Failed to disable job ${params.id}:`, err);

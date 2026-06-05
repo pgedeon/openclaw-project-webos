@@ -125,6 +125,7 @@ List all projects.
 
 **Query:**
 - `status` (optional): filter by `active|paused|archived`
+- `workspace_id` (optional): limit results to a workspace/space
 - `tags` (optional): comma-separated tags to match
 - `search` (optional): case-insensitive name/description filter
 - `include_meta=true` (optional): include task counts and related metadata
@@ -520,22 +521,28 @@ Increment the retry count for a task and reset its status to `ready`, clearing a
 
 ### `GET /api/cron/jobs`
 
-List all cron jobs defined in the `crontab/` directory.
+List all cron jobs from the OpenClaw gateway scheduler.
 
 **Response:**
 
 ```json
-[
-  {
-    "id": "string (filename without .cron)",
-    "name": "string (optional job name from file comment)",
-    "schedule": "string (cron expression or description)",
-    "enabled": true,
-    "lastRun": "ISO8601|null",
-    "nextRun": "ISO8601|null",
-    "lastExitCode": number|null
-  }
-]
+{
+  "jobs": [
+    {
+      "id": "string",
+      "name": "string",
+      "description": "string",
+      "schedule": "string",
+      "enabled": true,
+      "status": "success|failed|unknown",
+      "lastRun": "ISO8601|null",
+      "nextRun": "ISO8601|null",
+      "agentId": "string|null",
+      "model": "string|null",
+      "_raw": {}
+    }
+  ]
+}
 ```
 
 ### `GET /api/cron/jobs/:id/runs`
@@ -548,31 +555,75 @@ Get execution history for a specific cron job.
 **Response:**
 
 ```json
-[
-  {
-    "timestamp": "ISO8601",
-    "exitCode": number,
-    "durationMs": number,
-    "output": "string (last 4KB of stdout/stderr)"
-  }
-]
+{
+  "runs": [
+    {
+      "id": "string",
+      "status": "success|failed|running",
+      "startedAt": "ISO8601"
+    }
+  ]
+}
 ```
 
 ### `POST /api/cron/jobs/:id/run`
 
 Manually trigger a cron job execution now (bypasses schedule).
 
-**Response:** `200 OK` with:
+**Response:** `202 Accepted` with:
 
 ```json
 {
-  "triggered": true,
-  "jobId": "string",
-  "timestamp": "ISO8601"
+  "success": true,
+  "message": "Job triggered",
+  "data": {}
 }
 ```
 
-**Error:** `404` if job not found; `500` if job execution fails.
+**Error:** `500` if the OpenClaw CLI dependency fails or job execution cannot start.
+
+### `POST /api/cron/jobs/:id/enable`
+
+Enable a disabled cron job through the OpenClaw CLI.
+
+**Response:** `200 OK` with `{ "success": true, "data": {} }`.
+
+### `POST /api/cron/jobs/:id/disable`
+
+Disable an enabled cron job through the OpenClaw CLI.
+
+**Response:** `200 OK` with `{ "success": true, "data": {} }`.
+
+### `POST /api/cron/jobs`
+
+Create a legacy `.cron` file in `${WORKSPACE_ROOT}/.cron` for backward compatibility.
+
+**Body:**
+
+```json
+{
+  "id": "string",
+  "description": "string optional",
+  "minute": "*",
+  "hour": "*",
+  "dom": "*",
+  "month": "*",
+  "dow": "*",
+  "command": "string"
+}
+```
+
+**Response:** `201 Created` with `{ "success": true, "id": "string" }`.
+
+**Error:** `400` when `id` or `command` is missing; `500` if the file cannot be written.
+
+### `DELETE /api/cron/jobs/:id`
+
+Delete a legacy `.cron` file from `${WORKSPACE_ROOT}/.cron`.
+
+**Response:** `200 OK` with `{ "success": true }`.
+
+**Error:** `404` if no matching file exists; `500` if deletion fails.
 
 ---
 
