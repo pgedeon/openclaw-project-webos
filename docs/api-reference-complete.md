@@ -29,8 +29,12 @@
 - [Memory API (Port 3879)](#memory-api-port-3879)
   - [GET /api/memory/list](#get-apimemorylist)
   - [GET /api/memory/file/:name](#get-apimemoryfilename)
+  - [POST /api/memory/file/:name](#post-apimemoryfilename)
   - [PUT /api/memory/file/:name](#put-apimemoryfilename)
+  - [POST /api/memory/file/:name/append](#post-apimemoryfilenameappend)
+  - [DELETE /api/memory/file/:name](#delete-apimemoryfilename)
   - [GET /api/memory/root](#get-apimemoryroot)
+  - [GET /api/memory/context](#get-apimemorycontext)
   - [GET /api/memory/search](#get-apimemorysearch)
   - [GET /api/memory/facts](#get-apimemoryfacts)
   - [GET /api/memory/facts/list](#get-apimemoryfactslist)
@@ -487,6 +491,28 @@ Read a specific memory file by name.
 }
 ```
 
+### `POST /api/memory/file/:name`
+
+Create a new memory file.
+
+**URL parameters**:
+
+| Param | Type | Description |
+|---|---|---|
+| `name` | string | Memory file name to create |
+
+**Body**:
+
+```json
+{ "content": "# New Memory\nInitial content..." }
+```
+
+**Response** `201`:
+
+```json
+{ "created": true, "name": "new-topic.md", "size": 31 }
+```
+
 ### `PUT /api/memory/file/:name`
 
 Write content to an existing memory file.
@@ -509,6 +535,44 @@ Write content to an existing memory file.
 { "saved": true, "name": "2026-03-15.md", "size": 256 }
 ```
 
+### `POST /api/memory/file/:name/append`
+
+Append content to an existing memory file.
+
+**URL parameters**:
+
+| Param | Type | Description |
+|---|---|---|
+| `name` | string | Memory file name to append |
+
+**Body**:
+
+```json
+{ "content": "\n- Follow-up note" }
+```
+
+**Response** `200`:
+
+```json
+{ "appended": true, "name": "2026-03-15.md", "size": 512 }
+```
+
+### `DELETE /api/memory/file/:name`
+
+Delete a memory file.
+
+**URL parameters**:
+
+| Param | Type | Description |
+|---|---|---|
+| `name` | string | Memory file name to delete |
+
+**Response** `200`:
+
+```json
+{ "deleted": true, "name": "old-topic.md" }
+```
+
 ### `GET /api/memory/root`
 
 Read the main MEMORY.md file.
@@ -520,6 +584,26 @@ Read the main MEMORY.md file.
   "name": "MEMORY.md",
   "content": "# Long-Term Memory\n...",
   "size": 4096
+}
+```
+
+### `GET /api/memory/context`
+
+Return prompt-ready memory context assembled from memory files.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `scope` | string | `all` | Context scope requested by the caller |
+| `limit` | number | — | Maximum number of memory entries to include |
+
+**Response** `200`:
+
+```json
+{
+  "context": "## Long-Term Memory\n...",
+  "sources": ["MEMORY.md", "memory/2026-03-15.md"]
 }
 ```
 

@@ -10,18 +10,25 @@ const http = require('http');
 const MEMORY_PORT = parseInt(process.env.MEMORY_API_PORT || '3879', 10);
 const MEMORY_HOST = '127.0.0.1';
 
-function proxyToMemory(req, res, urlPath) {
+function proxyToMemory(req, res, urlPath, bodyOverride) {
   return new Promise((resolve) => {
+    const headers = {
+      ...req.headers,
+      host: `${MEMORY_HOST}:${MEMORY_PORT}`,
+    };
+
+    if (bodyOverride !== undefined) {
+      headers['content-length'] = Buffer.byteLength(bodyOverride);
+      delete headers['transfer-encoding'];
+    }
+
     const proxyReq = http.request(
       {
         hostname: MEMORY_HOST,
         port: MEMORY_PORT,
         path: urlPath,
         method: req.method,
-        headers: {
-          ...req.headers,
-          host: `${MEMORY_HOST}:${MEMORY_PORT}`,
-        },
+        headers,
       },
       (proxyRes) => {
         proxyRes.headers['access-control-allow-origin'] =
@@ -39,12 +46,25 @@ function proxyToMemory(req, res, urlPath) {
       resolve(true);
     });
 
-    req.pipe(proxyReq, { end: true });
+    if (bodyOverride !== undefined) {
+      proxyReq.end(bodyOverride);
+    } else {
+      req.pipe(proxyReq, { end: true });
+    }
   });
 }
 
 function qs(req) {
   return (req.url || '').split('?')[1] || '';
+}
+
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
 }
 
 function registerMemoryRoutes(router) {
@@ -63,6 +83,23 @@ function registerMemoryRoutes(router) {
       cleaned = cleaned.replace(pattern, (match) => match.slice(0, 4) + '***REDACTED***');
     }
     return cleaned;
+  }
+
+  async function proxyScrubbedContent(req, res, urlPath) {
+    const rawBody = await readRequestBody(req);
+    let proxyBody = rawBody;
+
+    try {
+      const payload = rawBody ? JSON.parse(rawBody) : {};
+      if (typeof payload.content === 'string') {
+        payload.content = scrubContent(payload.content);
+        proxyBody = JSON.stringify(payload);
+      }
+    } catch (err) {
+      proxyBody = rawBody;
+    }
+
+    return proxyToMemory(req, res, urlPath, proxyBody);
   }
 
   // ── GET routes ──────────────────────────────────────────
@@ -111,17 +148,17 @@ function registerMemoryRoutes(router) {
   // ── PUT routes ──────────────────────────────────────────
 
   router.add('PUT', '/api/memory/file/:name', async (req, res, ctx, params) => {
-    return proxyToMemory(req, res, `/api/memory/file/${params.name}`);
+    return proxyScrubbedContent(req, res, `/api/memory/file/${params.name}`);
   });
 
   // ── POST routes (more specific patterns first) ──────────
 
   router.add('POST', '/api/memory/file/:name/append', async (req, res, ctx, params) => {
-    return proxyToMemory(req, res, `/api/memory/file/${params.name}/append`);
+    return proxyScrubbedContent(req, res, `/api/memory/file/${params.name}/append`);
   });
 
   router.add('POST', '/api/memory/file/:name', async (req, res, ctx, params) => {
-    return proxyToMemory(req, res, `/api/memory/file/${params.name}`);
+    return proxyScrubbedContent(req, res, `/api/memory/file/${params.name}`);
   });
 
   router.add('POST', '/api/memory/facts', async (req, res) => {
