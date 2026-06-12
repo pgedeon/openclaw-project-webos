@@ -132,6 +132,11 @@
 - [Sessions API](#sessions-api)
   - [GET /api/sessions/active](#get-apisessionsactive)
   - [POST /api/sessions/:id/heartbeat](#post-apisessionsidheartbeat)
+- [OpenClaw Session Reader API](#openclaw-session-reader-api)
+  - [GET /api/oc/agents](#get-apiocagents)
+  - [GET /api/oc/sessions](#get-apiocsessions)
+  - [GET /api/oc/sessions/:sessionId](#get-apiocsessionssessionid)
+  - [GET /api/oc/sessions/:sessionId/messages](#get-apiocsessionssessionidmessages)
 - [Dashboard Agent Chat API](#dashboard-agent-chat-api)
   - [POST /api/agent/chat](#post-apiagentchat)
   - [GET /api/agent/chat/history](#get-apiagentchathistory)
@@ -1891,6 +1896,118 @@ List currently active gateway sessions associated with workflow runs.
 ### `POST /api/sessions/:id/heartbeat`
 
 Record a heartbeat for a session, keeping it marked as active.
+
+---
+
+## OpenClaw Session Reader API
+
+Read OpenClaw agent session metadata and JSONL conversation history. These routes are read-only and require the dashboard bearer token.
+
+### `GET /api/oc/agents`
+
+List OpenClaw agents discovered by the session reader.
+
+**Response** `200`:
+
+```json
+{
+  "agents": [
+    { "agentId": "main", "sessions": 12 }
+  ]
+}
+```
+
+### `GET /api/oc/sessions`
+
+List session metadata for one agent, or for all agents when `all=true`.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `agent` | string | `main` | Agent ID to read when `all` is not `true` |
+| `all` | boolean | `false` | When `true`, flatten sessions across all agents |
+| `active` | number | none | Return only sessions updated within the last N minutes |
+
+**Response** `200`:
+
+```json
+{
+  "agentId": "main",
+  "sessions": [
+    {
+      "sessionId": "session-uuid",
+      "key": "agent:main:webchat:abc",
+      "kind": "webchat",
+      "channel": "webchat",
+      "icon": "💬",
+      "status": "active",
+      "updatedAt": 1770897600000
+    }
+  ],
+  "total": 1
+}
+```
+
+When `all=true`, each session also includes `agentId` and the top-level `agentId` field is omitted.
+
+### `GET /api/oc/sessions/:sessionId`
+
+Return one session's metadata plus the latest messages.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `agent` | string | `main` | Agent ID that owns the session |
+| `messages` | number | `30` | Number of latest messages to include |
+
+**Response** `200`:
+
+```json
+{
+  "sessionId": "session-uuid",
+  "key": "agent:main:webchat:abc",
+  "kind": "webchat",
+  "channel": "webchat",
+  "icon": "💬",
+  "status": "active",
+  "messages": [
+    { "line": 42, "type": "message", "message": { "role": "assistant", "content": "Ready." } }
+  ],
+  "totalLines": 42,
+  "hasOlder": true,
+  "oldestLine": 12
+}
+```
+
+Returns `404` with `{ "error": "Session not found" }` when the session metadata is unavailable.
+
+### `GET /api/oc/sessions/:sessionId/messages`
+
+Return paginated session JSONL entries.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `agent` | string | `main` | Agent ID that owns the session |
+| `after` | number | `0` | Start reading after this line number |
+| `limit` | number | `50` | Maximum entries to return |
+| `filter` | string | `messages` | `messages` for chat messages only, or `all` for all supported JSONL entry types |
+
+**Response** `200`:
+
+```json
+{
+  "sessionId": "session-uuid",
+  "messages": [
+    { "line": 43, "type": "message", "message": { "role": "user", "content": "Next step?" } }
+  ],
+  "nextCursor": null,
+  "hasMore": false
+}
+```
 
 ---
 
