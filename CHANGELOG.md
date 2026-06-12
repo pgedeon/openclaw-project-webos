@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused standalone coverage and API documentation for cron route handlers.
 - Added focused standalone coverage and API documentation for memory proxy route handlers.
 - Added focused standalone coverage for project route handlers.
+- Added focused standalone coverage and API documentation for OpenClaw session reader route handlers.
 - Added focused standalone coverage and API documentation for the SSE event stream route.
 - Added focused standalone coverage and API documentation for workflow routing admin route handlers.
 
