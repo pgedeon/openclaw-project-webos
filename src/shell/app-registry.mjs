@@ -121,7 +121,17 @@ const appIcon = {
   chatBubble: iconTemplate(`
     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
   `),
-};
+  sunrise: iconTemplate(`
+    <path d="M12 2v8" />
+    <path d="m4.93 4.93 1.41 1.41" />
+    <path d="m17.66 6.34 1.41-1.41" />
+    <path d="M2 12h2M20 12h2" />
+    <path d="m6.34 17.66-1.41 1.41" />
+    <path d="m19.07 19.07-1.41-1.41" />
+    <path d="M12 10a4 4 0 0 0-4 4" />
+    <path d="M2 20h20" />
+    <path d="m8 14 2-2 2 2 2-2 2 2" />
+  `),};
 
 export const APP_CATEGORY_ORDER = ['Work', 'Operations', 'Admin'];
 
@@ -135,6 +145,16 @@ export const APP_REGISTRY = Object.freeze([
     defaultWidth: 1080,
     defaultHeight: 720,
     viewModule: './native-views/tasks-view.mjs',
+  },
+  {
+    id: 'morning-report',
+    label: 'Morning Briefing',
+    icon: appIcon.sunrise,
+    url: '/?view=morning-report',
+    viewModule: './native-views/morning-report-view.mjs',
+    category: 'Work',
+    defaultWidth: 880,
+    defaultHeight: 700,
   },
   {
     id: 'board',
@@ -442,6 +462,7 @@ export const PINNED_APP_IDS = Object.freeze([
   'skills-tools',
   'operations',
   'workflows',
+  'morning-report',
 ]);
 
 export const APP_MAP = new Map(APP_REGISTRY.map((app) => [app.id, app]));
