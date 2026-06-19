@@ -2162,7 +2162,7 @@ Revert an entity to a previous snapshot state. Records pre-revert and revert sna
 
 Export the entire dashboard as a JSON bundle.
 
-**Response:** `{ version, exportedAt, projects, tasks, workflows, auditLog, settings, counts }`
+**Response:** `{ version, exportedAt, projects, tasks, workflows, auditLog, settings }`
 
 ### `POST /api/import/preview`
 
@@ -2170,7 +2170,7 @@ Preview what an import would do without applying it.
 
 **Body:** `{ version, projects?, tasks?, workflows?, auditLog?, settings? }`
 
-**Response:** `{ preview: { projects, tasks, workflows, auditLog } }`
+**Response:** `{ version, projects, tasks, workflows, auditLog, hasSettings, projectNames }`
 
 ### `POST /api/import`
 
