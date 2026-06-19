@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codified current auth as single-operator bearer-token mode and exposed deferred full-auth policy metadata from `/api/auth/self`.
 
 ### Added
+- Added focused standalone coverage and API documentation corrections for export/import route handlers.
 - Added auth reference documentation and focused auth policy regression coverage.
 - Added focused standalone coverage for agent route handlers.
 - Added focused standalone coverage for Bing Webmaster route handlers.
@@ -24,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused standalone coverage and API documentation for workflow routing admin route handlers.
 
 ### Fixed
+- Fixed import route validation so malformed bundles do not acquire a database client and connection failures return handled JSON errors.
 - Fixed project list route storage failures so they return handled JSON 500 responses.
 - Fixed cron route handling of OpenClaw CLI dependency errors returned as `{ error }` payloads.
 - Fixed workflow routing admin handlers so validation and missing-database responses are consistently reported as handled by the router.
