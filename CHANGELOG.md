@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused standalone coverage and API documentation for cron route handlers.
 - Added focused standalone coverage and API documentation for memory proxy route handlers.
 - Added focused standalone coverage for project route handlers.
+- Added focused standalone coverage and API documentation for space route handlers.
 - Added focused standalone coverage and API documentation for OpenClaw session reader route handlers.
 - Added focused standalone coverage and API documentation for the SSE event stream route.
 - Added focused standalone coverage for view route handlers.
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed import route validation so malformed bundles do not acquire a database client and connection failures return handled JSON errors.
 - Fixed project list route storage failures so they return handled JSON 500 responses.
+- Fixed space route unavailable-database handling and body parser error status responses.
 - Fixed cron route handling of OpenClaw CLI dependency errors returned as `{ error }` payloads.
 - Fixed workflow routing admin handlers so validation and missing-database responses are consistently reported as handled by the router.
 
