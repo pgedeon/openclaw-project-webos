@@ -2226,6 +2226,32 @@ Duplicate a workspace.
 
 **Response:** New workspace (201)
 
+### `POST /api/spaces/:id/set-default`
+
+Set a workspace as the default workspace.
+
+**Response:** Workspace object
+
+### `GET /api/spaces/:id/projects`
+
+List projects assigned to a workspace.
+
+**Response:** `{ projects: [...] }`
+
+### `PUT /api/spaces/:id/projects`
+
+Batch assign projects to a workspace.
+
+**Body:** `{ project_ids: [...] }`
+
+**Response:** Assignment result from storage
+
+### `GET /api/spaces/:id/stats`
+
+Get workspace project and task counts.
+
+**Response:** Workspace stats object
+
 ---
 
 ## Governance Module (Library)
