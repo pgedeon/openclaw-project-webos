@@ -10,6 +10,21 @@
   - [GET /api/auth/self](#get-apiauthself)
 - [Realtime Events API](#realtime-events-api)
   - [GET /api/events](#get-apievents)
+- [Settings Control Panel API](#settings-control-panel-api)
+  - [GET /api/settings](#get-apisettings)
+  - [GET /api/settings/schema](#get-apisettingsschema)
+  - [GET /api/settings/system-info](#get-apisettingssystem-info)
+  - [GET /api/settings/restart-required](#get-apisettingsrestart-required)
+  - [GET /api/settings/changelog](#get-apisettingschangelog)
+  - [POST /api/settings/test-db](#post-apisettingstest-db)
+  - [POST /api/settings/test-gateway](#post-apisettingstest-gateway)
+  - [POST /api/settings/export](#post-apisettingsexport)
+  - [POST /api/settings/import](#post-apisettingsimport)
+  - [POST /api/settings/reload](#post-apisettingsreload)
+  - [POST /api/settings/restart](#post-apisettingsrestart)
+  - [PUT /api/settings/key/:key](#put-apisettingskeykey)
+  - [GET /api/settings/:category](#get-apisettingscategory)
+  - [PUT /api/settings/:category](#put-apisettingscategory)
 - [Bing Webmaster API](#bing-webmaster-api)
   - [GET /api/bing/quota](#get-apibingquota)
   - [POST /api/bing/submit](#post-apibingsubmit)
@@ -212,6 +227,104 @@ Event frame shape:
 event: task:changed
 data: {"action":"update","taskId":"task-1"}
 ```
+
+---
+
+## Settings Control Panel API
+
+Routes for reading and updating dashboard configuration. Write routes are rate limited to 10 writes per minute per server process.
+
+### `GET /api/settings`
+
+Returns all settings grouped by category.
+
+**Response:** `{ ok: true, settings: { [category]: { [key]: setting } } }`
+
+### `GET /api/settings/schema`
+
+Returns the full settings schema.
+
+**Response:** `{ ok: true, schema: { [key]: schemaEntry } }`
+
+### `GET /api/settings/system-info`
+
+Returns runtime system information derived from the settings store and task server dependencies.
+
+**Response:** `{ ok: true, system: object }`
+
+### `GET /api/settings/restart-required`
+
+Returns whether pending settings changes require a server restart.
+
+**Response:** `{ required: boolean, reasons: [...] }`
+
+### `GET /api/settings/changelog`
+
+Returns the in-memory settings change log.
+
+**Response:** `{ ok: true, changelog: [...] }`
+
+### `POST /api/settings/test-db`
+
+Tests the configured PostgreSQL pool with `SELECT 1`.
+
+**Response:** `{ ok: boolean, latency?: number, error?: string }`
+
+### `POST /api/settings/test-gateway`
+
+Reports the current gateway client connection state.
+
+**Response:** `{ ok: boolean, connected: boolean, url: string }`
+
+### `POST /api/settings/export`
+
+Exports current settings.
+
+**Response:** `{ ok: true, settings: object, exportedAt: string }`
+
+### `POST /api/settings/import`
+
+Imports settings from a JSON payload.
+
+**Body:** `{ settings: object }`
+
+**Response:** `{ ok: true, imported: number, required: boolean, reasons: [...] }`
+
+### `POST /api/settings/reload`
+
+Reloads settings from disk.
+
+**Response:** `{ ok: true, message: string }`
+
+### `POST /api/settings/restart`
+
+Schedules a graceful task-server restart. The server responds before emitting `SIGTERM`.
+
+**Body:** `{ confirm: "restart" }`
+
+**Response:** `{ ok: true, message: "Restarting server..." }`
+
+### `PUT /api/settings/key/:key`
+
+Updates a single setting.
+
+**Body:** `{ value: any }`
+
+**Response:** `{ ok: true, ...result, required: boolean, reasons: [...] }`
+
+### `GET /api/settings/:category`
+
+Returns settings for a single category.
+
+**Response:** `{ ok: true, category: string, settings: object }`
+
+### `PUT /api/settings/:category`
+
+Updates all provided settings in a category.
+
+**Body:** `{ [key]: value }`
+
+**Response:** `{ ok: true, updated: [...], required: boolean, reasons: [...] }`
 
 ---
 
