@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused standalone coverage for Bing Webmaster route handlers.
 - Added focused standalone coverage and API documentation for chat route handlers.
 - Added focused standalone coverage and API documentation for cron route handlers.
+- Added focused standalone coverage and API documentation for history and snapshot route handlers.
 - Added focused standalone coverage and API documentation for memory proxy route handlers.
 - Added focused standalone coverage for project route handlers.
 - Added focused standalone coverage and API documentation for settings route handlers.
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed import route validation so malformed bundles do not acquire a database client and connection failures return handled JSON errors.
+- Fixed history route handled returns and unavailable-database detection for delayed PostgreSQL initialization.
 - Fixed project list route storage failures so they return handled JSON 500 responses.
 - Fixed settings routes so matched handlers report handled status to the task-server router.
 - Fixed space route unavailable-database handling and body parser error status responses.
