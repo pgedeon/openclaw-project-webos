@@ -158,6 +158,15 @@
 - [System Scan API](#system-scan-api)
   - [POST /api/system-scan/run](#post-apisystem-scanrun)
   - [POST /api/system-scan/followup](#post-apisystem-scanfollowup)
+- [History / Time Travel API](#history--time-travel-api)
+  - [GET /api/history](#get-apihistory)
+  - [GET /api/history/:taskId](#get-apihistorytaskid)
+  - [GET /api/history/:taskId/snapshot](#get-apihistorytaskidsnapshot)
+  - [GET /api/history/:taskId/diff](#get-apihistorytaskiddiff)
+  - [GET /api/snapshots](#get-apisnapshots)
+  - [GET /api/snapshots/:entityType/:entityId](#get-apisnapshotsentitytypeentityid)
+  - [POST /api/snapshots/:snapshotId/preview-revert](#post-apisnapshotssnapshotidpreview-revert)
+  - [POST /api/snapshots/:snapshotId/revert](#post-apisnapshotssnapshotidrevert)
 - [Governance Module (Library)](#governance-module-library)
 
 ## Authentication API
@@ -2244,6 +2253,14 @@ Diff between two points in time.
 **Query parameters:** `from`, `to` (ISO timestamps, required)
 
 **Response:** `{ taskId, changes: [{ field, from, to }], from, to }`
+
+### `GET /api/snapshots`
+
+List recent snapshots across all entities.
+
+**Query parameters:** `limit` (max 200)
+
+**Response:** `{ snapshots: [...], total }`
 
 ### `GET /api/snapshots/:entityType/:entityId`
 
