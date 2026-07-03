@@ -8,6 +8,19 @@
 
 - [Authentication API](#authentication-api)
   - [GET /api/auth/self](#get-apiauthself)
+- [Dashboard Health And OpenClaw Status API](#dashboard-health-and-openclaw-status-api)
+  - [GET /api/health](#get-apihealth)
+  - [GET /api/stats](#get-apistats)
+  - [GET /api/health-status](#get-apihealth-status)
+  - [GET /api/citation-queue/status](#get-apicitation-queuestatus)
+  - [GET /api/openclaw/health](#get-apiopenclawhealth)
+  - [GET /api/openclaw/tasks](#get-apiopenclawtasks)
+  - [GET /api/openclaw/tasks/audit](#get-apiopenclawtasksaudit)
+  - [GET /api/openclaw/agents](#get-apiopenclawagents)
+  - [POST /api/openclaw/memory/index](#post-apiopenclawmemoryindex)
+  - [GET /api/openclaw/memory/promote](#get-apiopenclawmemorypromote)
+  - [POST /api/openclaw/memory/promote](#post-apiopenclawmemorypromote)
+  - [GET /api/routes](#get-apiroutes)
 - [Realtime Events API](#realtime-events-api)
   - [GET /api/events](#get-apievents)
 - [Settings Control Panel API](#settings-control-panel-api)
@@ -201,6 +214,193 @@ Returns the current auth mode, effective actor, and deferred full-auth policy. T
     "until": "multi-operator requirement exists",
     "reason": "Full auth is deferred until a multi-operator requirement exists."
   }
+}
+```
+
+---
+
+## Dashboard Health And OpenClaw Status API
+
+These endpoints are served by the primary task server on port 3876. `/api/health` is public for monitoring; the other endpoints use the normal dashboard bearer-token middleware.
+
+### `GET /api/health`
+
+Returns basic task-server and storage health.
+
+**Response** `200`:
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-03-12T10:11:12.000Z",
+  "asana_storage": "postgres",
+  "storage_type": "postgres",
+  "storage_mode": "postgres",
+  "storage_label": "PostgreSQL",
+  "storage_note": null,
+  "db_latency_ms": 7,
+  "uptime": 12345,
+  "port": 3876
+}
+```
+
+### `GET /api/stats`
+
+Returns aggregate storage statistics from the dashboard storage layer.
+
+**Response** `200`:
+
+```json
+{ "projects": 12, "tasks": 128, "completed": 45 }
+```
+
+**Error** `503`: storage has not initialized.
+
+### `GET /api/health-status`
+
+Returns unified dashboard-local health with database, gateway sync, task-server, and optional cron checks.
+
+**Response** `200`:
+
+```json
+{
+  "status": "healthy",
+  "database": { "status": "PostgreSQL", "healthy": true, "mode": "postgres" },
+  "gateway": { "status": "ok", "healthy": true, "agent_count": 2 },
+  "task_server": { "healthy": true, "status": "running" },
+  "checks": {
+    "database": { "healthy": true, "status": "PostgreSQL", "mode": "postgres" },
+    "gateway_sync": { "healthy": true, "status": "ok", "count": 2 },
+    "task_server": { "healthy": true, "status": "running" }
+  }
+}
+```
+
+### `GET /api/citation-queue/status`
+
+Returns citation queue status from the editorial citation queue script.
+
+**Response** `200`:
+
+```json
+{ "success": true, "pending": 3, "total": 5, "timestamp": "2026-03-12T10:11:12.000Z" }
+```
+
+### `GET /api/openclaw/health`
+
+Proxies `openclaw health --json`.
+
+**Response** `200`:
+
+```json
+{
+  "source": "openclaw-cli",
+  "ok": true,
+  "channels": {},
+  "agents": [],
+  "heartbeatSeconds": 30,
+  "defaultAgentId": "main"
+}
+```
+
+**Error** `502`: OpenClaw CLI health failed or returned an error payload.
+
+### `GET /api/openclaw/tasks`
+
+Lists background tasks from `openclaw tasks list`.
+
+**Query parameters**:
+
+| Param | Type | Description |
+|---|---|---|
+| `runtime` | string | Optional runtime filter |
+| `status` | string | Optional task status filter |
+
+**Response** `200`:
+
+```json
+{ "source": "openclaw-cli", "count": 1, "tasks": [{ "id": "task-1" }] }
+```
+
+### `GET /api/openclaw/tasks/audit`
+
+Runs the OpenClaw stale/broken task audit.
+
+**Response** `200`:
+
+```json
+{ "source": "openclaw-cli", "stale": [], "broken": [] }
+```
+
+### `GET /api/openclaw/agents`
+
+Lists OpenClaw agents.
+
+**Response** `200`:
+
+```json
+{ "source": "openclaw-cli", "agents": [{ "id": "main" }] }
+```
+
+### `POST /api/openclaw/memory/index`
+
+Triggers memory indexing for an agent.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `agent` | string | `main` | Agent memory namespace to index |
+
+**Response** `200`:
+
+```json
+{ "source": "openclaw-cli", "success": true, "agentId": "main", "result": {} }
+```
+
+### `GET /api/openclaw/memory/promote`
+
+Previews memory promotion candidates.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `agent` | string | `main` | Agent memory namespace |
+| `limit` | number | `10` | Max candidates to return |
+
+**Response** `200`:
+
+```json
+{ "source": "openclaw-cli", "agentId": "main", "candidates": [] }
+```
+
+### `POST /api/openclaw/memory/promote`
+
+Applies memory promotions.
+
+**Body**:
+
+```json
+{ "agent": "main", "limit": 10 }
+```
+
+**Response** `200`:
+
+```json
+{ "source": "openclaw-cli", "success": true, "agentId": "main", "promoted": [] }
+```
+
+### `GET /api/routes`
+
+Returns the registered route catalog from the in-process router.
+
+**Response** `200`:
+
+```json
+{
+  "routes": [{ "method": "GET", "path": "/api/health" }],
+  "total": 1
 }
 ```
 
