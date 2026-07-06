@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused standalone coverage and API documentation for space route handlers.
 - Added focused standalone coverage and API documentation for OpenClaw session reader route handlers.
 - Added focused standalone coverage and API documentation for the SSE event stream route.
+- Added focused standalone coverage and API documentation corrections for task route handlers.
 - Added focused standalone coverage for view route handlers.
 - Added focused standalone coverage and API documentation for workflow routing admin route handlers.
 
@@ -35,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed project list route storage failures so they return handled JSON 500 responses.
 - Fixed settings routes so matched handlers report handled status to the task-server router.
 - Fixed space route unavailable-database handling and body parser error status responses.
+- Fixed task subtask route error mapping so missing parent/child tasks return 404 and validation failures return 400.
 - Fixed cron route handling of OpenClaw CLI dependency errors returned as `{ error }` payloads.
 - Fixed workflow routing admin handlers so validation and missing-database responses are consistently reported as handled by the router.
 

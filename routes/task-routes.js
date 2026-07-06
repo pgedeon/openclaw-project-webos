@@ -290,7 +290,7 @@ function registerTaskRoutes(router) {
       const result = await ctx.asanaStorage.addSubtask(parentId, task_id);
       ctx.sendJSON(res, 200, result);
     } catch (err) {
-      const statusCode = err.message.includes('not found') || err.message.includes('Circular') ? 400 : 404;
+      const statusCode = err.message.includes('not found') ? 404 : 400;
       ctx.sendJSON(res, statusCode, { error: err.message });
     }
     return true;
