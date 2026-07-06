@@ -179,15 +179,14 @@ List tasks with optional project filter.
 
 **Query:**
 - `project_id` (optional): limit to a project
-- `status` (optional): comma‑separated statuses
-- `owner` (optional): filter by agent name
-- `due_before`, `due_after` (optional): ISO8601 dates
-- `includeGraph` (optional): `true` to include subtasks and dependencies recursively
+- `include_archived=true` (optional): include archived tasks
+- `include_deleted=true` (optional): include soft-deleted tasks
+- `include_child_projects=true` (optional): include child project tasks when `project_id` is set
 - `depth` (optional): integer limit for recursion depth (default unlimited)
-- `archived` (optional): `true` to include archived tasks; default `false` (active only)
+- `workspace_id` (optional): limit results to a workspace/space
 - `updated_since` (optional): ISO8601 timestamp; return only tasks with `updated_at` greater than this value. Used for incremental sync.
 
-**Response:** array of Task objects. If `includeGraph` is true, each task may have `subtasks` and `dependencies` arrays embedded.
+**Response:** array of Task objects.
 
 ### `GET /api/tasks/:id`
 
@@ -195,6 +194,8 @@ Get a single task.
 
 **Query:**
 - `includeGraph` (optional): `true` to embed subtasks and dependencies.
+- `include_archived=true` (optional): allow archived tasks to be returned.
+- `include_deleted=true` (optional): allow soft-deleted tasks to be returned.
 
 **Response:** Task object.
 
@@ -202,7 +203,7 @@ Get a single task.
 
 Create a task.
 
-**Body:** Partial Task (omit `id`, `created_at`, `updated_at`, `completed_at`).
+**Body:** Partial Task (omit `id`, `created_at`, `updated_at`, `completed_at`). `project_id` and `title` are required for the storage-backed API.
 
 **Response:** `201 Created` with full Task (including generated UUID).
 
@@ -276,7 +277,7 @@ Add or remove dependencies.
 }
 ```
 
-**Response:** `200 OK` with updated `dependency_ids` array.
+**Response:** `200 OK` with `{ "dependencies": ["uuid"] }`.
 
 ### `POST /api/tasks/:id/subtasks`
 
@@ -286,11 +287,17 @@ Link an existing task as a subtask.
 
 ```json
 {
-  "subtask_id": "uuid"
+  "task_id": "uuid"
 }
 ```
 
 **Response:** `200 OK` with updated Task.
+
+### `GET /api/tasks/:id/history`
+
+Return the latest audit history for a task.
+
+**Response:** `200 OK` with `{ "task_id": "uuid", "history": [ /* audit records */ ] }`.
 
 ---
 
@@ -651,24 +658,29 @@ These are still supported but will be deprecated in favor of the Asana‑style A
 
 ### `GET /api/tasks`
 
-Reads `tasks.md` (legacy format). Returns array of simple tasks:
+Reads `tasks.md` (legacy markdown format).
 
 ```json
-[
-  {
-    "id": "number",
-    "text": "string",
-    "category": "string",
-    "completed": boolean,
-    "createdAt": "ISO",
-    "updatedAt": "ISO|null"
-  }
-]
+{
+  "content": "- [ ] legacy task",
+  "path": "/path/to/tasks.md",
+  "format": "markdown"
+}
 ```
 
 ### `POST /api/tasks`
 
-Writes to `tasks.md`. Body is an array of the above simple tasks. Not recommended for new integrations.
+Writes markdown content to `tasks.md` when storage-backed task creation is unavailable. Not recommended for new integrations.
+
+**Body:**
+
+```json
+{
+  "content": "- [ ] legacy task"
+}
+```
+
+**Response:** `200 OK` with `{ "success": true, "path": "/path/to/tasks.md" }`.
 
 ---
 
