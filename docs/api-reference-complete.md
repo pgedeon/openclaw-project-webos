@@ -21,6 +21,8 @@
   - [GET /api/openclaw/memory/promote](#get-apiopenclawmemorypromote)
   - [POST /api/openclaw/memory/promote](#post-apiopenclawmemorypromote)
   - [GET /api/routes](#get-apiroutes)
+- [Cost Analytics API](#cost-analytics-api)
+  - [GET /api/costs/summary](#get-apicostssummary)
 - [Realtime Events API](#realtime-events-api)
   - [GET /api/events](#get-apievents)
 - [Settings Control Panel API](#settings-control-panel-api)
@@ -403,6 +405,64 @@ Returns the registered route catalog from the in-process router.
   "total": 1
 }
 ```
+
+---
+
+## Cost Analytics API
+
+### `GET /api/costs/summary`
+
+Aggregate token/cost summary over the `workflow_runs` cost columns shipped in migration `022_add_run_token_cost_tracking.sql` (`cost_estimate`, `input_tokens`, `output_tokens`, `reported_at`). Consumed by the Mission Control cost panel.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `days` | number | 7 | Lookback window in days (today inclusive, clamped to 1–90) |
+
+**Degradation contract:** without PostgreSQL (json_snapshot mode, pool not initialized, or query failure) the endpoint answers HTTP `200` with `{ "available": false, ... }` instead of an error status. Clients must render a "Cost unavailable — no database" state when `available === false`.
+
+**Response** `200` (database available):
+
+```json
+{
+  "available": true,
+  "window_days": 7,
+  "currency": "USD",
+  "today": {
+    "cost": 4.12,
+    "tokens": { "input": 184320, "output": 22100 },
+    "runs": 6
+  },
+  "days": [
+    { "date": "2026-08-24", "cost": 4.12, "runs": 6, "tokens": { "input": 184320, "output": 22100 } },
+    { "date": "2026-08-23", "cost": 9.4, "runs": 11, "tokens": { "input": 402100, "output": 51800 } }
+  ],
+  "avg_daily_7d": 8.83,
+  "total_window": 61.8,
+  "top_run": {
+    "id": "b1e2c3d4-...",
+    "workflow_type": "crawl-site",
+    "owner_agent_id": "affiliate-editorial",
+    "status": "completed",
+    "cost": 1.9
+  },
+  "timestamp": "2026-08-24T12:00:00.000Z"
+}
+```
+
+**Response** `200` (no database):
+
+```json
+{
+  "available": false,
+  "reason": "no_database",
+  "window_days": 7,
+  "timestamp": "2026-08-24T12:00:00.000Z"
+}
+```
+
+Daily buckets use `reported_at` when usage was reported, falling back to `started_at` then `created_at`, so unreported runs still land in a day bucket. `days[]` is the per-day series (`date`, `cost`, `runs`, `tokens`); `avg_daily_7d` is the mean daily cost across all buckets in the window.
 
 ---
 

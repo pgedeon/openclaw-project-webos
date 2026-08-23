@@ -121,6 +121,14 @@ const appIcon = {
   chatBubble: iconTemplate(`
     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
   `),
+  satellite: iconTemplate(`
+    <path d="m10.5 13.5-3-3 2.5-2.5a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L10.5 13.5Z" />
+    <path d="m13.5 10.5 3 3 2.5-2.5a2 2 0 0 0 0-2.8l-.2-.2a2 2 0 0 0-2.8 0L13.5 10.5Z" />
+    <path d="m11.5 12.5 3-3" />
+    <path d="M8 16c-1.5 1.5-4 2-6 1 1 2 .5 4.5-1 6" transform="translate(14 -4) scale(.55)" />
+    <path d="M12 15v3M12 18c0 1.5-1 2.5-2.5 3" />
+    <circle cx="12" cy="12" r="1.6" />
+  `),
 };
 
 export const APP_CATEGORY_ORDER = ['Work', 'Operations', 'Admin'];
@@ -355,6 +363,16 @@ export const APP_REGISTRY = Object.freeze([
     category: 'Operations',
     defaultWidth: 1080,
     defaultHeight: 720,
+  },
+  {
+    id: 'mission-control',
+    label: 'Mission Control',
+    icon: appIcon.satellite,
+    url: '/?view=mission-control',
+    viewModule: './native-views/mission-control-view.mjs',
+    category: 'Operations',
+    defaultWidth: 1180,
+    defaultHeight: 780,
   },
   {
     id: 'departments',

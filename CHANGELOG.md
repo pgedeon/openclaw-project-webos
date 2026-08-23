@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codified current auth as single-operator bearer-token mode and exposed deferred full-auth policy metadata from `/api/auth/self`.
 
 ### Added
+- Mission Control view (Phase 1 flagship, part 1): six-panel read-only command center (fleet status, blocked/stale runs, cron health, cost today/7d, anomaly flags max 5 types, quick links) with per-panel independent degradation and GET-only polling at 20/30/60/120 s intervals; new `routes/cost-routes.js` exposing `GET /api/costs/summary?days=7` aggregate over workflow_runs cost columns that degrades to `{ available: false }` JSON without PostgreSQL; registered under Operations in the app registry (32 windowed apps).
 - Mission Control design brief (docs/briefs/mission-control.md): read-only command-center aggregation per UPGRADE_ROADMAP Phase 1 — six-panel layout (fleet status, blocked/stale runs, cron health, cost today/7d, anomaly flags, quick links), per-panel data contracts over existing routes plus one small needs-new `/api/costs/summary` aggregate, v1 anomaly-flag definitions (max 5), file plan, DB-free-testable acceptance criteria, explicit non-goals (no editing actions, polling only).
 - Added focused standalone coverage and API documentation corrections for export/import route handlers.
 - Added auth reference documentation and focused auth policy regression coverage.

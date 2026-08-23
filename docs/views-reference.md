@@ -1,6 +1,6 @@
 # Views Reference — All Desktop Windows
 
-The OpenClaw Project WebOS exposes **31 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
+The OpenClaw Project WebOS exposes **32 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
 
 Views are organized into four categories in the start menu: **Work**, **Operations**, **System**, and **Admin**.
 
@@ -32,6 +32,7 @@ Views are organized into four categories in the start menu: **Work**, **Operatio
 - [Audit](#audit) ✓ (see user-guide.md)
 - [Cron](#cron) ✓ (see user-guide.md)
 - [Diagnostics](#diagnostics)
+- [Mission Control](#mission-control)
 
 ### System
 - [Spaces](#spaces)
@@ -404,6 +405,37 @@ System Operations Center for monitoring, diagnosing, and repairing failing compo
 - `GET /api/diagnostics/jobs/:id/logs`
 - `POST /api/diagnostics/jobs/:id/repair`
 - `POST /api/diagnostics/jobs/:id/silence`
+
+---
+
+### Mission Control
+
+**Category:** Operations · **ID:** `mission-control` · **Default size:** 1180×780
+
+Read-only command-center aggregation — one window answering "is anything broken, blocked, or burning money?" in under five seconds. Per the design brief (`docs/briefs/mission-control.md`).
+
+**Features:**
+- **Fleet status panel** — overall/gateway/database health, agent counts with active/idle/offline breakdown, queue depth (30 s poll)
+- **Blocked / stale runs panel** — running/blocked/failed counts plus live run ages with staleness warning at 15 min (20 s poll, aligned with realtime-sync)
+- **Cron health panel** — enabled/failing job counts, next scheduled job, consecutive-failure detection via lazy per-job run lookups (max 3 per sweep), file-based diagnostics health summary (60 s poll)
+- **Cost panel** — today's spend, 7-day total and daily average, top run by cost, spike badge when today exceeds 2× the trailing mean (120 s poll)
+- **Anomaly flags panel** — client-side heuristics over polled data, max 5 flag types: stale run, zero-token loop, crash-looping cron, cost burn spike, idle-agent-with-queued-task; recomputed on every runs poll
+- **Quick links panel** — static grid opening Health, Diagnostics, Cron, Workflows, Agents, Sessions, Approvals, and Audit via shell navigation
+- **Independent degradation** — every panel has its own load/render/error path; DB-backed panels show named "unavailable" states in json_snapshot mode while CLI-backed panels stay fully populated; no editing actions (read-only guarantee, GET-only polling)
+
+**API endpoints used:**
+- `GET /api/health-status`
+- `GET /api/openclaw/agents`
+- `GET /api/agents/status` (Postgres only)
+- `GET /api/tasks?status=queued` (Postgres only)
+- `GET /api/workflow-runs` (Postgres only)
+- `GET /api/workflow-runs/stuck` (Postgres only)
+- `GET /api/blockers/summary` (Postgres only)
+- `GET /api/cron/jobs`
+- `GET /api/cron/jobs/:id/runs`
+- `GET /api/diagnostics/summary`
+- `GET /api/diagnostics/failures`
+- `GET /api/costs/summary`
 
 ---
 
