@@ -92,3 +92,66 @@ jobs:
 
       - name: DB-free tests
         run: node scripts/ci-db-free-tests.js
+
+  # Playwright e2e (UPGRADE_ROADMAP.md Phase 0 "Fix test suite", part 2).
+  #
+  # Deliberately a separate job from `verify` so e2e failures do not block the
+  # syntax/docs/unit gates.
+  #
+  # Scope note: tests/e2e.spec.ts is a DB-free SMOKE suite. The original spec
+  # asserted storage CRUD (POST /api/tasks → 201, snapshots, spaces) which
+  # requires real PostgreSQL; it was replaced 2026-08-23 because STORAGE_TYPE=
+  # json_snapshot is read-only by design and cannot serve those routes.
+  #
+  # task-server.js serves the UI from the hardcoded path
+  # /root/.openclaw/workspace/dashboard (WORKSPACE const), so the job stages
+  # the repo's frontend assets there before starting the server.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Stage dashboard assets (server reads UI from /root/.openclaw/workspace/dashboard)
+        run: |
+          sudo mkdir -p /root/.openclaw/workspace/dashboard
+          sudo cp -a index.html src /root/.openclaw/workspace/dashboard/
+
+      - name: Start task-server (json_snapshot, DB-free)
+        run: |
+          STORAGE_TYPE=json_snapshot HOST=127.0.0.1 PORT=3876 DASHBOARD_AUTH_TOKEN=ci-e2e-token \
+            node task-server.js > task-server-e2e.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3876/api/health > /dev/null 2>&1; then
+              echo "task-server ready (attempt $i)"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "task-server failed to become ready"
+          cat task-server-e2e.log
+          exit 1
+
+      - name: Run Playwright e2e (chromium)
+        run: npx playwright test --project=chromium
+        env:
+          E2E_AUTH_TOKEN: ci-e2e-token
+
+      - name: Upload playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
