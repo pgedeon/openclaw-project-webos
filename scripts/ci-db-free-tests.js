@@ -30,6 +30,7 @@ const INCLUDED = [
   'test-cron-routes.js',
   'test-dispatcher-v2.js',
   'test-export-routes.js',
+  'test-filesystem-api-auth.mjs',
   'test-filesystem-proxy-availability.js',
   'test-filesystem-proxy-origin.js',
   'test-health-routes.js',

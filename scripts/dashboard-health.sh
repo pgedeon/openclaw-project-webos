@@ -174,7 +174,9 @@ check_health() {
 }
 
 check_filesystem_health() {
-    if curl -fsS --max-time 5 "$FILESYSTEM_API_HEALTH_URL" > /dev/null 2>&1; then
+    # Security (SECURITY-AUDIT-2026-08.md F5): filesystem API requires a bearer
+    # token on every route, including this probe.
+    if curl -fsS --max-time 5 -H "Authorization: Bearer ${DASHBOARD_AUTH_TOKEN:-}" "$FILESYSTEM_API_HEALTH_URL" > /dev/null 2>&1; then
         return 0
     fi
     return 1

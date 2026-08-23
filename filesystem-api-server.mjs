@@ -13,6 +13,18 @@
  *   DELETE /api/fs/path         — Delete a file or empty directory
  *   GET /api/fs/search?q=...    — Search filenames and file contents with rg
  *   GET /api/fs/stat?path=...   — Fetch metadata for a single path
+ *
+ * Security (SECURITY-AUDIT-2026-08.md F5, standalone mode):
+ *   - DASHBOARD_AUTH_TOKEN is required at startup; the server hard-exits without it.
+ *   - Every route requires `Authorization: Bearer $DASHBOARD_AUTH_TOKEN` (timing-safe).
+ *   - Host header must match the loopback allowlist (DNS-rebinding defense).
+ *   - A browser Origin header, when present, must match the task-server origin.
+ *   - Mutating methods require Content-Type: application/json.
+ *   - Writes under crontab/, .ssh/, and agents/…/sessions/ are refused outright
+ *     (crontab entries chain to RCE via the cron runner); reads stay allowed for
+ *     explorer browsing.
+ *   The in-process path (task-server /api/fs/*) keeps its own task-server auth;
+ *   these gates guard only the standalone HTTP server.
  */
 
 import { promises as fs } from 'fs';
@@ -22,6 +34,7 @@ import { isIP } from 'net';
 import { promisify } from 'util';
 import { resolve, relative, dirname, basename, extname, isAbsolute, sep, posix } from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 const execAsync = promisify(execFile);
 
@@ -30,6 +43,15 @@ export const DEFAULT_FS_PORT = Number(process.env.FILESYSTEM_API_PORT || 3880);
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_SEARCH_RESULTS = 50;
 const ROOT_REAL_CACHE = new Map();
+
+// Security (F5): standalone server auth inputs. Read lazily by
+// createFilesystemServer so importing this module from task-server never
+// requires a token (the in-process path is guarded by task-server auth).
+const TASK_SERVER_PORT = String(process.env.PORT || 3876);
+const ALLOWED_ORIGINS = new Set([
+  `http://localhost:${TASK_SERVER_PORT}`,
+  `http://127.0.0.1:${TASK_SERVER_PORT}`,
+]);
 
 const SECRET_ASSIGNMENT_RE = /\b([A-Z0-9_]*?(?:API_KEY|SECRET|PASSWORD|TOKEN)[A-Z0-9_]*)\s*=/gi;
 const PROTECTED_EXTENSIONS = new Set(['.pem', '.key', '.crt', '.p12']);
@@ -43,6 +65,35 @@ function createHttpError(statusCode, message, details = {}) {
 
 function normalizeHostname(value) {
   return String(value || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+}
+
+// Security (F5): DNS-rebinding defense for the standalone server. Only exact
+// loopback Host headers for this server's own port are accepted.
+export function isAllowedFilesystemHost(hostHeader, port = DEFAULT_FS_PORT) {
+  const normalized = String(hostHeader || '').trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return normalized === `127.0.0.1:${port}`
+    || normalized === `localhost:${port}`
+    || normalized === `[::1]:${port}`;
+}
+
+function extractBearerToken(authHeader = '') {
+  return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+}
+
+// F9-style digest compare: fixed-size SHA-256 digests keep timingSafeEqual
+// length-stable regardless of token length.
+function timingSafeTokenEqual(token, expectedToken) {
+  if (!token || !expectedToken) {
+    return false;
+  }
+
+  const tokenDigest = crypto.createHash('sha256').update(token, 'utf8').digest();
+  const expectedDigest = crypto.createHash('sha256').update(expectedToken, 'utf8').digest();
+  return crypto.timingSafeEqual(tokenDigest, expectedDigest);
 }
 
 function parseHeaderHostname(value) {
@@ -230,6 +281,21 @@ export function getProtectedPathReason(relativePath) {
 
   if (PROTECTED_EXTENSIONS.has(extname(name))) {
     return `${extname(name)} credential files are read-only`;
+  }
+
+  // Security (F5): refuse writes into locations that chain to code execution
+  // or credential use. Reads stay allowed so the explorer can browse them.
+  if (parts.includes('crontab')) {
+    return 'crontab entries are executed by the cron runner and are read-only';
+  }
+
+  if (parts.includes('.ssh')) {
+    return '.ssh paths are read-only';
+  }
+
+  const agentsIndex = parts.indexOf('agents');
+  if (agentsIndex !== -1 && parts[agentsIndex + 2] === 'sessions') {
+    return 'agent session transcripts are read-only';
   }
 
   return '';
@@ -795,9 +861,87 @@ export async function handleFilesystemApiRequest({ rootPath = DEFAULT_FS_ROOT, u
 }
 
 export async function createFilesystemServer({ rootPath = DEFAULT_FS_ROOT } = {}) {
+  // Security (F5): the standalone server must never run without a shared
+  // secret. Hard-exit mirrors memory-api-server.mjs (c11bfba). Checked here —
+  // not at module scope — so task-server's tokenless REQUIRE_AUTH=false import
+  // of handleFilesystemApiRequest stays viable.
+  const dashboardAuthToken = process.env.DASHBOARD_AUTH_TOKEN || '';
+  if (!dashboardAuthToken) {
+    console.error('❌ FATAL: DASHBOARD_AUTH_TOKEN is not set — refusing to start filesystem-api-server (SECURITY-AUDIT-2026-08.md F5).');
+    process.exit(1);
+  }
+
   const rootReal = await resolveFilesystemRoot(rootPath);
 
-  return createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {
+    // F5: Host allowlist — DNS-rebinding defense. Port comes from the live
+    // socket so ephemeral-port test instances validate correctly.
+    const address = server.address();
+    const listenPort = address && typeof address === 'object' ? address.port : DEFAULT_FS_PORT;
+    if (!isAllowedFilesystemHost(req.headers.host, listenPort)) {
+      console.warn(
+        `[filesystem-api] ${req.method || 'GET'} ${req.url || '/'} host rejected`,
+        `host=${req.headers?.host || '-'}`
+      );
+      sendJSON(res, 403, { error: 'Forbidden host' }, {
+        'Content-Type': 'application/json; charset=utf-8',
+      });
+      return;
+    }
+
+    // F5: browser Origin, when present, must be the task-server origin.
+    const origin = req.headers.origin ? String(req.headers.origin) : '';
+    if (origin && !ALLOWED_ORIGINS.has(origin)) {
+      console.warn(
+        `[filesystem-api] ${req.method || 'GET'} ${req.url || '/'} origin rejected`,
+        `origin=${origin}`
+      );
+      sendJSON(res, 403, { error: 'Forbidden origin' }, {
+        'Content-Type': 'application/json; charset=utf-8',
+      });
+      return;
+    }
+
+    if (req.method === 'OPTIONS') {
+      const preflightHeaders = {
+        'Cache-Control': 'no-store',
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Content-Type-Options': 'nosniff',
+        'Access-Control-Allow-Methods': 'GET, PUT, POST, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Max-Age': '600',
+        'Vary': 'Origin',
+      };
+      if (origin) {
+        preflightHeaders['Access-Control-Allow-Origin'] = origin;
+      }
+      res.writeHead(204, preflightHeaders);
+      res.end();
+      return;
+    }
+
+    // F5: bearer-token auth on every route.
+    const token = extractBearerToken(req.headers.authorization || '');
+    if (!timingSafeTokenEqual(token, dashboardAuthToken)) {
+      sendJSON(res, 401, { error: 'Unauthorized', message: 'Valid Bearer token required' }, {
+        'Content-Type': 'application/json; charset=utf-8',
+      });
+      return;
+    }
+
+    // F5: mutating routes must declare application/json (blocks text/plain
+    // simple-request writes that skip CORS preflight).
+    const method = req.method || 'GET';
+    if (method !== 'GET' && method !== 'HEAD') {
+      const contentType = String(req.headers['content-type'] || '').toLowerCase();
+      if (!contentType.startsWith('application/json')) {
+        sendJSON(res, 415, { error: 'Unsupported Media Type', message: 'Content-Type: application/json required' }, {
+          'Content-Type': 'application/json; charset=utf-8',
+        });
+        return;
+      }
+    }
+
     let headers;
     try {
       headers = buildCorsHeaders(req);
@@ -822,7 +966,6 @@ export async function createFilesystemServer({ rootPath = DEFAULT_FS_ROOT } = {}
 
     try {
       const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
-      const method = req.method || 'GET';
       const body = shouldParseRequestBody(requestUrl.pathname, method) ? await parseBody(req) : {};
       const result = await dispatchFilesystemRequest(rootReal, requestUrl, method, body);
       sendJSON(res, result.status, result.payload, headers);
@@ -837,6 +980,8 @@ export async function createFilesystemServer({ rootPath = DEFAULT_FS_ROOT } = {}
       sendJSON(res, statusCode, { error: error.message }, headers);
     }
   });
+
+  return server;
 }
 
 const isMainModule = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);

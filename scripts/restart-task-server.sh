@@ -274,12 +274,14 @@ if command -v systemd-run >/dev/null 2>&1; then
     --property="StandardError=append:$FS_SERVER_LOG_FILE" \
     --setenv=OPENCLAW_FS_ROOT="${OPENCLAW_FS_ROOT:-/root/.openclaw}" \
     --setenv=FILESYSTEM_API_PORT="$FS_PORT" \
+    --setenv=DASHBOARD_AUTH_TOKEN="${DASHBOARD_AUTH_TOKEN:-}" \
     node "$FS_SERVER_SCRIPT" >/dev/null
   FS_PID="$(get_systemd_main_pid "$FILESYSTEM_SYSTEMD_UNIT" || true)"
 else
   nohup env \
     OPENCLAW_FS_ROOT="${OPENCLAW_FS_ROOT:-/root/.openclaw}" \
     FILESYSTEM_API_PORT="$FS_PORT" \
+    DASHBOARD_AUTH_TOKEN="${DASHBOARD_AUTH_TOKEN:-}" \
     node "$FS_SERVER_SCRIPT" > "$FS_SERVER_LOG_FILE" 2>&1 &
   FS_PID=$!
 fi
@@ -299,7 +301,9 @@ if [ -n "${FS_PID:-}" ] && ! kill -0 "$FS_PID" 2>/dev/null; then
   exit 1
 fi
 
-if ! curl -fsS --max-time 5 "http://$FS_HOST:$FS_PORT$FS_HEALTH_PATH" >/dev/null 2>&1; then
+# Security (SECURITY-AUDIT-2026-08.md F5): the filesystem API now requires a
+# bearer token on every route, including this startup health probe.
+if ! curl -fsS --max-time 5 -H "Authorization: Bearer ${DASHBOARD_AUTH_TOKEN:-}" "http://$FS_HOST:$FS_PORT$FS_HEALTH_PATH" >/dev/null 2>&1; then
   echo "Filesystem API server started (PID $FS_PID) but health check failed."
   tail -n 20 "$FS_SERVER_LOG_FILE" || true
   exit 1
