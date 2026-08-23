@@ -18,6 +18,78 @@
 <body>
     <div id="desktop"></div>
     <div id="taskbar-root"></div>
-    <script type="module" src="/src/shell/shell-main.mjs"></script>
+    <script type="module">
+        // Auth bootstrap (SECURITY-AUDIT-2026-08.md F1):
+        // The server never embeds DASHBOARD_AUTH_TOKEN in the page. The shell
+        // only boots after a token is verified against /api/auth/self; it is
+        // kept in localStorage and attached to API requests as a Bearer header
+        // (see src/shell/api-client.mjs and src/shell/realtime-sync.mjs).
+        const TOKEN_STORAGE_KEY = 'openclaw.dashboardToken';
+
+        function readStoredToken() {
+            try { return localStorage.getItem(TOKEN_STORAGE_KEY) || ''; } catch { return ''; }
+        }
+
+        function storeToken(token) {
+            try { localStorage.setItem(TOKEN_STORAGE_KEY, token); } catch { /* storage unavailable */ }
+        }
+
+        async function checkAuth(token) {
+            try {
+                const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                const res = await fetch('/api/auth/self', { headers });
+                if (!res.ok) return { state: 'unreachable' };
+                const state = await res.json();
+                return state.authenticated === true ? { state: 'ok' } : { state: 'rejected' };
+            } catch {
+                return { state: 'unreachable' };
+            }
+        }
+
+        function promptForToken(message) {
+            return new Promise((resolve) => {
+                document.getElementById('auth-bootstrap-overlay')?.remove();
+
+                const overlay = document.createElement('div');
+                overlay.id = 'auth-bootstrap-overlay';
+                overlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#1f1f1f;z-index:99999;';
+                overlay.innerHTML = `
+                    <div style="width:360px;padding:28px;border-radius:8px;background:#2b2b2b;color:#ffffff;font-family:'Segoe UI',Inter,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.5);">
+                        <h1 style="margin:0 0 6px;font-size:1.25rem;font-weight:600;">OpenClaw Desktop</h1>
+                        <p style="margin:0 0 16px;font-size:.82rem;color:#9a9a9a;">Enter the dashboard access token (DASHBOARD_AUTH_TOKEN).</p>
+                        <input id="auth-bootstrap-token" type="password" autocomplete="off" spellcheck="false" placeholder="Access token"
+                               style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:6px;border:1px solid #555;background:#1f1f1f;color:#fff;font-size:.9rem;outline:none;" />
+                        <div id="auth-bootstrap-error" style="display:none;margin-top:8px;font-size:.8rem;color:#ff7b72;"></div>
+                        <button id="auth-bootstrap-connect" type="button"
+                                style="margin-top:14px;width:100%;padding:9px 0;border:none;border-radius:6px;background:#0078d4;color:#fff;font-size:.9rem;font-weight:600;cursor:pointer;">Connect</button>
+                    </div>`;
+                document.body.appendChild(overlay);
+
+                const input = overlay.querySelector('#auth-bootstrap-token');
+                const errorEl = overlay.querySelector('#auth-bootstrap-error');
+                if (message) {
+                    errorEl.textContent = message;
+                    errorEl.style.display = 'block';
+                }
+                overlay.querySelector('#auth-bootstrap-connect').addEventListener('click', () => resolve(input.value.trim()));
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') resolve(input.value.trim()); });
+                input.focus();
+            });
+        }
+
+        let token = readStoredToken();
+        let check = await checkAuth(token);
+        while (check.state !== 'ok') {
+            const message = check.state === 'unreachable'
+                ? 'Cannot reach /api/auth/self — is the task server running?'
+                : (token ? 'Invalid token. Try again.' : '');
+            token = await promptForToken(message);
+            check = await checkAuth(token);
+        }
+        if (token) storeToken(token);
+        globalThis.__DASHBOARD_AUTH_TOKEN__ = token;
+
+        await import('/src/shell/shell-main.mjs');
+    </script>
 </body>
 </html>

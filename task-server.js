@@ -973,20 +973,18 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Serve webos desktop at root
+    // Security (SECURITY-AUDIT-2026-08.md F1): never embed DASHBOARD_AUTH_TOKEN in
+    // this unauthenticated response. The bootstrap script in index.html verifies
+    // the operator's token against /api/auth/self and attaches it to API calls
+    // as a Bearer header (see src/shell/api-client.mjs).
     if (url === '/' || url === '/index.html') {
-      // Serve dashboard with auth token injected
-      if (DASHBOARD_AUTH_TOKEN) {
-        const fs = require('fs');
-        const htmlPath = path.join(WORKSPACE, 'dashboard/index.html');
-        fs.readFile(htmlPath, 'utf8', (err, html) => {
-          if (err) { res.writeHead(404); res.end('Not Found'); return; }
-          const injected = html.replace('</head>', `  <script>globalThis.__DASHBOARD_AUTH_TOKEN__="${DASHBOARD_AUTH_TOKEN}";</script>\n</head>`);
-          res.writeHead(200, { 'Content-Type': 'text/html', 'Clear-Site-Data': '"cache"', 'Cache-Control': 'no-store' });
-          res.end(injected);
-        });
-      } else {
-        sendFile(res, 'dashboard/index.html');
-      }
+      const htmlPath = path.join(WORKSPACE, 'dashboard/index.html');
+      fs.readFile(htmlPath, 'utf8', (err, html) => {
+        if (err) { res.writeHead(404); res.end('Not Found'); return; }
+        // Clear-Site-Data evicts any previously cached token-injected page.
+        res.writeHead(200, { 'Content-Type': 'text/html', 'Clear-Site-Data': '"cache"', 'Cache-Control': 'no-store' });
+        res.end(html);
+      });
       return;
     }
 

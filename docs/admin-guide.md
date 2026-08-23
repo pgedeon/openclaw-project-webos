@@ -62,10 +62,13 @@ cat crontab/*.cron | crontab -
 
 ### Monitor Cron
 
-The cron-manager-server (port 3878) provides an API:
+The cron-manager-server (port 3878) provides an API. Since the 2026-08
+security fixes it requires a bearer token and only accepts loopback Host
+headers (see SECURITY-AUDIT-2026-08.md F2/F3):
 
 ```bash
-curl http://127.0.0.1:3878/api/cron-admin/jobs
+curl -H "Authorization: Bearer $DASHBOARD_AUTH_TOKEN" \
+     http://127.0.0.1:3878/api/cron-admin/jobs
 ```
 
 ### Keepalive Servers

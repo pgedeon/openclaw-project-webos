@@ -646,24 +646,31 @@ All JSON APIs accept and return `Content-Type: application/json` unless noted.
 
 ## Cron Manager API (Port 3878)
 
-The cron manager monitors the `~/.openclaw/workspace/crontab` file and executes
-scheduled jobs. It also provides a REST API for inspecting job runs.
+The cron manager (`cron-manager-server.mjs`) manages job definition files in
+`~/.openclaw/workspace/crontab/*.cron`, executes scheduled jobs, and exposes a
+REST API for inspecting and triggering them.
 
-### `GET /health`
+**Base URL:** `http://127.0.0.1:3878/api/cron-admin`
 
-Health check for the cron manager process.
+### Authentication & request rules
 
-**Response** `200`:
+Since the 2026-08 security fixes (SECURITY-AUDIT-2026-08.md F2/F3):
 
-```json
-{ "status": "ok", "uptime": 12345 }
-```
+- Every endpoint requires `Authorization: Bearer $DASHBOARD_AUTH_TOKEN`.
+  The server refuses to start when `DASHBOARD_AUTH_TOKEN` is unset.
+- The `Host` header must be `127.0.0.1:3878` or `localhost:3878`
+  (DNS-rebinding defense).
+- A browser `Origin` header, when present, must match the task-server origin
+  (`http://localhost:3876` or `http://127.0.0.1:3876`). CORS preflight allows
+  only `Content-Type` and `Authorization` headers.
+- Mutating methods (`POST`, `PUT`, `DELETE`) must send
+  `Content-Type: application/json`; anything else returns `415`.
+- Job `id` values must match `/^[A-Za-z0-9._-]+$/` with no `..` sequence;
+  violations return `400`. Ids are validated before any filesystem use.
 
 ### `GET /jobs`
 
-List all defined cron jobs from the crontab file.
-
-**Query parameters**: None
+List all defined cron jobs.
 
 **Response** `200`:
 
@@ -674,86 +681,60 @@ List all defined cron jobs from the crontab file.
       "id": "gateway-status-sync",
       "schedule": "*/30 * * * * *",
       "command": "node sync-gateway-status.mjs",
-      "enabled": true
+      "description": "Sync gateway status",
+      "logPath": "/root/.openclaw/workspace/logs/gateway-status.log",
+      "lastRun": "2026-08-23T10:30:00.000Z",
+      "status": "active"
     }
   ]
 }
 ```
 
-### `GET /jobs/:id/runs`
+### `POST /jobs`
 
-Get recent execution runs for a specific cron job.
+Create a cron job. Body: `{ "id", "command", "description"?, "minute"?, "hour"?, "dom"?, "month"?, "dow"? }` — schedule fields default to `*`.
 
-**Path parameters**: `id` — cron job identifier
+**Response** `201`: the created job object.
 
-**Query parameters**:
+### `GET /jobs/:id`
 
-| Param | Type | Default | Description |
-|---|---|---|---|
-| `limit` | number | 20 | Max runs to return |
+Get a single job. **Response** `200` job object; `404` if the id is unknown.
 
-**Response** `200`:
+### `PUT /jobs/:id`
+
+Update schedule fields, command, or description. **Response** `200`: the updated job object.
+
+### `DELETE /jobs/:id`
+
+Delete the job definition file. **Response** `200`:
 
 ```json
-{
-  "runs": [
-    {
-      "id": "run-uuid",
-      "jobId": "gateway-status-sync",
-      "startedAt": "2026-03-15T10:30:00Z",
-      "finishedAt": "2026-03-15T10:30:02Z",
-      "status": "success",
-      "output": "Synced 5 agents"
-    }
-  ]
-}
+{ "success": true, "deleted": "gateway-status-sync" }
 ```
 
 ### `POST /jobs/:id/run`
 
-Manually trigger a cron job run.
-
-**Response** `200`:
+Trigger an immediate detached run of the job command. **Response** `202`:
 
 ```json
-{ "triggered": true, "runId": "run-uuid" }
+{ "success": true, "pid": 12345, "job": "gateway-status-sync" }
 ```
 
-### `GET /runs`
+### `GET /jobs/:id/logs`
 
-List recent cron job runs across all jobs.
+Return the tail of the job's log file (default last 50 lines).
 
 **Response** `200`:
 
 ```json
-{
-  "runs": [ ... ]
-}
+{ "logs": ["line 1", "line 2"], "logPath": "/root/.openclaw/workspace/logs/gateway-status.log" }
 ```
 
-### `DELETE /runs/:runId`
+Example:
 
-Delete a specific run record.
-
-**Response** `200`:
-
-```json
-{ "deleted": true }
-```
-
-### `GET /status`
-
-Get the overall status of the cron manager.
-
-**Response** `200`:
-
-```json
-{
-  "status": "running",
-  "totalJobs": 5,
-  "activeJobs": 5,
-  "lastTick": "2026-03-15T10:30:00Z"
-}
+```bash
+curl -H "Authorization: Bearer $DASHBOARD_AUTH_TOKEN" \
+     http://127.0.0.1:3878/api/cron-admin/jobs
 ```
 
 ### `POST /guard/acknowledge`

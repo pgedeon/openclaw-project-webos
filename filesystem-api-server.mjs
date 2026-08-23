@@ -588,7 +588,7 @@ async function deletePath(rootReal, inputPath) {
 
 async function searchFileNames(rootReal, searchPath, query) {
   try {
-    const { stdout } = await execAsync('rg', ['--files', '--hidden', searchPath || '.'], {
+    const { stdout } = await execAsync('rg', ['--files', '--hidden', '--no-pre', '--no-search-zip', '--', searchPath || '.'], {
       cwd: rootReal,
       timeout: 10000,
       maxBuffer: 16 * 1024 * 1024,
@@ -627,7 +627,13 @@ async function searchFileContents(rootReal, searchPath, query) {
       '--max-filesize',
       '2M',
       '--hidden',
+      // Security (SECURITY-AUDIT-2026-08.md F4): '-e' + '--' stop a query or
+      // path starting with '-' from being parsed as an rg flag (e.g. --pre).
+      '--no-pre',
+      '--no-search-zip',
+      '-e',
       query,
+      '--',
       searchPath || '.',
     ], {
       cwd: rootReal,

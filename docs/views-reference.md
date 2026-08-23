@@ -547,8 +547,8 @@ Comprehensive operations console combining multiple operational views in a tabbe
 **API endpoints used:**
 - `GET /api/health-status`
 - `GET /api/agents/status`
-- `GET/POST /api/cron-admin/jobs` (via cron-manager on port 3878)
-- `POST /api/cron-admin/jobs/:id/run`
+- `GET/POST /api/cron-admin/jobs` (via cron-manager on port 3878; requires `Authorization: Bearer $DASHBOARD_AUTH_TOKEN`)
+- `POST /api/cron-admin/jobs/:id/run` (same auth; `Content-Type: application/json` required)
 
 ---
 
