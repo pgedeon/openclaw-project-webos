@@ -56,6 +56,13 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 - [x] **Version bump to 1.1.0** once Phase 0 lands. Update CHANGELOG + RELEASE.
       Done 2026-08-23: released 1.1.0 (CHANGELOG section added; RELEASE.md carries
       no version line, nothing to update).
+- [ ] **Cost/token history backfill** (promoted from prose inside the cost-schema
+      box, review 2026-08-24): backfill `workflow_runs` token/cost columns from
+      historical gateway data where available. Without it the Mission Control cost
+      panel and anomaly flag 4 stay near-empty for a week. Small, one run.
+- [ ] **`npm audit` as CI gate** (promoted from prose inside the security-pass box,
+      review 2026-08-24): advisory leftover from the closed security pass; add to
+      `.github/workflows/ci.yml`. Small, one run.
 
 ## Phase 1 — Live OpenClaw Integration (the "stand out" core)
 
@@ -63,30 +70,41 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       fleet status, blocked/stale runs, cron health, cost estimate. Cheap, huge daily
       value, watches the hourly automation itself. Ships on polling; upgrades to WS later.
       Market scan 2026-08-23: include run-anomaly flags (stale heartbeat, zero-token
-      loops) — top steal across AgentOps/FleetQ.
+      loops) — top steal across AgentOps/FleetQ. Build in flight 2026-08-24 per
+      docs/briefs/mission-control.md (part 1 = DB-free panels; part 2 = Postgres
+      panels + anomaly engine); sequencing per docs/briefs/roadmap-review-2026-08-24.md §4.
 - [ ] **Gateway websocket bridge**: replace 20s polling (`realtime-sync.mjs`) with live
       push. LANDMINE: gateway is loopback-bound (`wss://127.0.0.1:18789`) inside WSL2 —
       browser-to-gateway direct breaks remotely. Pattern: one backend subscribes to the
       gateway server-side, fans out to browsers over its own WS/SSE. Token stays
       server-side. Replace polling behind a flag; keep fallback; reconnect/backoff;
-      multi-tab fanout.
+      multi-tab fanout. Review 2026-08-24: evaluate SSE-first fanout before raw WS —
+      task-server already ships an auth-hardened SSE event-stream route (F7);
+      run the streaming verification spike (live console item) BEFORE this build.
 - [ ] **Live agent console**: stream agent output/tool-calls into a terminal window.
       First verify what the gateway actually exposes for streaming (likely
-      permission-gated); mock-first until confirmed.
-- [ ] **One-click agent actions** from any view: assign task → dispatch run → approve
-      → publish, without leaving the window.
+      permission-gated); mock-first until confirmed. Review 2026-08-24: that
+      verification is an explicit spike RUN with a written findings doc in
+      docs/briefs/ — it gates both this item and the WS bridge.
 - [ ] **Session replay inspector**: browse OpenClaw sessions, replay a transcript in a
       window with a time-travel stepper over tool-call events (prev/next/jump, payload
       inspection) — pattern proven by AgentOps/Mission Control (market scan 2026-08-23).
+      Promoted above one-click actions (review 2026-08-24): read-only, rides on the
+      already-shipped session-reader routes, no gating design needed.
+- [ ] **One-click agent actions** from any view: assign task → dispatch run → approve
+      → publish, without leaving the window. Needs its own brief first (action set,
+      confirmation UX, idempotency) — none exists yet; write it during bridge/console runs.
 - [ ] **Memory browser 2.0**: graph/timeline view of agent memories + cross-agent links
-      (semantic search already exists).
+      (semantic search already exists). Graph-first per market scan rec #5; designated
+      filler run when DB-dependent items are blocked (working rule 8).
 
 ## Phase 2 — Killer Features (things no other dashboard has)
 
 - [ ] **Cost & token analytics UI**: per-agent/task/department rollups over the Phase 0
       schema. Sparkline widgets already exist — feed them this. Include a budget ledger
       with per-agent/task caps and auto-pause-on-breach (FleetQ pattern, market scan
-      2026-08-23); Phase 0 migration already accumulates cost history.
+      2026-08-23); Phase 0 migration already accumulates cost history. Depends on the
+      Phase 0 cost/token backfill checkbox landing first (review 2026-08-24).
 - [ ] **MCP server exposure** (added per market scan 2026-08-23): wrap existing REST
       routes as MCP tools so OpenClaw agents can read tasks/runs/metrics directly in
       their tool loop; read-only tool set first, write actions behind approval gates.
