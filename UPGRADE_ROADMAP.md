@@ -27,9 +27,12 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 - [ ] **Fix test suite**: many tests are stubs/skips or reference files missing from
       the repo (31 currently excluded in CI — see ci.yml header). Get `npm test`
       green and meaningful; wire Playwright e2e into CI.
-- [ ] **Cost/token schema now** (advisory: only item where waiting destroys data):
+- [x] **Cost/token schema now** (advisory: only item where waiting destroys data):
       migration adding per-run token/cost columns + backfill from gateway data where
       available. No UI yet — analytics in Phase 2 needs this history accumulating.
+      Shipped 2026-08-23 (88abe97): migration `022_add_run_token_cost_tracking.sql`
+      adds token/cost columns to `workflow_runs`; minimal usage helpers in
+      `storage/asana.js`. Backfill from historical gateway data still open.
 - [ ] **Security pass**: audit bearer-token auth across all 4 servers (each has its
       own), path traversal guards in filesystem-api, secrets handling. Add `npm audit`
       to CI. Advisory: no cheapest-model lane for this work; careful agent + review.

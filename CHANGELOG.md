@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI: triaged all 31 previously CI-excluded tests — 3 fixed and now running in the DB-free suite (36 total: `test-metrics-api.js` UUID fixtures, `test-task-server-storage-fallback.js` repointed to `routes/health-routes.js`, `test-workflow-runs-business-context.js` defused time-bombed approval fixture), 20 deleted (19 pre-shell-era view/page tests plus `test-asana-json-snapshot.js`, whose target module never existed in the repo), 8 kept excluded but now skipping gracefully with clear `SKIP:` lines when their PostgreSQL/server/browser/`.env`/host-file dependency is absent.
 
 ### Added
+- Added per-run token/cost tracking schema (migration `022_add_run_token_cost_tracking.sql`) on `workflow_runs` — `input_tokens`, `output_tokens`, `cached_tokens`, `model_id`, `cost_estimate`, `currency`, `reported_at` — plus minimal usage read/write helpers in `storage/asana.js`; history accumulates ahead of Phase 2 analytics UI. (88abe97)
 - CI: GitHub Actions pipeline (`.github/workflows/ci.yml`) — `node --check` over all JS, docs drift check, and 33 verified DB-free tests on every push/PR. No PostgreSQL in CI. (8751775)
 - Added focused standalone coverage and API documentation corrections for export/import route handlers.
 - Added auth reference documentation and focused auth policy regression coverage.
