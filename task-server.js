@@ -124,6 +124,8 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const PORT = process.env.PORT || 3876;
+const HOST = process.env.HOST || '127.0.0.1';
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 const WORKSPACE = '/root/.openclaw/workspace';
 const TASKS_FILE = path.join(WORKSPACE, 'tasks.md');
 const DASHBOARD_ROOT = path.join(WORKSPACE, 'dashboard');
@@ -673,7 +675,8 @@ const server = http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
   const method = req.method;
 
-  // Log request
+  // Log request — query string intentionally stripped so the legacy `?token=`
+  // SSE credential never reaches logs (SECURITY-AUDIT-2026-08.md F7).
   console.log(`[${timestamp}] ${method} ${url}`);
 
   // Handle CORS preflight
@@ -690,12 +693,15 @@ const server = http.createServer(async (req, res) => {
 
   // ── AUTH MIDDLEWARE ──────────────────────────────────────
   // Require Bearer token for all /api/* routes (except /api/health and /api/auth/self)
-  // when DASHBOARD_AUTH_TOKEN is set in environment
-  // SSE endpoints (/api/events) can also authenticate via ?token= query param
+  // when DASHBOARD_AUTH_TOKEN is set in environment.
+  // Security (SECURITY-AUDIT-2026-08.md F7): prefer the Authorization header.
+  // The `?token=` query parameter is kept ONLY as a documented legacy fallback
+  // for EventSource clients (which cannot set request headers); it must never
+  // be logged — request logging above strips query strings for this reason.
   if (DASHBOARD_AUTH_TOKEN && url.startsWith('/api/') && url !== '/api/health' && url !== '/api/auth/self') {
     const authHeader = req.headers['authorization'] || '';
-    let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    // SSE fallback: accept token in query string
+    let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+    // Legacy SSE fallback (documented): accept token as ?token= query param.
     if (!token) {
       const qs = (req.url || '').split('?')[1] || '';
       const tokenParam = qs.split('&').find(p => p.startsWith('token='));
@@ -998,14 +1004,19 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// Security: refuse to bind 0.0.0.0 without auth token
+// Security (SECURITY-AUDIT-2026-08.md F8): refuse to serve without a token,
+// and refuse unauthenticated (`REQUIRE_AUTH=false`) binds on non-loopback hosts.
 if (!DASHBOARD_AUTH_TOKEN && process.env.REQUIRE_AUTH !== 'false') {
-  console.error('❌ FATAL: DASHBOARD_AUTH_TOKEN is not set. Server binds to 0.0.0.0 — set a token or export REQUIRE_AUTH=false to override.');
+  console.error(`❌ FATAL: DASHBOARD_AUTH_TOKEN is not set. Server would bind ${HOST} — set a token or export REQUIRE_AUTH=false to override.`);
+  process.exit(1);
+}
+if (!DASHBOARD_AUTH_TOKEN && !LOOPBACK_HOSTS.has(String(HOST).toLowerCase())) {
+  console.error(`❌ FATAL: REQUIRE_AUTH=false serves the dashboard without authentication — refusing to bind non-loopback host "${HOST}". Set HOST=127.0.0.1 (or localhost / ::1), or configure DASHBOARD_AUTH_TOKEN.`);
   process.exit(1);
 }
 
-server.listen(PORT, '0.0.0.0', async () => {
-  console.log(`📋 Task Server running at http://localhost:${PORT}`);
+server.listen(PORT, HOST, async () => {
+  console.log(`📋 Task Server running at http://${LOOPBACK_HOSTS.has(String(HOST).toLowerCase()) ? 'localhost' : HOST}:${PORT}`);
   console.log(`   Dashboard: http://localhost:${PORT}/`);
   console.log(`   Legacy API: http://localhost:${PORT}/api/tasks (markdown)`);
   console.log(`   New API: http://localhost:${PORT}/api/projects`);
@@ -1014,7 +1025,9 @@ server.listen(PORT, '0.0.0.0', async () => {
   console.log(`   Health: http://localhost:${PORT}/api/health`);
   console.log(`   Task file: ${TASKS_FILE}`);
   console.log(`   Storage type: ${STORAGE_TYPE}`);
-  console.log(`   Accessible from local network (auth required)`);
+  console.log(DASHBOARD_AUTH_TOKEN
+    ? `   Bound to ${HOST}:${PORT} (auth required)`
+    : `   Bound to ${HOST}:${PORT} (no auth — loopback only)`);
 
   // Initialize Asana storage
   await initAsanaStorage();

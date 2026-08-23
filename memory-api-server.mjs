@@ -11,6 +11,13 @@
  *   GET /api/memory/facts     — List all structured facts
  *   GET /api/memory/status    — Memory system status (index, embeddings, etc.)
  *   GET /api/memory/stats     — Aggregate statistics
+ *
+ * Security (SECURITY-AUDIT-2026-08.md F6):
+ *   - Every endpoint requires `Authorization: Bearer $DASHBOARD_AUTH_TOKEN`.
+ *   - Host header must match the loopback allowlist (DNS-rebinding defense).
+ *   - A browser Origin header, when present, must match the task-server origin.
+ *   - Mutating methods require Content-Type: application/json.
+ *   - Every write path validates file names via validateMemoryPath (`.md` only).
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'fs';
@@ -18,6 +25,7 @@ import { join, basename, sep } from 'path';
 import { createServer } from 'http';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import crypto from 'crypto';
 
 const execAsync = promisify(execFile);
 
@@ -25,10 +33,35 @@ const MEMORY_DIR = '/root/.openclaw/workspace/main/memory';
 const MEMORY_ROOT = '/root/.openclaw/workspace/main/MEMORY.md';
 const FACTS_SCRIPT = '/root/.openclaw/workspace/scripts/facts_db.py';
 const UNIFIED_SCRIPT = '/root/.openclaw/workspace/scripts/memory_query_unified.js';
-const PORT = process.env.MEMORY_API_PORT || 3879;
+const PORT = String(process.env.MEMORY_API_PORT || 3879);
+const DASHBOARD_AUTH_TOKEN = process.env.DASHBOARD_AUTH_TOKEN || '';
+
+if (!DASHBOARD_AUTH_TOKEN) {
+  console.error('❌ FATAL: DASHBOARD_AUTH_TOKEN is not set — refusing to start memory-api-server (SECURITY-AUDIT-2026-08.md F6).');
+  process.exit(1);
+}
+
+const TASK_SERVER_PORT = String(process.env.PORT || 3876);
+const ALLOWED_ORIGINS = new Set([
+  `http://localhost:${TASK_SERVER_PORT}`,
+  `http://127.0.0.1:${TASK_SERVER_PORT}`,
+]);
+const ALLOWED_HOSTS = new Set([
+  `127.0.0.1:${PORT}`,
+  `localhost:${PORT}`,
+  `[::1]:${PORT}`,
+]);
+
+function timingSafeTokenEqual(token, expectedToken) {
+  if (!token || !expectedToken) return false;
+  const tokenBuffer = Buffer.from(token);
+  const expectedBuffer = Buffer.from(expectedToken);
+  return tokenBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(tokenBuffer, expectedBuffer);
+}
 
 function sendJSON(res, status, data) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || '3876') });
+  res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 }
 
@@ -184,14 +217,50 @@ function getMemoryStats() {
 }
 
 const server = createServer(async (req, res) => {
+  // Host allowlist — DNS-rebinding defense (F6).
+  const host = req.headers.host || '';
+  if (!ALLOWED_HOSTS.has(host)) {
+    sendJSON(res, 403, { error: 'Forbidden host' });
+    return;
+  }
+
+  // CORS: reflect only the known task-server origin (F6).
+  const origin = req.headers.origin || '';
+  const corsOrigin = ALLOWED_ORIGINS.has(origin) ? origin : '';
+  if (corsOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
+
   if (req.method === 'OPTIONS') {
+    if (!corsOrigin) {
+      sendJSON(res, 403, { error: 'Forbidden origin' });
+      return;
+    }
     res.writeHead(204, {
-      'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || '3876'),
       'Access-Control-Allow-Methods': 'GET, PUT, POST, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '600',
     });
     res.end();
     return;
+  }
+
+  // Bearer-token auth on every route (F6).
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!timingSafeTokenEqual(token, DASHBOARD_AUTH_TOKEN)) {
+    sendJSON(res, 401, { error: 'Unauthorized', message: 'Valid Bearer token required' });
+    return;
+  }
+
+  // Mutating routes must declare application/json (F6).
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    const contentType = String(req.headers['content-type'] || '').toLowerCase();
+    if (!contentType.startsWith('application/json')) {
+      sendJSON(res, 415, { error: 'Unsupported Media Type', message: 'Content-Type: application/json required' });
+      return;
+    }
   }
 
   try {
@@ -280,7 +349,9 @@ const server = createServer(async (req, res) => {
     if (urlPath.startsWith('/api/memory/file/') && method === 'PUT') {
       try {
         const name = decodeURIComponent(urlPath.replace('/api/memory/file/', ''));
-        const safeName = basename(name);
+        // Security (F6): validateMemoryPath on every write path — `.md` only,
+        // no hidden files, no traversal.
+        const safeName = validateMemoryPath(name);
         const filePath = join(MEMORY_DIR, safeName);
         // Only allow saving files that already exist
         if (!existsSync(filePath)) return sendJSON(res, 404, { error: 'File not found' });

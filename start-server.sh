@@ -7,7 +7,7 @@ export POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
 export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 export POSTGRES_DB="${POSTGRES_DB:-openclaw_dashboard}"
 export POSTGRES_USER="${POSTGRES_USER:-openclaw}"
-export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-openclaw_password}"
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-change-me}"
 export PORT="${PORT:-3876}"
 export HOST="${HOST:-127.0.0.1}"
 

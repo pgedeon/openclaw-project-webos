@@ -412,7 +412,7 @@ Returns the registered route catalog from the in-process router.
 
 Opens a Server-Sent Events stream for browser clients that need live dashboard updates. The stream sends an initial comment frame, periodic heartbeat comments, and named events broadcast by task, project, space, gateway, and chat route handlers.
 
-When `DASHBOARD_AUTH_TOKEN` is configured, this endpoint accepts either the standard `Authorization: Bearer <token>` header or `?token=<token>` for `EventSource` clients.
+When `DASHBOARD_AUTH_TOKEN` is configured, this endpoint requires authentication. The standard `Authorization: Bearer <token>` header is the preferred credential. The `?token=<token>` query parameter remains only as a documented legacy fallback for `EventSource` clients (which cannot set request headers); since query strings can leak into browser history, proxy logs, and `Referer` headers, the server strips query strings from all request log lines so the token is never logged (SECURITY-AUDIT-2026-08.md F7).
 
 **Response** `200`:
 
@@ -752,9 +752,28 @@ lock file at `/tmp/openclaw-heartbeat-cron-guard-state.json`).
 
 ## Memory API (Port 3879)
 
-The memory API provides access to the agent memory system — reading and writing
-memory files, querying facts from the facts database, and running semantic
-searches via the unified query script.
+The memory API (`memory-api-server.mjs`) provides access to the agent memory
+system — reading and writing memory files, querying facts from the facts
+database, and running semantic searches via the unified query script.
+Dashboard traffic normally reaches it through the authenticated task-server
+proxy (`routes/memory-routes.js`).
+
+### Authentication & request rules
+
+Since the 2026-08 security fixes (SECURITY-AUDIT-2026-08.md F6):
+
+- Every endpoint requires `Authorization: Bearer $DASHBOARD_AUTH_TOKEN`.
+  The server refuses to start when `DASHBOARD_AUTH_TOKEN` is unset.
+- The `Host` header must be `127.0.0.1:3879`, `localhost:3879`, or
+  `[::1]:3879` (DNS-rebinding defense).
+- A browser `Origin` header, when present, must match the task-server origin
+  (`http://localhost:3876` or `http://127.0.0.1:3876`). CORS preflight allows
+  only `Content-Type` and `Authorization` headers.
+- Mutating methods (`POST`, `PUT`, `DELETE`) must send
+  `Content-Type: application/json`; anything else returns `415`.
+- Every write path validates file names via `validateMemoryPath`: only `.md`
+  files, no hidden files, no path traversal. Violations return an error and
+  the file is never touched.
 
 ### `GET /api/memory/list`
 

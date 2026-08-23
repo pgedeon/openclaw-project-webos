@@ -13,9 +13,9 @@ The OpenClaw Dashboard is configured via environment variables. A template is pr
 | Variable | Required | Default | Description | Component |
 |----------|----------|---------|-------------|-----------|
 | `PORT` | No | `3876` | HTTP port for the dashboard server | `task-server.js` |
-| `HOST` | No | `127.0.0.1` | Bind address for the dashboard server | `task-server.js` |
+| `HOST` | No | `127.0.0.1` | Bind address for the dashboard server, honored by `listen()`; unauthenticated mode (`REQUIRE_AUTH=false`) refuses non-loopback hosts | `task-server.js` |
 | `DASHBOARD_AUTH_TOKEN` | Yes* | — | Bearer token for `/api/*` routes except `/api/health` and `/api/auth/self` (*required unless `REQUIRE_AUTH=false` is set) | `task-server.js` |
-| `REQUIRE_AUTH` | No | `true` | Set to `false` only for explicitly open local development without `DASHBOARD_AUTH_TOKEN` | `task-server.js` |
+| `REQUIRE_AUTH` | No | `true` | Set to `false` only for explicitly open local development without `DASHBOARD_AUTH_TOKEN`; the server then refuses to bind any non-loopback `HOST` | `task-server.js` |
 
 The current auth mode is single-operator bearer token auth. Full login/session/RBAC auth is deferred until a multi-operator requirement exists. See [Auth Reference](auth-reference.md).
 
