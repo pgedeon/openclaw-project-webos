@@ -10,8 +10,10 @@ OpenClaw integration of any OpenClaw dashboard. Each phase ships user-visible wi
 
 ## Phase 0 — Foundations (do first, ~1 week of hourly runs)
 
-- [ ] **CI pipeline** (`.github/workflows/ci.yml`): lint + `node --test`/route tests on
+- [x] **CI pipeline** (`.github/workflows/ci.yml`): lint + `node --test`/route tests on
       every push and PR. No CI exists today — nothing protects the codebase.
+      Shipped 2026-08-23 (8751775): syntax check + docs drift + 33 DB-free tests;
+      remaining test suite still needs the "Fix test suite" item below.
 - [ ] **Fix test suite**: many tests are stubs or skipped. Get `npm test` green and
       meaningful; wire Playwright e2e into CI.
 - [ ] **Security pass**: audit bearer-token auth across all 4 servers, path traversal

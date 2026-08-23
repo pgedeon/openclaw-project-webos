@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codified current auth as single-operator bearer-token mode and exposed deferred full-auth policy metadata from `/api/auth/self`.
 
 ### Added
+- CI: GitHub Actions pipeline (`.github/workflows/ci.yml`) — `node --check` over all JS, docs drift check, and 33 verified DB-free tests on every push/PR. No PostgreSQL in CI. (8751775)
 - Added focused standalone coverage and API documentation corrections for export/import route handlers.
 - Added auth reference documentation and focused auth policy regression coverage.
 - Added focused standalone coverage for agent route handlers.
