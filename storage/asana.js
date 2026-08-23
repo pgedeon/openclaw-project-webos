@@ -3174,6 +3174,73 @@ class AsanaStorage {
   }
 
   // ============================================
+  // WORKFLOW RUN USAGE (token/cost tracking)
+  // ============================================
+
+  /**
+   * Record token/cost usage on a workflow run.
+   * Accepts a partial usage object; only provided fields are written.
+   * Returns true when written, false when the runs table is unavailable
+   * (graceful degradation - callers must not break without PostgreSQL).
+   */
+  async updateWorkflowRunUsage(runId, usage = {}) {
+    if (!(await this.tableExists('workflow_runs'))) {
+      return false;
+    }
+
+    const fields = [];
+    const values = [];
+    let idx = 1;
+
+    for (const key of ['input_tokens', 'output_tokens', 'cached_tokens', 'model_id', 'cost_estimate', 'currency']) {
+      if (usage[key] !== undefined) {
+        fields.push(`${key} = $${idx}`);
+        values.push(usage[key]);
+        idx++;
+      }
+    }
+
+    if (fields.length === 0) {
+      return false;
+    }
+
+    fields.push(`reported_at = NOW()`);
+    values.push(runId);
+
+    try {
+      await this.pool.query(
+        `UPDATE workflow_runs SET ${fields.join(', ')} WHERE id = $${values.length}`,
+        values
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Read token/cost usage for one workflow run.
+   * Returns null when the run or the runs table is unavailable.
+   */
+  async getWorkflowRunUsage(runId) {
+    if (!(await this.tableExists('workflow_runs'))) {
+      return null;
+    }
+
+    try {
+      const result = await this.pool.query(
+        `SELECT id, input_tokens, output_tokens, cached_tokens,
+                model_id, cost_estimate, currency, reported_at
+         FROM workflow_runs WHERE id = $1`,
+        [runId]
+      );
+      return result.rows[0] || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ============================================
   // AUDIT LOG
   // ============================================
 

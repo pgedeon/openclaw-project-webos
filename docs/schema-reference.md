@@ -198,6 +198,13 @@ Tracks execution instances of workflows.
 | `claimed_by` | `TEXT` | nullable | *(021)* |
 | `claim_session_id` | `TEXT` | nullable | *(021)* |
 | `dispatch_attempts` | `INTEGER` | NOT NULL, default `0` | *(021)* |
+| `input_tokens` | `BIGINT` | nullable | *(022)* Prompt/input tokens consumed by the run |
+| `output_tokens` | `BIGINT` | nullable | *(022)* Completion/output tokens produced by the run |
+| `cached_tokens` | `BIGINT` | nullable | *(022)* Tokens served from cache (subset of input) |
+| `model_id` | `TEXT` | nullable | *(022)* Primary model used for this run |
+| `cost_estimate` | `NUMERIC(12,6)` | nullable | *(022)* Estimated cost of the run |
+| `currency` | `TEXT` | default `'USD'` | *(022)* ISO 4217 currency code for `cost_estimate` |
+| `reported_at` | `TIMESTAMPTZ` | nullable | *(022)* When usage/cost was last reported |
 | `blocker_type` | `TEXT` | nullable | *(004)* |
 | `blocker_description` | `TEXT` | nullable | *(004)* |
 
@@ -632,6 +639,7 @@ Multi-workspace support with per-space configuration.
 | 015 | `015_add_department_daily_metrics.sql` | — | Add `department_daily_metrics` table |
 | 020 | `020_add_error_details_to_workflow_runs.sql` | 2026-03-21 | Add `error_details` JSONB column to workflow_runs |
 | 021 | `021_add_workflow_agent_routing.sql` | 2026-03-22 | Add `workflow_agent_routing` table, dispatch/claim columns |
+| 022 | `022_add_run_token_cost_tracking.sql` | 2026-08-23 | Add per-run token/cost tracking columns to `workflow_runs` (roadmap Phase 0) |
 | 20260216a | `20260216_add_agent_observability.sql` | 2026-02-16 | Add `agent_heartbeats` and `task_runs` tables, `retry_count` on tasks |
 | 20260216b | `20260216_add_archive_deleted_to_tasks.sql` | 2026-02-16 | Add `archived_at` and `deleted_at` to tasks |
 | 20260216c | `20260216_add_audit_log_search_indexes.sql` | 2026-02-16 | Add `action` and `(actor, action)` indexes to audit_log |
