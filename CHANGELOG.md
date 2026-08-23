@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused standalone coverage and API documentation for workflow routing admin route handlers.
 
 ### Fixed
+- **Security (SECURITY-AUDIT-2026-08.md F1):** stopped injecting `DASHBOARD_AUTH_TOKEN` into the unauthenticated dashboard HTML at `/`; the shell now verifies an operator-entered token against `/api/auth/self` before booting and sends it as a Bearer header.
+- **Security (SECURITY-AUDIT-2026-08.md F2):** cron-manager API now requires bearer auth (`DASHBOARD_AUTH_TOKEN`, server refuses to start without it), validates `Host`/`Origin` against allowlists, and requires `Content-Type: application/json` on mutating routes.
+- **Security (SECURITY-AUDIT-2026-08.md F3):** cron job ids are validated against `/^[A-Za-z0-9._-]+$/` with any `..` rejected before being used in filesystem paths.
+- **Security (SECURITY-AUDIT-2026-08.md F4):** filesystem search passes `-e <query>` plus `--` separators to `rg` so queries starting with `-` can no longer inject flags such as `--pre`.
 - Fixed import route validation so malformed bundles do not acquire a database client and connection failures return handled JSON errors.
 - Fixed history route handled returns and unavailable-database detection for delayed PostgreSQL initialization.
 - Fixed health routes so storage failures return handled JSON errors and OpenClaw CLI error payloads return dependency failures.
