@@ -43,10 +43,18 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       Shipped 2026-08-23 (88abe97): migration `022_add_run_token_cost_tracking.sql`
       adds token/cost columns to `workflow_runs`; minimal usage helpers in
       `storage/asana.js`. Backfill from historical gateway data still open.
-- [ ] **Security pass**: audit bearer-token auth across all 4 servers (each has its
+- [x] **Security pass**: audit bearer-token auth across all 4 servers (each has its
       own), path traversal guards in filesystem-api, secrets handling. Add `npm audit`
       to CI. Advisory: no cheapest-model lane for this work; careful agent + review.
-- [ ] **Version bump to 1.1.0** once Phase 0 lands. Update CHANGELOG + RELEASE.
+      Shipped 2026-08-23: full audit of all 4 servers (2aa7333 →
+      SECURITY-AUDIT-2026-08.md; 11 findings: 2 critical, 3 high, 3 medium, 3 low)
+      + fixes ba4ffa8 (F1-F4), c11bfba (F6-F8), 758323f (F9-F11); CVE-2026-44240
+      dependency fix in 1eb8137. Residual follow-ups: F5 (standalone
+      filesystem-api-server still lacks bearer auth — `/api/fs/*` is served
+      in-process under task-server auth), `npm audit` not yet a CI gate.
+- [x] **Version bump to 1.1.0** once Phase 0 lands. Update CHANGELOG + RELEASE.
+      Done 2026-08-23: released 1.1.0 (CHANGELOG section added; RELEASE.md carries
+      no version line, nothing to update).
 
 ## Phase 1 — Live OpenClaw Integration (the "stand out" core)
 

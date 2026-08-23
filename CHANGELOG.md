@@ -7,18 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Market scan (docs/research/market-scan-2026-08-23.md): competitive landscape across 18 agent-ops/workflow platforms, top-5 steal-worthy features with impact/effort scores; UPGRADE_ROADMAP updated — run-anomaly flags in Mission Control scope, session inspector expanded to replay stepper, budget ledger + auto-pause added to cost analytics, new MCP server exposure item.
-- Security audit shipped, 11 findings (2 critical, 3 high), fixes queued (SECURITY-AUDIT-2026-08.md).
-- CI: Playwright e2e job (`e2e`, separate from `verify`) — chromium-only DB-free smoke suite run against `task-server.js` in `STORAGE_TYPE=json_snapshot` mode on `127.0.0.1:3876`, Playwright report uploaded on failure. Restored `storage/asana-json-snapshot.js` (referenced by `task-server.js` and documented in README, but missing from the repo — without it json_snapshot mode left storage uninitialized and the server 503'd every request, including static files). Replaced the storage-CRUD e2e spec with a DB-free smoke suite (title, auth token gate, no uncaught JS errors, `/api/health` + `/api/auth/self` contract, shell boot with valid stored token) — the old spec's CRUD assertions require real PostgreSQL. (a99385b, fixed 86c5ffb)
-
 ### Changed
 - Codified current auth as single-operator bearer-token mode and exposed deferred full-auth policy metadata from `/api/auth/self`.
-- CI: triaged all 31 previously CI-excluded tests — 3 fixed and now running in the DB-free suite (36 total: `test-metrics-api.js` UUID fixtures, `test-task-server-storage-fallback.js` repointed to `routes/health-routes.js`, `test-workflow-runs-business-context.js` defused time-bombed approval fixture), 20 deleted (19 pre-shell-era view/page tests plus `test-asana-json-snapshot.js`, whose target module never existed in the repo), 8 kept excluded but now skipping gracefully with clear `SKIP:` lines when their PostgreSQL/server/browser/`.env`/host-file dependency is absent.
 
 ### Added
-- Added per-run token/cost tracking schema (migration `022_add_run_token_cost_tracking.sql`) on `workflow_runs` — `input_tokens`, `output_tokens`, `cached_tokens`, `model_id`, `cost_estimate`, `currency`, `reported_at` — plus minimal usage read/write helpers in `storage/asana.js`; history accumulates ahead of Phase 2 analytics UI. (88abe97)
-- CI: GitHub Actions pipeline (`.github/workflows/ci.yml`) — `node --check` over all JS, docs drift check, and 33 verified DB-free tests on every push/PR. No PostgreSQL in CI. (8751775)
 - Added focused standalone coverage and API documentation corrections for export/import route handlers.
 - Added auth reference documentation and focused auth policy regression coverage.
 - Added focused standalone coverage for agent route handlers.
@@ -38,13 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused standalone coverage and API documentation for workflow routing admin route handlers.
 
 ### Fixed
-- **Security (SECURITY-AUDIT-2026-08.md F1):** stopped injecting `DASHBOARD_AUTH_TOKEN` into the unauthenticated dashboard HTML at `/`; the shell now verifies an operator-entered token against `/api/auth/self` before booting and sends it as a Bearer header.
-- **Security (SECURITY-AUDIT-2026-08.md F2):** cron-manager API now requires bearer auth (`DASHBOARD_AUTH_TOKEN`, server refuses to start without it), validates `Host`/`Origin` against allowlists, and requires `Content-Type: application/json` on mutating routes.
-- **Security (SECURITY-AUDIT-2026-08.md F3):** cron job ids are validated against `/^[A-Za-z0-9._-]+$/` with any `..` rejected before being used in filesystem paths.
-- **Security (SECURITY-AUDIT-2026-08.md F4):** filesystem search passes `-e <query>` plus `--` separators to `rg` so queries starting with `-` can no longer inject flags such as `--pre`.
-- **Security (SECURITY-AUDIT-2026-08.md F6):** memory API now requires bearer auth (`DASHBOARD_AUTH_TOKEN`, server refuses to start without it), validates `Host`/`Origin` against loopback allowlists, requires `Content-Type: application/json` on mutating routes, and applies `validateMemoryPath` on every write path including `PUT /api/memory/file/:name`.
-- **Security (SECURITY-AUDIT-2026-08.md F7):** task-server SSE authentication prefers the `Authorization: Bearer` header; `?token=` remains only a documented legacy fallback for `EventSource` clients, and request log lines strip query strings so the token never reaches logs.
-- **Security (SECURITY-AUDIT-2026-08.md F8):** task-server honors the `HOST` environment variable in `listen()` (default `127.0.0.1`, matching the documented default), refuses non-loopback binds when serving without authentication (`REQUIRE_AUTH=false`), reports the real bind address at startup, and `start-server.sh` now uses the same `change-me` placeholder as `.env.example`.
 - Fixed import route validation so malformed bundles do not acquire a database client and connection failures return handled JSON errors.
 - Fixed history route handled returns and unavailable-database detection for delayed PostgreSQL initialization.
 - Fixed health routes so storage failures return handled JSON errors and OpenClaw CLI error payloads return dependency failures.
@@ -54,6 +39,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed task subtask route error mapping so missing parent/child tasks return 404 and validation failures return 400.
 - Fixed cron route handling of OpenClaw CLI dependency errors returned as `{ error }` payloads.
 - Fixed workflow routing admin handlers so validation and missing-database responses are consistently reported as handled by the router.
+
+## [1.1.0] - 2026-08-23
+
+### Added
+- Market scan (docs/research/market-scan-2026-08-23.md): competitive landscape across 18 agent-ops/workflow platforms, top-5 steal-worthy features with impact/effort scores; UPGRADE_ROADMAP updated — run-anomaly flags in Mission Control scope, session inspector expanded to replay stepper, budget ledger + auto-pause added to cost analytics, new MCP server exposure item.
+- Security audit shipped, 11 findings (2 critical, 3 high), fixes queued (SECURITY-AUDIT-2026-08.md).
+- CI: Playwright e2e job (`e2e`, separate from `verify`) — chromium-only DB-free smoke suite run against `task-server.js` in `STORAGE_TYPE=json_snapshot` mode on `127.0.0.1:3876`, Playwright report uploaded on failure. Restored `storage/asana-json-snapshot.js` (referenced by `task-server.js` and documented in README, but missing from the repo — without it json_snapshot mode left storage uninitialized and the server 503'd every request, including static files). Replaced the storage-CRUD e2e spec with a DB-free smoke suite (title, auth token gate, no uncaught JS errors, `/api/health` + `/api/auth/self` contract, shell boot with valid stored token) — the old spec's CRUD assertions require real PostgreSQL. (a99385b, fixed 86c5ffb)
+- Added per-run token/cost tracking schema (migration `022_add_run_token_cost_tracking.sql`) on `workflow_runs` — `input_tokens`, `output_tokens`, `cached_tokens`, `model_id`, `cost_estimate`, `currency`, `reported_at` — plus minimal usage read/write helpers in `storage/asana.js`; history accumulates ahead of Phase 2 analytics UI. (88abe97)
+- CI: GitHub Actions pipeline (`.github/workflows/ci.yml`) — `node --check` over all JS, docs drift check, and 33 verified DB-free tests on every push/PR. No PostgreSQL in CI. (8751775)
+
+### Changed
+- CI: triaged all 31 previously CI-excluded tests — 3 fixed and now running in the DB-free suite (36 total: `test-metrics-api.js` UUID fixtures, `test-task-server-storage-fallback.js` repointed to `routes/health-routes.js`, `test-workflow-runs-business-context.js` defused time-bombed approval fixture), 20 deleted (19 pre-shell-era view/page tests plus `test-asana-json-snapshot.js`, whose target module never existed in the repo), 8 kept excluded but now skipping gracefully with clear `SKIP:` lines when their PostgreSQL/server/browser/`.env`/host-file dependency is absent.
+
+### Fixed
+- **Security (SECURITY-AUDIT-2026-08.md F1):** stopped injecting `DASHBOARD_AUTH_TOKEN` into the unauthenticated dashboard HTML at `/`; the shell now verifies an operator-entered token against `/api/auth/self` before booting and sends it as a Bearer header.
+- **Security (SECURITY-AUDIT-2026-08.md F2):** cron-manager API now requires bearer auth (`DASHBOARD_AUTH_TOKEN`, server refuses to start without it), validates `Host`/`Origin` against allowlists, and requires `Content-Type: application/json` on mutating routes.
+- **Security (SECURITY-AUDIT-2026-08.md F3):** cron job ids are validated against `/^[A-Za-z0-9._-]+$/` with any `..` rejected before being used in filesystem paths.
+- **Security (SECURITY-AUDIT-2026-08.md F4):** filesystem search passes `-e <query>` plus `--` separators to `rg` so queries starting with `-` can no longer inject flags such as `--pre`.
+- **Security (SECURITY-AUDIT-2026-08.md F6):** memory API now requires bearer auth (`DASHBOARD_AUTH_TOKEN`, server refuses to start without it), validates `Host`/`Origin` against loopback allowlists, requires `Content-Type: application/json` on mutating routes, and applies `validateMemoryPath` on every write path including `PUT /api/memory/file/:name`.
+- **Security (SECURITY-AUDIT-2026-08.md F7):** task-server SSE authentication prefers the `Authorization: Bearer` header; `?token=` remains only a documented legacy fallback for `EventSource` clients, and request log lines strip query strings so the token never reaches logs.
+- **Security (SECURITY-AUDIT-2026-08.md F8):** task-server honors the `HOST` environment variable in `listen()` (default `127.0.0.1`, matching the documented default), refuses non-loopback binds when serving without authentication (`REQUIRE_AUTH=false`), reports the real bind address at startup, and `start-server.sh` now uses the same `change-me` placeholder as `.env.example`.
 
 ## [2.0.0-rc.4] – 2026-03-23
 
