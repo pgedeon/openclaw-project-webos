@@ -12,8 +12,8 @@ const BASE = 'http://localhost:3876';
 const PROJECT_ID = process.argv[2] || '';
 
 if (!PROJECT_ID) {
-  console.error('Usage: node tests/test-saved-views-api.js <project_id>');
-  process.exit(1);
+  console.log('SKIP: requires <project_id> argument (usage: node tests/test-saved-views-api.js <project_id>)');
+  process.exit(0);
 }
 
 function request(method, path, body = null) {

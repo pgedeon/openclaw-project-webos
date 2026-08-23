@@ -36,6 +36,7 @@ const INCLUDED = [
   'test-health-status-gateway-snapshot.js',
   'test-history-routes.js',
   'test-memory-routes.js',
+  'test-metrics-api.js',
   'test-operational-followup.js',
   'test-org-api-storage.js',
   'test-org-api.js',
@@ -49,12 +50,14 @@ const INCLUDED = [
   'test-space-routes.js',
   'test-sse-routes.js',
   'test-task-routes.js',
+  'test-task-server-storage-fallback.js',
   'test-view-routes.js',
   'test-workflow-approvals-api.js',
   'test-workflow-artifacts-api.js',
   'test-workflow-blockers-api.js',
   'test-workflow-governance.js',
-  'test-workflow-routing-routes.js'
+  'test-workflow-routing-routes.js',
+  'test-workflow-runs-business-context.js'
 ];
 
 let failed = 0;

@@ -53,6 +53,16 @@ function makeStore(dir, envContent = '', configContent = null) {
   return new SettingsStore({ envPath, configPath });
 }
 
+// Repo-level .env is a deployment artifact, not part of the repo.
+// Live-API / browser / regression sections depend on it; skip cleanly when absent.
+function readRepoEnv() {
+  try {
+    return fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 function httpGet(url, headers = {}) {
   return new Promise((resolve, reject) => {
     const req = http.get(url, { headers }, res => {
@@ -864,7 +874,11 @@ async function testLiveApiDeep() {
   section('H. Live API — Deep HTTP Testing');
 
   const BASE = 'http://127.0.0.1:3876';
-  const envContent = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8');
+  const envContent = readRepoEnv();
+  if (!envContent) {
+    console.log('SKIP: requires repo .env + task server on :3876');
+    return;
+  }
   const TOKEN = envContent.match(/DASHBOARD_AUTH_TOKEN=(.+)/)?.[1]?.trim();
   if (!TOKEN) {
     console.log('  ⚠️ No auth token, skipping live tests');
@@ -1348,7 +1362,11 @@ async function testPlaywrightUI() {
     return;
   }
 
-  const envContent = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8');
+  const envContent = readRepoEnv();
+  if (!envContent) {
+    console.log('SKIP: requires repo .env for auth token');
+    return;
+  }
   const TOKEN = envContent.match(/DASHBOARD_AUTH_TOKEN=(.+)/)?.[1]?.trim();
   const consoleErrors = [];
   page.on('console', msg => {
@@ -1495,7 +1513,8 @@ async function testRegressionGuards() {
 
   // M1: Route ordering: system-info should NOT match :category
   await test('GET /api/settings/system-info is NOT caught by :category', async () => {
-    const envContent = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8');
+    const envContent = readRepoEnv();
+    if (!envContent) { console.log('  SKIP: requires repo .env'); return; }
     const TOKEN = envContent.match(/DASHBOARD_AUTH_TOKEN=(.+)/)?.[1]?.trim();
     if (!TOKEN) return;
     const res = await httpGet('http://127.0.0.1:3876/api/settings/system-info', { 'Authorization': `Bearer ${TOKEN}` });
@@ -1506,7 +1525,8 @@ async function testRegressionGuards() {
 
   // M2: Route ordering: schema should NOT match :category
   await test('GET /api/settings/schema is NOT caught by :category', async () => {
-    const envContent = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8');
+    const envContent = readRepoEnv();
+    if (!envContent) { console.log('  SKIP: requires repo .env'); return; }
     const TOKEN = envContent.match(/DASHBOARD_AUTH_TOKEN=(.+)/)?.[1]?.trim();
     if (!TOKEN) return;
     const res = await httpGet('http://127.0.0.1:3876/api/settings/schema', { 'Authorization': `Bearer ${TOKEN}` });
@@ -1516,7 +1536,8 @@ async function testRegressionGuards() {
 
   // M3: Pool reference via getter (not destructured null)
   await test('test-db returns actual result (not "No pool configured")', async () => {
-    const envContent = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8');
+    const envContent = readRepoEnv();
+    if (!envContent) { console.log('  SKIP: requires repo .env'); return; }
     const TOKEN = envContent.match(/DASHBOARD_AUTH_TOKEN=(.+)/)?.[1]?.trim();
     if (!TOKEN) return;
     const res = await httpRequest('POST', 'http://127.0.0.1:3876/api/settings/test-db', undefined, { 'Authorization': `Bearer ${TOKEN}` });

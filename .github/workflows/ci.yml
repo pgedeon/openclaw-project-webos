@@ -3,43 +3,49 @@
 # Scope: syntax check + docs drift check + DB-free tests only.
 # No PostgreSQL or any other service is started or required.
 #
-# Test inclusion/exclusion (verified 2026-08-23 by running every
-# tests/test-*.js with PostgreSQL unreachable, on Node v20 and v22):
+# Test inclusion/exclusion (originally verified 2026-08-23 by running every
+# tests/test-*.js with PostgreSQL unreachable, on Node v20 and v22; re-triaged
+# 2026-08-23 in "test: triage 31 CI-excluded tests"):
 #
-# INCLUDED (33) — pass without a database; run by scripts/ci-db-free-tests.js:
+# INCLUDED (36) — pass without a database; run by scripts/ci-db-free-tests.js:
 #   test-agent-routes.js, test-auth-policy.js, test-bing-routes.js,
 #   test-catalog-api.js, test-chat-routes.js, test-cron-routes.js,
 #   test-dispatcher-v2.js, test-export-routes.js,
 #   test-filesystem-proxy-availability.js, test-filesystem-proxy-origin.js,
 #   test-health-routes.js, test-health-status-gateway-snapshot.js,
-#   test-history-routes.js, test-memory-routes.js, test-operational-followup.js,
-#   test-org-api-storage.js, test-org-api.js,
+#   test-history-routes.js, test-memory-routes.js, test-metrics-api.js,
+#   test-operational-followup.js, test-org-api-storage.js, test-org-api.js,
 #   test-org-department-operating-view.js, test-project-routes.js,
 #   test-route-modules.js, test-service-requests-api.js, test-session-routes.js,
 #   test-settings-routes.js, test-settings.js, test-space-routes.js,
-#   test-sse-routes.js, test-task-routes.js, test-view-routes.js,
+#   test-sse-routes.js, test-task-routes.js,
+#   test-task-server-storage-fallback.js, test-view-routes.js,
 #   test-workflow-approvals-api.js, test-workflow-artifacts-api.js,
 #   test-workflow-blockers-api.js, test-workflow-governance.js,
-#   test-workflow-routing-routes.js
+#   test-workflow-routing-routes.js, test-workflow-runs-business-context.js
 #
-# EXCLUDED (31) — skipped gracefully until roadmap item "Fix test suite" lands:
-#   - Need PostgreSQL / running servers / browsers:
-#     test-asana-json-snapshot.js, test-dispatcher-v2-integration.js,
+# EXCLUDED — skip themselves gracefully when their dependency is absent:
+#   - Need PostgreSQL / running servers / browsers / CLI args:
+#     test-dispatcher-v2-integration.js (PostgreSQL),
 #     test-filter-behavior.js (Playwright + server on :3876),
-#     test-metrics-api.js, test-metrics-snapshot-job.js, test-org-bootstrap-coverage.js,
-#     test-saved-views-api.js (requires CLI arg), test-settings-deep.js (needs .env + DB),
-#     test-task-server-storage-fallback.js, test-workflow-runs-business-context.js
-#   - Reference files missing from the repo (stale view/page tests):
-#     test-agents-page-blockers.js, test-agents-page-explicit-grouping.js,
-#     test-approvals-view.js, test-artifacts-view.js, test-audit-view-governance.js,
-#     test-dashboard-navigation.js, test-departments-view.js,
-#     test-extracted-views-registry.js, test-local-dev-service-worker.js,
-#     test-metrics-view.js, test-operations-page.js, test-publish-view.js,
-#     test-runbook-governance-embeds.js, test-service-requests-view.js,
-#     test-skills-tools-entrypoint.js, test-skills-tools-page.js,
-#     test-skills-tools-view.js, test-view-router.js, test-workflows-page.js
-#   - Require .env not present in CI:
-#     test-batch1-work.js, test-batch3-admin.js
+#     test-saved-views-api.js (<project_id> arg + server),
+#     test-settings-deep.js (.env + server + browser),
+#     test-batch1-work.js / test-batch3-admin.js (.env + server on :3876)
+#   - Need host files outside the repo:
+#     test-metrics-snapshot-job.js (host crontab file),
+#     test-org-bootstrap-coverage.js (host openclaw.json)
+#
+# DELETED (2026-08-23 triage) — referenced files that never existed in this repo
+# (pre-shell-era page/view tests and a phantom storage module); they could never pass:
+#   test-agents-page-blockers.js, test-agents-page-explicit-grouping.js,
+#   test-approvals-view.js, test-artifacts-view.js, test-asana-json-snapshot.js,
+#   test-audit-view-governance.js, test-dashboard-navigation.js,
+#   test-departments-view.js, test-extracted-views-registry.js,
+#   test-local-dev-service-worker.js, test-metrics-view.js, test-operations-page.js,
+#   test-publish-view.js, test-runbook-governance-embeds.js,
+#   test-service-requests-view.js, test-skills-tools-entrypoint.js,
+#   test-skills-tools-page.js, test-skills-tools-view.js, test-view-router.js,
+#   test-workflows-page.js
 
 name: CI
 

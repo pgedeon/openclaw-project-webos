@@ -8,6 +8,11 @@ function run() {
   const scriptPath = path.resolve(__dirname, '../scripts/aggregate-department-metrics.js');
   const cronPath = path.resolve(__dirname, '../../crontab/department-metrics-snapshot.cron');
 
+  if (!fs.existsSync(cronPath)) {
+    console.log('SKIP: requires host crontab file department-metrics-snapshot.cron (outside repo)');
+    return;
+  }
+
   const script = fs.readFileSync(scriptPath, 'utf8');
   const cron = fs.readFileSync(cronPath, 'utf8');
 

@@ -11,6 +11,10 @@ const {
 
 function run() {
   const openclawPath = path.resolve(__dirname, '../../../openclaw.json');
+  if (!fs.existsSync(openclawPath)) {
+    console.log('SKIP: requires host openclaw.json config (outside repo)');
+    return;
+  }
   const config = JSON.parse(fs.readFileSync(openclawPath, 'utf8'));
   const configuredAgents = (config.agents?.list || [])
     .map((agent) => agent?.id)

@@ -115,7 +115,7 @@ async function run() {
             requested_by: 'dashboard-operator',
             status: 'pending',
             requested_at: '2026-03-12T13:15:00.000Z',
-            due_at: '2026-03-15T18:00:00.000Z',
+            due_at: '2099-12-31T23:59:59.999Z',
             required_note: true,
             task_id: 'task-1',
             workflow_type: 'affiliate-article',

@@ -7,6 +7,9 @@ const path = require('path');
 function run() {
   const serverPath = path.resolve(__dirname, '../task-server.js');
   const source = fs.readFileSync(serverPath, 'utf8');
+  // Health endpoints moved from task-server.js into the router (routes/health-routes.js).
+  const healthRoutesPath = path.resolve(__dirname, '../routes/health-routes.js');
+  const healthRoutes = fs.readFileSync(healthRoutesPath, 'utf8');
 
   assert.ok(
     source.includes("const ASANA_JSON_SNAPSHOT_PATH = process.env.ASANA_JSON_SNAPSHOT_PATH || path.join(WORKSPACE, 'data/asana-db.json');"),
@@ -25,11 +28,11 @@ function run() {
     'task-server should compute storage health state for health endpoints'
   );
   assert.ok(
-    source.includes('storage_mode: storageHealth.mode'),
+    healthRoutes.includes('storage_mode: storageHealth.mode'),
     '/api/health should expose the active storage mode'
   );
   assert.ok(
-    source.includes('mode: storageHealth.mode'),
+    healthRoutes.includes('mode: storageHealth.mode'),
     '/api/health-status should expose the active storage mode'
   );
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Codified current auth as single-operator bearer-token mode and exposed deferred full-auth policy metadata from `/api/auth/self`.
+- CI: triaged all 31 previously CI-excluded tests — 3 fixed and now running in the DB-free suite (36 total: `test-metrics-api.js` UUID fixtures, `test-task-server-storage-fallback.js` repointed to `routes/health-routes.js`, `test-workflow-runs-business-context.js` defused time-bombed approval fixture), 20 deleted (19 pre-shell-era view/page tests plus `test-asana-json-snapshot.js`, whose target module never existed in the repo), 8 kept excluded but now skipping gracefully with clear `SKIP:` lines when their PostgreSQL/server/browser/`.env`/host-file dependency is absent.
 
 ### Added
 - CI: GitHub Actions pipeline (`.github/workflows/ci.yml`) — `node --check` over all JS, docs drift check, and 33 verified DB-free tests on every push/PR. No PostgreSQL in CI. (8751775)
