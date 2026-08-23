@@ -127,6 +127,10 @@ jobs:
         run: |
           sudo mkdir -p /root/.openclaw/workspace/dashboard
           sudo cp -a index.html src /root/.openclaw/workspace/dashboard/
+          # task-server.js runs as the non-root `runner` user, but /root is 0700
+          # on ubuntu-latest, so it cannot traverse to the staged assets (every
+          # page request 404s while API routes stay healthy). Grant traverse-only.
+          sudo chmod 711 /root
 
       - name: Start task-server (json_snapshot, DB-free)
         run: |
