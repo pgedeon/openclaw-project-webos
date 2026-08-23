@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed task subtask route error mapping so missing parent/child tasks return 404 and validation failures return 400.
 - Fixed cron route handling of OpenClaw CLI dependency errors returned as `{ error }` payloads.
 - Fixed workflow routing admin handlers so validation and missing-database responses are consistently reported as handled by the router.
+- Fixed standalone filesystem API server (SECURITY-AUDIT-2026-08.md F5): bearer-token auth on every route, Host-header loopback allowlist, task-server-only Origin allowlist, JSON-only mutating requests, and outright write refusal for `crontab/`, `.ssh/`, and `agents/*/sessions/` trees (reads stay allowed for the explorer).
 
 ## [1.1.0] - 2026-08-23
 

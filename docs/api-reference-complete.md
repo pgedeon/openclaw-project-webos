@@ -1063,8 +1063,18 @@ The filesystem API provides controlled access to files within the
 limits, blocks sensitive file extensions, and redacts secrets from responses.
 
 **Security controls**:
+- Bearer auth on every route: `Authorization: Bearer $DASHBOARD_AUTH_TOKEN`
+  (SECURITY-AUDIT-2026-08.md F5). The server refuses to start without the token.
+- Host header must be `127.0.0.1:<port>`, `localhost:<port>`, or `[::1]:<port>`
+  (DNS-rebinding defense); other Host values get `403`.
+- A browser `Origin` header, when present, must match the task-server origin
+  (`http://localhost:3876` / `http://127.0.0.1:3876`); others get `403`.
+- Mutating methods (`POST`/`PUT`/`DELETE`) require `Content-Type: application/json`
+  (`415` otherwise).
 - Max file read/write size: 2 MB (`MAX_FILE_BYTES`)
 - Protected extensions blocked from read/write: `.pem`, `.key`, `.crt`, `.p12`
+- Writes refused outright under `crontab/`, `.ssh/`, and `agents/*/sessions/`
+  (reads stay allowed; those paths surface `readOnly: true`)
 - Secret regex pattern redacts values in responses
 - Max search results: 50
 

@@ -48,10 +48,11 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       to CI. Advisory: no cheapest-model lane for this work; careful agent + review.
       Shipped 2026-08-23: full audit of all 4 servers (2aa7333 →
       SECURITY-AUDIT-2026-08.md; 11 findings: 2 critical, 3 high, 3 medium, 3 low)
-      + fixes ba4ffa8 (F1-F4), c11bfba (F6-F8), 758323f (F9-F11); CVE-2026-44240
-      dependency fix in 1eb8137. Residual follow-ups: F5 (standalone
-      filesystem-api-server still lacks bearer auth — `/api/fs/*` is served
-      in-process under task-server auth), `npm audit` not yet a CI gate.
+      + fixes ba4ffa8 (F1-F4), c11bfba (F6-F8), 758323f (F9-F11), 2a34d1d
+      (F5: standalone filesystem API bearer auth, Host/Origin allowlists,
+      JSON-only mutations, crontab/.ssh/sessions write refusal); CVE-2026-44240
+      dependency fix in 1eb8137. All 11 audit findings closed. Remaining
+      hardening (advisory, not an audit finding): `npm audit` not yet a CI gate.
 - [x] **Version bump to 1.1.0** once Phase 0 lands. Update CHANGELOG + RELEASE.
       Done 2026-08-23: released 1.1.0 (CHANGELOG section added; RELEASE.md carries
       no version line, nothing to update).
