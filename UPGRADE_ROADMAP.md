@@ -4,6 +4,8 @@
 > Baseline: v1.0.0-rc.4, last push 2026-07-06, 34 stars, ~80 test files.
 > Revised 2026-08-23 after advisory memo from OpenClaw main agent (post-mortem of
 > the dead webos-auto-improve.py pipeline + codebase landmines).
+> Evidence base: docs/research/market-scan-2026-08-23.md (competitive landscape,
+> 18 platforms scanned).
 
 ## Mission
 
@@ -51,6 +53,8 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 - [ ] **Mission Control view** (pulled forward per advisory): read-only aggregation —
       fleet status, blocked/stale runs, cron health, cost estimate. Cheap, huge daily
       value, watches the hourly automation itself. Ships on polling; upgrades to WS later.
+      Market scan 2026-08-23: include run-anomaly flags (stale heartbeat, zero-token
+      loops) — top steal across AgentOps/FleetQ.
 - [ ] **Gateway websocket bridge**: replace 20s polling (`realtime-sync.mjs`) with live
       push. LANDMINE: gateway is loopback-bound (`wss://127.0.0.1:18789`) inside WSL2 —
       browser-to-gateway direct breaks remotely. Pattern: one backend subscribes to the
@@ -62,14 +66,21 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       permission-gated); mock-first until confirmed.
 - [ ] **One-click agent actions** from any view: assign task → dispatch run → approve
       → publish, without leaving the window.
-- [ ] **Session inspector**: browse OpenClaw sessions, replay a transcript in a window.
+- [ ] **Session replay inspector**: browse OpenClaw sessions, replay a transcript in a
+      window with a time-travel stepper over tool-call events (prev/next/jump, payload
+      inspection) — pattern proven by AgentOps/Mission Control (market scan 2026-08-23).
 - [ ] **Memory browser 2.0**: graph/timeline view of agent memories + cross-agent links
       (semantic search already exists).
 
 ## Phase 2 — Killer Features (things no other dashboard has)
 
 - [ ] **Cost & token analytics UI**: per-agent/task/department rollups over the Phase 0
-      schema. Sparkline widgets already exist — feed them this.
+      schema. Sparkline widgets already exist — feed them this. Include a budget ledger
+      with per-agent/task caps and auto-pause-on-breach (FleetQ pattern, market scan
+      2026-08-23); Phase 0 migration already accumulates cost history.
+- [ ] **MCP server exposure** (added per market scan 2026-08-23): wrap existing REST
+      routes as MCP tools so OpenClaw agents can read tasks/runs/metrics directly in
+      their tool loop; read-only tool set first, write actions behind approval gates.
 - [ ] **Natural-language command bar**: type "spawn agent for X, report when done"
       → creates task + dispatches workflow. Extends existing Ctrl+K palette. MANDATORY
       confirmation gate before side-effectful actions (spawn/dispatch/approve); no

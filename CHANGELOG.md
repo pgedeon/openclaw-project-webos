@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Market scan (docs/research/market-scan-2026-08-23.md): competitive landscape across 18 agent-ops/workflow platforms, top-5 steal-worthy features with impact/effort scores; UPGRADE_ROADMAP updated — run-anomaly flags in Mission Control scope, session inspector expanded to replay stepper, budget ledger + auto-pause added to cost analytics, new MCP server exposure item.
 - Security audit shipped, 11 findings (2 critical, 3 high), fixes queued (SECURITY-AUDIT-2026-08.md).
 - CI: Playwright e2e job (`e2e`, separate from `verify`) — chromium-only DB-free smoke suite run against `task-server.js` in `STORAGE_TYPE=json_snapshot` mode on `127.0.0.1:3876`, Playwright report uploaded on failure. Restored `storage/asana-json-snapshot.js` (referenced by `task-server.js` and documented in README, but missing from the repo — without it json_snapshot mode left storage uninitialized and the server 503'd every request, including static files). Replaced the storage-CRUD e2e spec with a DB-free smoke suite (title, auth token gate, no uncaught JS errors, `/api/health` + `/api/auth/self` contract, shell boot with valid stored token) — the old spec's CRUD assertions require real PostgreSQL. (a99385b, fixed 86c5ffb)
 
