@@ -33,7 +33,8 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       CI as a separate `e2e` job — chromium-only DB-free smoke suite against
       task-server.js in json_snapshot mode; storage-CRUD e2e replaced by smoke
       suite (CRUD needs real PostgreSQL); restored missing
-      `storage/asana-json-snapshot.js`.
+      `storage/asana-json-snapshot.js`. Fixed 2026-08-23 (86c5ffb): grant the
+      runner user traverse access to /root so it can read the staged assets.
 - [x] **Cost/token schema now** (advisory: only item where waiting destroys data):
       migration adding per-run token/cost columns + backfill from gateway data where
       available. No UI yet — analytics in Phase 2 needs this history accumulating.
