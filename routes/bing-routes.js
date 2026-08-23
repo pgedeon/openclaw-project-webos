@@ -24,6 +24,17 @@ function parseBody(req) {
 }
 
 /**
+ * Redact the Bing API key from any string (URL, error message) before it is
+ * logged or returned to a client (audit F10). The key travels in the outbound
+ * query string by Bing API design; it must never leak through error paths.
+ */
+function redactApiKey(value, apiKey) {
+  let text = String(value ?? '');
+  if (apiKey) text = text.split(apiKey).join('***');
+  return text.replace(/([?&]apikey=)[^&\s"']*/g, '$1***');
+}
+
+/**
  * Register Bing Webmaster routes.
  * @param {object} router - Router instance
  * @param {string} apiKey - Bing Webmaster API key
@@ -40,11 +51,12 @@ function registerBingRoutes(router, apiKey) {
     const siteUrl = url.searchParams.get('siteUrl') || 'https://3dput.com';
 
     try {
-      const resp = await fetch(`${BING_API_BASE}/GetUrlSubmissionQuota?apikey=${apiKey}&siteUrl=${encodeURIComponent(siteUrl)}`);
+      const quotaUrl = `${BING_API_BASE}/GetUrlSubmissionQuota?apikey=${apiKey}&siteUrl=${encodeURIComponent(siteUrl)}`;
+      const resp = await fetch(quotaUrl);
       const data = await resp.json();
       sendJSON(res, 200, { ok: true, quota: data.d || data });
     } catch (err) {
-      sendJSON(res, 500, { error: err.message });
+      sendJSON(res, 500, { error: redactApiKey(err.message, apiKey) });
     }
   });
 
@@ -58,7 +70,8 @@ function registerBingRoutes(router, apiKey) {
     const site = siteUrl || 'https://3dput.com';
 
     try {
-      const resp = await fetch(`${BING_API_BASE}/SubmitUrl?apikey=${apiKey}`, {
+      const submitUrl = `${BING_API_BASE}/SubmitUrl?apikey=${apiKey}`;
+      const resp = await fetch(submitUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'charset': 'utf-8' },
         body: JSON.stringify({ siteUrl: site, url }),
@@ -66,7 +79,7 @@ function registerBingRoutes(router, apiKey) {
       const data = await resp.json();
       sendJSON(res, 200, { ok: true, result: data });
     } catch (err) {
-      sendJSON(res, 500, { error: err.message });
+      sendJSON(res, 500, { error: redactApiKey(err.message, apiKey) });
     }
   });
 
@@ -85,7 +98,8 @@ function registerBingRoutes(router, apiKey) {
     const site = siteUrl || 'https://3dput.com';
 
     try {
-      const resp = await fetch(`${BING_API_BASE}/SubmitUrlbatch?apikey=${apiKey}`, {
+      const batchUrl = `${BING_API_BASE}/SubmitUrlbatch?apikey=${apiKey}`;
+      const resp = await fetch(batchUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'charset': 'utf-8' },
         body: JSON.stringify({ siteUrl: site, urlList: urls }),
@@ -93,7 +107,7 @@ function registerBingRoutes(router, apiKey) {
       const data = await resp.json();
       sendJSON(res, 200, { ok: true, submitted: urls.length, result: data });
     } catch (err) {
-      sendJSON(res, 500, { error: err.message });
+      sendJSON(res, 500, { error: redactApiKey(err.message, apiKey) });
     }
   });
 
@@ -143,7 +157,8 @@ function registerBingRoutes(router, apiKey) {
   // GET /api/bing/status — Check API key validity
   router.add('GET', '/api/bing/status', async (req, res) => {
     try {
-      const resp = await fetch(`${BING_API_BASE}/GetUrlSubmissionQuota?apikey=${apiKey}&siteUrl=https://3dput.com`);
+      const statusUrl = `${BING_API_BASE}/GetUrlSubmissionQuota?apikey=${apiKey}&siteUrl=https://3dput.com`;
+      const resp = await fetch(statusUrl);
       const data = await resp.json();
       sendJSON(res, 200, {
         ok: true,
@@ -154,7 +169,7 @@ function registerBingRoutes(router, apiKey) {
       sendJSON(res, 200, {
         ok: false,
         apiKeyConfigured: true,
-        error: err.message,
+        error: redactApiKey(err.message, apiKey),
       });
     }
   });

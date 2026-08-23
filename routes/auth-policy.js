@@ -18,11 +18,12 @@ function extractBearerToken(authHeader = '') {
 function timingSafeTokenEqual(token, expectedToken) {
   if (!token || !expectedToken) return false;
 
-  const tokenBuffer = Buffer.from(token);
-  const expectedBuffer = Buffer.from(expectedToken);
+  // F9: compare fixed-size SHA-256 digests instead of raw buffers so the
+  // early-return length check cannot leak expected-token length via timing.
+  const tokenDigest = crypto.createHash('sha256').update(token, 'utf8').digest();
+  const expectedDigest = crypto.createHash('sha256').update(expectedToken, 'utf8').digest();
 
-  return tokenBuffer.length === expectedBuffer.length &&
-    crypto.timingSafeEqual(tokenBuffer, expectedBuffer);
+  return crypto.timingSafeEqual(tokenDigest, expectedDigest);
 }
 
 function getAuthPolicy(expectedToken = process.env.DASHBOARD_AUTH_TOKEN || '') {

@@ -114,6 +114,11 @@ function getMemoryRoot() {
 }
 
 function searchMemory(query) {
+  // F11: reject flag-like queries so a leading "-" cannot be parsed as a CLI
+  // flag by `openclaw memory search`.
+  if (typeof query !== 'string' || query.startsWith('-')) {
+    return Promise.reject(new Error('Search query must not start with "-"'));
+  }
   // Use OpenClaw's built-in memory search (vector + full-text) instead of missing script
   return execAsync('openclaw', ['memory', 'search', query, '--json'], { timeout: 15000 })
     .then(({ stdout }) => {
@@ -288,6 +293,7 @@ const server = createServer(async (req, res) => {
       const parsedUrl = new URL(req.url, 'http://localhost');
       const q = parsedUrl.searchParams.get('q') || '';
       if (!q || q.length < 2) return sendJSON(res, 400, { error: 'Query must be at least 2 characters' });
+      if (q.startsWith('-')) return sendJSON(res, 400, { error: 'Query must not start with "-"' });
       const result = await searchMemory(q);
       return sendJSON(res, 200, result);
     }
