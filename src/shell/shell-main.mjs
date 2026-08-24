@@ -14,6 +14,7 @@ import { initCommandPalette } from './command-palette.mjs';
 import { buildDashboardContext } from './agent-context.mjs';
 import { AgentChatPanel } from './agent-chat-panel.mjs';
 import { NotificationCenter } from './notification-center.mjs';
+import { RecentActionsTray } from './recent-actions-tray.mjs';
 import { createRealtimeSync } from './realtime-sync.mjs';
 import { setOnlineStatus } from './mutation-manager.mjs';
 import { WidgetRegistry } from './widgets/widget-registry.mjs';
@@ -317,6 +318,11 @@ export function bootstrapShell({
     notifCenter.toggle();
   });
 
+  // Recent-actions tray toggle (taskbar ⚡ button)
+  taskbar.addEventListener('actions-tray-toggle', () => {
+    actionsTray.toggle();
+  });
+
   // Space switcher: open spaces view on click
   taskbar.addEventListener('space-switch', () => {
     const entry = windowManager.getWindowEntry('spaces');
@@ -393,6 +399,14 @@ export function bootstrapShell({
   const notifCenter = new NotificationCenter();
   globalThis.__notifCenter = notifCenter;
   notifCenter.setNavigator((viewId, options) => windowManager.openWindow(viewId, options));
+
+  // Recent-actions tray — shell chrome sibling of the notification center
+  // (one-click actions slice 2; NOT a windowed app — registry count frozen)
+  const actionsTray = new RecentActionsTray({
+    api: apiClient,
+    navigateToView: (viewId, options) => windowManager.openWindow(viewId, options),
+  });
+  globalThis.__actionsTray = actionsTray;
 
   // Agent chat panel
   const chatPanel = new AgentChatPanel({
@@ -645,6 +659,7 @@ export function bootstrapShell({
       themeSubscribers.clear();
       widgetPanel?.destroy();
       widgetPanel = null;
+      actionsTray.destroy();
       sync.stop();
       startMenu.destroy();
       taskbar.destroy();

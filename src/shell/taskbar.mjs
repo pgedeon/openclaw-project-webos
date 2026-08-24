@@ -221,6 +221,10 @@ export class Taskbar extends EventTarget {
             <span class="win11-taskbar__glyph">${bellIcon}</span>
             <span class="win11-taskbar__tooltip">Notifications</span>
           </button>
+          <button type="button" class="win11-taskbar__button win11-taskbar__tray-button" data-action="actions-tray" aria-label="Recent actions">
+            <span class="win11-taskbar__glyph">⚡</span>
+            <span class="win11-taskbar__tooltip">Recent actions</span>
+          </button>
           <button type="button" class="win11-taskbar__clock" data-role="clock" aria-label="System clock"></button>
         </div>
       </nav>
@@ -271,6 +275,12 @@ export class Taskbar extends EventTarget {
       const notifButton = event.target.closest('[data-action="notifications"]');
       if (notifButton) {
         this.dispatchEvent(new CustomEvent('notifications-toggle'));
+        return;
+      }
+
+      const actionsTrayButton = event.target.closest('[data-action="actions-tray"]');
+      if (actionsTrayButton) {
+        this.dispatchEvent(new CustomEvent('actions-tray-toggle'));
         return;
       }
 

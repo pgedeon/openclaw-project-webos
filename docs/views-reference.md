@@ -4,6 +4,8 @@ The OpenClaw Project WebOS exposes **34 windowed applications** through the desk
 
 Views are organized into four categories in the start menu: **Work**, **Operations**, **System**, and **Admin**.
 
+> **Shell chrome, not windows:** the Recent-actions tray (⚡ in the taskbar, one-click actions slice 2) is a taskbar popover sibling of the notification center — deliberately NOT a windowed app, so the app count above stays frozen. See [user-guide.md — One-Click Actions](user-guide.md#one-click-actions--confirmations).
+
 > **Already documented in detail** in [user-guide.md](user-guide.md): Tasks, Board, Timeline, Agent, Audit, and Cron views. These are briefly cross-referenced below but not re-documented.
 
 ---
@@ -65,6 +67,8 @@ Views are organized into four categories in the start menu: **Work**, **Operatio
 **Category:** Work · **ID:** `tasks` · **Default size:** 1080×720
 
 The primary task list view. Fully documented in the [User Guide — List View](user-guide.md#list-view-default).
+
+Owner set/change from the edit form routes through the governed `task.assign` action (`POST /api/actions/execute`, LOW severity → fires immediately with a receipt); unassigning stays on the raw PATCH. See [user-guide.md — One-Click Actions](user-guide.md#one-click-actions--confirmations).
 
 ### Board
 
@@ -130,16 +134,19 @@ Approval management view for workflow gates and quality checkpoints.
 **Features:**
 - **Pending approvals queue** — lists all workflow runs awaiting approval
 - **Approval detail panel** — shows run details, input payload, and context for each approval
-- **Approve/Reject actions** — operators can approve or reject with optional comments
-- **Governance-aware** — only agents with `approve`/`reject` capabilities (per governance rules) see action buttons
+- **Approve/Reject actions** — routed through the governed `approval.decide` action (one-click actions slice 2): a typed preview modal shows decision + note + rollback hint before anything fires; outcome toasts and receipts land in the Recent-actions tray
+- **Delete relabeled (R2)** — the button that DELETEs a run is labeled "Delete" everywhere (it was previously mislabeled "Cancel", colliding with the distinct `run.cancel` status transition)
+- **Governance-aware** — only agents with `approve`/`reject` capabilities (per governance rules) see action buttons; denials surface as typed `rejected_governance` receipts
 - **Escalation** — escalate approvals to higher-authority agents
 - **System scan follow-up** — integration with `GET /api/system-scan/followup` for improvement suggestion approvals
 - **Run binding** — shows linked workflow run ID and gateway session for each approval
 
 **API endpoints used:**
 - `GET /api/approvals/pending`
+- `POST /api/actions/execute` (kind `approval.decide` → existing approve/reject logic in-process)
 - `POST /api/workflow-runs/:id/approve`
 - `POST /api/workflow-runs/:id/reject`
+- `DELETE /api/workflow-runs/:id` (the "Delete" button)
 - `GET /api/system-scan/followup`
 
 ---
@@ -543,7 +550,7 @@ Workflow engine management and monitoring.
 - **Workflow runs list** — displays all workflow runs with status, type, owner, and timestamps
 - **Tabbed navigation** — switch between active, completed, failed, and all runs
 - **Run detail panel** — expandable panel showing run input, output, steps, and agent routing
-- **Action buttons** — start, pause, resume, cancel, and retry workflow runs
+- **Run row actions (one-click actions slice 2)** — non-terminal rows expose ⛔ Cancel behind hold-to-confirm (HIGH severity gate, keyboard parity via held Enter); failed rows expose ↻ Re-dispatch behind a typed preview modal (resets to `queued`, dispatcher picks it up); both fire through `POST /api/actions/execute` and record receipts
 - **Step timeline** — visual step progression for active runs
 - **Template reference** — link to workflow template definition
 - **Claim integration** — shows claim status and agent session binding
@@ -555,6 +562,7 @@ Workflow engine management and monitoring.
 - `GET /api/workflow-runs/:id`
 - `POST /api/workflow-runs/:id/start`
 - `POST /api/workflow-runs/:id/complete`
+- `POST /api/actions/execute` (kinds `run.cancel` / `run.redispatch` → existing cancel / override-failure logic in-process)
 - `GET /api/workflow-templates`
 - `GET /api/projects`
 
@@ -597,6 +605,7 @@ Lightweight agent queue view used by the Agents view to show per-agent task queu
 **Features:**
 - Displays the assigned tasks for a selected agent
 - Delegates rendering to the view adapter
+- **⚡ Run workflow… row action** (one-click actions slice 2) — every task card opens a template picker, then the typed preview modal, then dispatches through the governed `run.dispatch` action (create+start composed server-side); receipts land in the Recent-actions tray
 
 ### Support Wrapper
 

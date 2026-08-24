@@ -1,6 +1,7 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
 import { mutate } from '../mutation-manager.mjs';
+import { executeAction } from '../action-client.mjs';
 
 export async function renderWorkflowsView({ mountNode, api, adapter, stateStore, sync, params = {}, navigateToView}) {
   ensureNativeRoot(mountNode, 'workflows-view');
@@ -318,6 +319,11 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
     }
   }
 
+  // One-click actions slice 2 — row-action eligibility per brief §2:
+  // run.cancel covers non-terminal runs; run.redispatch re-queues failed runs.
+  const CANCELABLE_STATUSES = ['queued', 'running', 'waiting_for_approval', 'blocked', 'retrying'];
+  const REDISPATCHABLE_STATUSES = ['failed'];
+
   function renderRuns() {
     const container = root.querySelector('#wfvRuns');
     root.querySelector('#wfvRunCount').textContent = runs.length;
@@ -349,6 +355,8 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
           ${currentStep ? `<span style="font-size:0.7rem;color:var(--win11-text-tertiary);">${escapeHtml(currentStep)}</span>` : ''}
           ${stepsLabel ? `<span style="font-size:0.7rem;color:var(--win11-text-tertiary);">${stepsLabel} steps</span>` : ''}
           ${statusBadge(status)}
+          ${CANCELABLE_STATUSES.includes(status) ? `<button class="wfv-btn danger wfv-run-cancel" data-cancel-id="${escapeHtml(r.id)}" title="Cancel run (hold to confirm)" aria-label="Cancel run ${escapeHtml(r.id)}">⛔</button>` : ''}
+          ${REDISPATCHABLE_STATUSES.includes(status) ? `<button class="wfv-btn wfv-run-redispatch" data-redispatch-id="${escapeHtml(r.id)}" title="Re-dispatch failed run (reset to queued)" aria-label="Re-dispatch run ${escapeHtml(r.id)}">↻</button>` : ''}
           <span style="font-size:0.72rem;color:var(--win11-accent);">▶</span>
         </div>
       </div>`;
@@ -363,6 +371,40 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
           navigateToView?.('agents', { params: { agentName: run.owner_agent_id } });
         } else if (run.task_id) {
           navigateToView?.('tasks', { params: { taskId: run.task_id } });
+        }
+      });
+    });
+
+    // ⛔ Cancel — gated run.cancel (HIGH severity → HOLD_CONFIRM overlay with
+    // keyboard parity; outcome toast + receipt handled by the action client).
+    container.querySelectorAll('.wfv-run-cancel').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const runId = btn.dataset.cancelId;
+        if (!runId) return;
+        btn.disabled = true;
+        try {
+          const result = await executeAction({ kind: 'run.cancel', targetId: runId, params: {}, api });
+          if (result.ok) await loadRuns();
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    // ↻ Re-dispatch — gated run.redispatch (PREVIEW_MODAL shows the reset-to-
+    // queued semantics; budget breaches surface as the amber refusal banner).
+    container.querySelectorAll('.wfv-run-redispatch').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const runId = btn.dataset.redispatchId;
+        if (!runId) return;
+        btn.disabled = true;
+        try {
+          const result = await executeAction({ kind: 'run.redispatch', targetId: runId, params: {}, api });
+          if (result.ok) await loadRuns();
+        } finally {
+          btn.disabled = false;
         }
       });
     });

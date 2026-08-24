@@ -1,5 +1,7 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
+import { executeAction } from '../action-client.mjs';
+
 const FALLBACK_DEFAULT_MODEL = 'openrouter1/stepfun/step-3.5-flash:free';
 
 const STATUS_OPTIONS = [
@@ -998,6 +1000,18 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       const modelVal = form.querySelector('#tvEditModel').value;
       const recurrenceVal = form.querySelector('#tvEditRecurrence').value;
       const newStatus = form.querySelector('#tvEditStatus').value;
+      const newOwner = form.querySelector('#tvEditOwner').value || '';
+      const ownerChanged = newOwner !== (task.owner || '');
+
+      // One-click actions slice 2: owner set/change routes through the gated
+      // task.assign action (LOW severity → NONE mode, fires immediately with a
+      // receipt). Unassign stays on the raw PATCH — registry v1 requires a
+      // non-empty owner, and scripts keep the raw endpoint regardless.
+      if (ownerChanged && newOwner) {
+        const assign = await executeAction({ kind: 'task.assign', targetId: task.id, params: { owner: newOwner } });
+        if (!assign.ok) return; // gate refused/blocked — abort so fields never half-move
+      }
+
       try {
         await api.tasks.update(task.id, {
           title: titleVal,
@@ -1005,7 +1019,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
           description: form.querySelector('#tvEditDesc').value.trim() || null,
           status: newStatus,
           priority: form.querySelector('#tvEditPriority').value,
-          owner: form.querySelector('#tvEditOwner').value || null,
+          ...(ownerChanged && newOwner ? {} : { owner: newOwner || null }), // gated path already moved ownership
           category: form.querySelector('#tvEditCategory').value.trim() || null,
           labels: form.querySelector('#tvEditCategory').value.trim() ? [form.querySelector('#tvEditCategory').value.trim()] : [],
           start_date: form.querySelector('#tvEditStart').value || null,

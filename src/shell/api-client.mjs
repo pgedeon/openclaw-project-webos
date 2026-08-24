@@ -47,13 +47,13 @@ const parseErrorPayload = async (response) => {
   try {
     if (contentType.includes('application/json')) {
       const payload = await response.clone().json();
-      return payload?.error || payload?.message || JSON.stringify(payload);
+      return { message: payload?.error || payload?.message || JSON.stringify(payload), payload };
     }
 
     const text = await response.clone().text();
-    return text || response.statusText;
+    return { message: text || response.statusText, payload: null };
   } catch (error) {
-    return response.statusText || `HTTP ${response.status}`;
+    return { message: response.statusText || `HTTP ${response.status}`, payload: null };
   }
 };
 
@@ -259,10 +259,13 @@ export function createAPIClient(baseURL = '/api', options = {}) {
 
     const response = await raw(url, { ...init, headers });
     if (!response.ok) {
-      const message = await parseErrorPayload(response);
+      const { message, payload } = await parseErrorPayload(response);
+      // payload is attached so structured refusal bodies survive the throw
+      // (e.g. budget_blocked verdicts consumed by src/shell/action-client.mjs).
       throw new APIClientError(message || `Request failed with status ${response.status}`, {
         status: response.status,
         url,
+        payload,
       });
     }
 
@@ -285,7 +288,7 @@ export function createAPIClient(baseURL = '/api', options = {}) {
     requestText(path, init = {}) {
       return raw(path, init).then(async (response) => {
         if (!response.ok) {
-          const message = await parseErrorPayload(response);
+          const { message } = await parseErrorPayload(response);
           throw new APIClientError(message || `Request failed with status ${response.status}`, {
             status: response.status,
             url: normalizePath(baseURL, path),
@@ -493,6 +496,15 @@ export function createAPIClient(baseURL = '/api', options = {}) {
           method: action ? 'POST' : 'PATCH',
           body: data,
         });
+      },
+    },
+    // One-click actions gate (slice 1 server core + slice 2 client wiring)
+    actions: {
+      execute(envelope) {
+        return jsonRequest('/actions/execute', { method: 'POST', body: envelope });
+      },
+      recent(params = {}) {
+        return request(pathWithQuery('/actions/recent', params));
       },
     },
     views: {

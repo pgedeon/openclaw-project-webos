@@ -9,10 +9,11 @@ A complete walkthrough of the OpenClaw Project Dashboard interface, workflows, a
 3. [Task Operations](#task-operations)
 4. [Filtering & Search](#filtering--search)
 5. [Archive Workflow](#archive-workflow)
-6. [Keyboard Shortcuts](#keyboard-shortcuts)
-7. [Agent Integration](#agent-integration)
-8. [Import / Export](#import--export)
-9. [Accessibility](#accessibility)
+6. [One-Click Actions & Confirmations](#one-click-actions--confirmations)
+7. [Keyboard Shortcuts](#keyboard-shortcuts)
+8. [Agent Integration](#agent-integration)
+9. [Import / Export](#import--export)
+10. [Accessibility](#accessibility)
 
 ---
 
@@ -196,6 +197,40 @@ For power users and accessibility:
 | `Esc` | Clear search input and reset filter to “All” |
 
 Shortcuts are ignored when you are typing inside an input, textarea, or select element.
+
+---
+
+## One-Click Actions & Confirmations
+
+Consequential operator actions (assign a task, dispatch a run, decide an approval, cancel or re-dispatch a run) all travel one governed path: a typed envelope → confirmation matched to severity → idempotent execution → a **receipt**. The raw endpoints stay available to scripts and agents; the buttons below are the operator surface of that gate (design brief: `docs/briefs/one-click-actions.md`).
+
+### Where the actions live
+
+| Action | Where | Confirmation |
+|--------|-------|--------------|
+| Assign task owner | Tasks view — edit form owner select (set/change only; unassign stays a plain save) | Single click |
+| Dispatch workflow run | Agent Queue / Agents view — "⚡ Run workflow…" on each task card | Template picker → preview modal |
+| Approve / Reject approval | Approvals view cards | Preview modal |
+| Cancel run | Workflows view run rows (⛔ on queued/running/blocked/retrying runs) | Hold-to-confirm |
+| Re-dispatch failed run | Workflows view failed rows (↻) | Preview modal |
+
+### Confirmation modes
+
+- **Single click** (low severity, reversible): assigning a task owner fires immediately; the toast tells you the recovery move (re-assign).
+- **Preview modal** (medium severity): exactly what will happen, on which target, with which params, plus the rollback hint — nothing fires until you press **Confirm**. `Esc`, the backdrop, or Cancel dismisses with zero network requests.
+- **Hold-to-confirm** (high severity: cancelling a run destroys paid in-flight work): press and hold the round button for **1.2 s** while the ring fills; release early and nothing happens. Keyboard parity: focus the button (`Tab`), then **press and hold `Enter`** for the same 1.2 s — keydown starts, keyup releases. `Esc` cancels.
+
+### Outcomes, receipts, and the Recent-actions tray
+
+Every executed action writes an immutable receipt (kind, target, actor, outcome, rollback hint) mirrored into the audit log as `action.<kind>` — visible in History → Audit Log like any other entry.
+
+- **Toasts** confirm success (with the recovery hint), replayed duplicates ("already executed — no side effect"), governance rejections, and failures.
+- **Budget blocks** render a distinct amber banner naming the budget, its period, and % of cap — not a generic error. Nothing was dispatched; after a cap raise (Mission Control cost panel) simply retry the action.
+- **Recent-actions tray** (⚡ button in the taskbar): the last 10 receipts, newest first — outcome icon, action label, target, relative time; click a row to expand the rollback hint and jump to the owning view (run → Workflows, task → Tasks, approval → Approvals). The list refreshes when opened; actions you fire while it is open appear immediately.
+
+### Retries vs repeats
+
+Retrying a timed-out action is safe: the same confirmed intent carries the same receipt id, and the server replays the stored receipt instead of executing twice. Deliberately repeating an action (e.g. dispatching the same template again) mints a fresh intent and executes again — both receipts stay in the tray.
 
 ---
 
