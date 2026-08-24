@@ -141,6 +141,45 @@ function registerSessionRoutes(router) {
     const result = await reader.readMessages(sessionId, agentId, { after, limit, filter });
     sendJSON(res, 200, result);
   });
+
+  // GET /api/oc/sessions/:sessionId/events — cursor-paginated normalized replay events
+  router.add('GET', '/api/oc/sessions/:sessionId/events', async (req, res, ctx, params) => {
+    const query = getQuery(req);
+    const { sessionId } = params;
+    const agentId = query.get('agent') || 'main';
+    const afterLine = parseInt(query.get('afterLine') || '0', 10);
+    const limit = parseInt(query.get('limit') || String(reader.EVENTS_DEFAULT_LIMIT || 500), 10);
+
+    const result = await reader.readEvents(sessionId, agentId, {
+      afterLine: Number.isNaN(afterLine) ? 0 : afterLine,
+      limit,
+    });
+    if (result.notFound) {
+      return sendJSON(res, 404, { error: 'Session not found' });
+    }
+    sendJSON(res, 200, result);
+  });
+
+  // GET /api/oc/sessions/:sessionId/events/:line — full-body detail for one event
+  router.add('GET', '/api/oc/sessions/:sessionId/events/:line', async (req, res, ctx, params) => {
+    const query = getQuery(req);
+    const { sessionId } = params;
+    const agentId = query.get('agent') || 'main';
+    const line = parseInt(params.line, 10);
+
+    if (Number.isNaN(line) || line < 1) {
+      return sendJSON(res, 400, { error: 'Invalid line number' });
+    }
+
+    const result = await reader.readEventAtLine(sessionId, agentId, line);
+    if (result.notFound) {
+      return sendJSON(res, 404, { error: 'Session not found' });
+    }
+    if (!result.found) {
+      return sendJSON(res, 404, { error: 'Event not found' });
+    }
+    sendJSON(res, 200, result);
+  });
 }
 
 module.exports = { registerSessionRoutes, sessionChannel, sessionIcon, sessionStatusColor };

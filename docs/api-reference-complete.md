@@ -23,6 +23,11 @@
   - [GET /api/routes](#get-apiroutes)
 - [Cost Analytics API](#cost-analytics-api)
   - [GET /api/costs/summary](#get-apicostssummary)
+- [Budgets API](#budgets-api)
+  - [GET /api/budgets](#get-apibudgets)
+  - [POST /api/budgets](#post-apibudgets)
+  - [PATCH /api/budgetsid](#patch-apibudgetsid)
+  - [GET /api/budgetsidledger](#get-apibudgetsidledger)
 - [Realtime Events API](#realtime-events-api)
   - [GET /api/events](#get-apievents)
   - [GET /api/events/stream](#get-apieventsstream)
@@ -168,6 +173,8 @@
   - [GET /api/oc/sessions](#get-apiocsessions)
   - [GET /api/oc/sessions/:sessionId](#get-apiocsessionssessionid)
   - [GET /api/oc/sessions/:sessionId/messages](#get-apiocsessionssessionidmessages)
+  - [GET /api/oc/sessions/:sessionId/events](#get-apiocsessionssessionidevents)
+  - [GET /api/oc/sessions/:sessionId/events/:line](#get-apiocsessionssessionideventslines)
 - [Dashboard Agent Chat API](#dashboard-agent-chat-api)
   - [POST /api/agent/chat](#post-apiagentchat)
   - [GET /api/agent/chat/history](#get-apiagentchathistory)
@@ -464,6 +471,98 @@ Aggregate token/cost summary over the `workflow_runs` cost columns shipped in mi
 ```
 
 Daily buckets use `reported_at` when usage was reported, falling back to `started_at` then `created_at`, so unreported runs still land in a day bucket. `days[]` is the per-day series (`date`, `cost`, `runs`, `tokens`); `avg_daily_7d` is the mean daily cost across all buckets in the window.
+
+---
+
+## Budgets API
+
+Named spending rules with derived spend (Budget Ledger slice 1, migration `023_add_budget_ledger.sql`; design brief `docs/briefs/budget-ledger.md`). A budget pairs a scope (`agent` / `department` / `project` / `fleet`) with a calendar period (`daily` / `weekly` / `monthly`), exactly one cap (`cap_usd` XOR `cap_tokens`), and a breach action (`warn` / `pause_new_runs` / `hard_stop`). Spend is **derived** from the migration-022 `workflow_runs` cost/token columns using the same `COALESCE(reported_at, started_at, created_at)` bucketing as the cost summary — never stored twice. Enforcement hooks in the dispatcher are slice 2; these endpoints are model + read/CRUD only.
+
+Token caps cover `input_tokens + output_tokens` (`cached_tokens` is a subset of input and never added on top). Pause state is derived: `spend >= cap && active` — there is no un-pause endpoint; recovery is period rollover, raising the cap, or deactivating via PATCH.
+
+**Degradation contract:** without PostgreSQL every endpoint answers HTTP `200` with `{ "available": false, "reason": "no_database" }`; query failures degrade to `{ "available": false, "reason": "query_failed" }`. Validation failures answer HTTP `400` `{ "error": "validation_failed", "details": [...] }`.
+
+### `GET /api/budgets`
+
+List budgets with derived current-period spend and percent-of-cap.
+
+**Response** `200`:
+
+```json
+{
+  "available": true,
+  "budgets": [
+    {
+      "id": "b1e2c3d4-...",
+      "name": "affiliate-editorial monthly cap",
+      "scope": "agent",
+      "scope_id": "affiliate-editorial",
+      "period": "monthly",
+      "cap_usd": 50,
+      "cap_tokens": null,
+      "action_on_exceed": "pause_new_runs",
+      "active": true,
+      "created_at": "2026-08-24T09:00:00.000Z",
+      "period_key": "2026-08",
+      "current_spend": { "usd": 41.2, "tokens": 880000, "runs": 120 },
+      "pct_of_cap": 82.4,
+      "status": "under"
+    }
+  ],
+  "timestamp": "2026-08-24T12:00:00.000Z"
+}
+```
+
+`status` is derived per evaluation: `under` | `warned` (at/over cap on a `warn` budget) | `breached` (at/over cap on a `pause_new_runs`/`hard_stop` budget). The breach boundary is `>= cap` — exactly-at-cap counts as breached.
+
+### `POST /api/budgets`
+
+Create a budget rule. Validates enums, the cap-XOR rule (exactly one of `cap_usd` / `cap_tokens`, both positive), and scope semantics (`fleet` forces `scope_id` NULL; other scopes require it).
+
+**Request:**
+
+```json
+{
+  "name": "affiliate-editorial monthly cap",
+  "scope": "agent",
+  "scope_id": "affiliate-editorial",
+  "period": "monthly",
+  "cap_usd": 50,
+  "action_on_exceed": "pause_new_runs"
+}
+```
+
+**Response** `201`: `{ "available": true, "budget": { ... }, "timestamp" }`. Only one **active** budget per `(scope, scope_id, period)` can exist (partial unique index in migration 023); deactivate the old rule first to replace it.
+
+### `PATCH /api/budgets/:id`
+
+Update `name`, `action_on_exceed`, `active`, or the cap. Provide at most one cap field per call — the sibling cap is cleared automatically so the table-level XOR CHECK stays satisfied; caps cannot be nulled without a replacement. These PATCH moves are the only sanctioned "un-pause" actions (brief §2.4).
+
+**Response** `200`: `{ "available": true, "budget": { ... } }`. Unknown id → `404` `{ "available": false, "reason": "not_found" }`.
+
+### `GET /api/budgets/:id/ledger?period=current`
+
+Derived current-period spend plus the append-only enforcement event trail for one budget. Only `period=current` is supported in slice 1.
+
+**Response** `200`:
+
+```json
+{
+  "available": true,
+  "budget": { "id": "b1e2c3d4-...", "name": "fleet monthly", "scope": "fleet", "period": "monthly", "cap_usd": 100, "action_on_exceed": "hard_stop", "active": true },
+  "period_key": "2026-08",
+  "window_start": "2026-08-01T00:00:00.000Z",
+  "spend": { "usd": 62.5, "tokens": 700000, "runs": 40 },
+  "pct_of_cap": 62.5,
+  "status": "under",
+  "events": [
+    { "id": 2, "budget_id": "b1e2c3d4-...", "period_key": "2026-08", "event_kind": "paused", "detail": { "spend_usd": 100.2 }, "created_at": "2026-08-14T10:00:00.000Z" }
+  ],
+  "timestamp": "2026-08-24T12:00:00.000Z"
+}
+```
+
+`events[]` is newest-first (limit 100) from `budget_events`; `event_kind` is one of `warned` | `paused` | `hard_stopped` | `recovered`, and `UNIQUE (budget_id, period_key, event_kind)` makes every emission idempotent. Unknown id → `404`.
 
 ---
 
@@ -2444,6 +2543,91 @@ Return paginated session JSONL entries.
   "hasMore": false
 }
 ```
+
+### `GET /api/oc/sessions/:sessionId/events`
+
+Return cursor-paginated, normalized replay events for a session transcript (session replay inspector, part 1). Each JSONL line is normalized into typed events: `session_meta`, `model_change`, `user_message`, `assistant_thinking`, `tool_call`, `tool_result`, `compaction`, or a generic `other` tick — unknown/forward-compat line types pass through as `other` ticks and are never dropped. An assistant line carrying multiple content blocks fans out into one event per block, all sharing the same `line` number. Tool calls are back-paired with their `toolResult` line via `toolCallId` (`tool.resultLine`). Preview bodies are truncated to 400 characters; full bodies stay reachable through the `/events/:line` detail endpoint.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `agent` | string | `main` | Agent ID that owns the session |
+| `afterLine` | number | `0` | Start after this JSONL line number (exclusive cursor) |
+| `limit` | number | `500` | Maximum events to return, capped at 2000 |
+
+**Response** `200`:
+
+```json
+{
+  "sessionId": "session-uuid",
+  "agentId": "main",
+  "events": [
+    {
+      "line": 4,
+      "ts": 1770897600000,
+      "kind": "tool_call",
+      "role": "assistant",
+      "tool": {
+        "toolCallId": "call_1",
+        "name": "exec",
+        "argsPreview": "{\"command\":\"npm test\"}",
+        "resultLine": 5
+      }
+    },
+    {
+      "line": 5,
+      "ts": 1770897601000,
+      "kind": "tool_result",
+      "role": "toolResult",
+      "tool": {
+        "toolCallId": "call_1",
+        "name": "exec",
+        "resultPreview": "all green",
+        "details": { "status": "passed", "exitCode": 0, "durationMs": 1234, "cwd": "/tmp/proj" }
+      }
+    }
+  ],
+  "nextAfterLine": null,
+  "hasMore": false,
+  "totalLines": 42,
+  "partial": false,
+  "truncated": false
+}
+```
+
+Pagination boundaries fall at line granularity: a page may exceed `limit` by the extra events of its last line, and scanning always runs to EOF so tool_call→tool_result back-pairing works across chunk edges. `partial` is `true` when at least one line failed to parse; `truncated` is `true` when the transcript exceeded the size cap (`SESSION_REPLAY_MAX_BYTES`, default 20 MB) and only the first cap bytes were read.
+
+Returns `404` with `{ "error": "Session not found" }` when the transcript file does not exist.
+
+### `GET /api/oc/sessions/:sessionId/events/:line`
+
+Return full-fidelity detail for the event(s) at one JSONL line. Bodies are NOT truncated; the raw parsed source line is included as `source` so heavy fields such as exec-class `details.aggregated` remain reachable.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `agent` | string | `main` | Agent ID that owns the session |
+
+**Response** `200`:
+
+```json
+{
+  "sessionId": "session-uuid",
+  "agentId": "main",
+  "line": 4,
+  "found": true,
+  "event": { "line": 4, "ts": 1770897600000, "kind": "assistant_thinking", "role": "assistant", "text": "plan the run" },
+  "extraEvents": [],
+  "source": { "type": "message", "message": { "role": "assistant", "content": [] } },
+  "totalLines": 42
+}
+```
+
+`event` is the first normalized event at that line and `extraEvents` holds any remaining events fanned out from the same line.
+
+Returns `400` with `{ "error": "Invalid line number" }` for non-numeric or sub-1 line values, `404` with `{ "error": "Session not found" }` when the transcript file does not exist, and `404` with `{ "error": "Event not found" }` when the line has no normalized event.
 
 ---
 
