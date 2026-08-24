@@ -6,6 +6,7 @@
 const { Pool } = require('pg');
 const crypto = require('crypto'); // For UUID generation
 const security = require('../lib/qmd-security');
+const budgetEval = require('../lib/budget-eval');
 const {
   DEPARTMENTS: ORG_BOOTSTRAP_DEPARTMENTS,
   AGENT_PROFILES: ORG_BOOTSTRAP_AGENT_PROFILES,
@@ -4166,6 +4167,248 @@ class AsanaStorage {
     });
 
     return { reverted: true, entityType: snapshot.entity_type, entityId: eid };
+  }
+
+  // ── Budget ledger (migration 023) ───────────────────────────────────────
+  // Spend is DERIVED from workflow_runs cost/token columns (migration 022)
+  // using the same COALESCE(reported_at, started_at, created_at) bucketing as
+  // routes/cost-routes.js — never stored twice. All helpers are no-throw:
+  // without PostgreSQL (json_snapshot mode, pool missing, or query failure)
+  // they return null / [] so callers degrade cleanly.
+
+  /**
+   * SQL scope predicate mapping a budget row onto workflow_runs
+   * (brief §2.1). Appends bound parameters to `params`.
+   */
+  _budgetScopePredicate(budget, params) {
+    switch (budget.scope) {
+      case 'agent':
+        params.push(budget.scope_id);
+        return `owner_agent_id = $${params.length}`;
+      case 'department':
+        params.push(budget.scope_id);
+        return `owner_agent_id IN (SELECT agent_id FROM agent_profiles WHERE department_id::text = $${params.length})`;
+      case 'project':
+        params.push(budget.scope_id);
+        return `workflow_type = $${params.length}`;
+      default: // fleet — all rows
+        return 'TRUE';
+    }
+  }
+
+  _budgetUnavailable() {
+    return !this.pool || typeof this.pool.query !== 'function';
+  }
+
+  /** Map a budgets table row to the API/storage shape. */
+  _normalizeBudgetRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      scope: row.scope,
+      scope_id: row.scope_id || null,
+      period: row.period,
+      cap_usd: row.cap_usd == null ? null : Number(row.cap_usd),
+      cap_tokens: row.cap_tokens == null ? null : Number(row.cap_tokens),
+      action_on_exceed: row.action_on_exceed,
+      active: row.active === true,
+      created_at: row.created_at || null,
+    };
+  }
+
+  /** Create a budget rule. Returns the created row, or null when unavailable. */
+  async createBudget(data) {
+    try {
+      if (this._budgetUnavailable()) return null;
+      const result = await this.pool.query(
+        `INSERT INTO budgets (name, scope, scope_id, period, cap_usd, cap_tokens, action_on_exceed, active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, true))
+         RETURNING id, name, scope, scope_id, period, cap_usd, cap_tokens,
+                   action_on_exceed, active, created_at`,
+        [
+          data.name,
+          data.scope,
+          data.scope === 'fleet' ? null : data.scope_id,
+          data.period,
+          data.cap_usd == null ? null : data.cap_usd,
+          data.cap_tokens == null ? null : data.cap_tokens,
+          data.action_on_exceed,
+          data.active === undefined ? null : data.active === true,
+        ]
+      );
+      return this._normalizeBudgetRow(result.rows[0]);
+    } catch (err) {
+      console.warn('[asana] createBudget failed:', err.message);
+      return null;
+    }
+  }
+
+  /** List all budgets (newest first). Returns [] when empty, null when unavailable. */
+  async listBudgets() {
+    try {
+      if (this._budgetUnavailable()) return null;
+      const result = await this.pool.query(
+        `SELECT id, name, scope, scope_id, period, cap_usd, cap_tokens,
+                action_on_exceed, active, created_at
+         FROM budgets
+         ORDER BY created_at DESC, id DESC`
+      );
+      return (result.rows || []).map((row) => this._normalizeBudgetRow(row));
+    } catch (err) {
+      console.warn('[asana] listBudgets failed:', err.message);
+      return null;
+    }
+  }
+
+  /** Fetch one budget by id. Returns null when unavailable or not found. */
+  async getBudget(id) {
+    try {
+      if (this._budgetUnavailable()) return null;
+      const result = await this.pool.query(
+        `SELECT id, name, scope, scope_id, period, cap_usd, cap_tokens,
+                action_on_exceed, active, created_at
+         FROM budgets WHERE id = $1::uuid`,
+        [id]
+      );
+      return this._normalizeBudgetRow(result.rows[0]);
+    } catch (err) {
+      console.warn('[asana] getBudget failed:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Update a budget's caps / active flag / name / breach action. A provided
+   * non-null cap clears the sibling cap (XOR is a table CHECK). Returns the
+   * updated row, or null when unavailable or not found.
+   */
+  async updateBudget(id, data) {
+    try {
+      if (this._budgetUnavailable()) return null;
+      const updates = [];
+      const values = [];
+      let paramIndex = 1;
+
+      const setField = (column, value) => {
+        updates.push(`${column} = $${paramIndex}`);
+        values.push(value);
+        paramIndex += 1;
+      };
+
+      if (data.name !== undefined) setField('name', String(data.name));
+      if (data.action_on_exceed !== undefined) setField('action_on_exceed', data.action_on_exceed);
+      if (data.active !== undefined) setField('active', data.active === true);
+      if (data.cap_usd !== undefined && data.cap_usd !== null) {
+        setField('cap_usd', data.cap_usd);
+        setField('cap_tokens', null); // keep the XOR CHECK satisfied
+      } else if (data.cap_tokens !== undefined && data.cap_tokens !== null) {
+        setField('cap_tokens', data.cap_tokens);
+        setField('cap_usd', null);
+      }
+
+      if (!updates.length) return undefined; // nothing to change
+
+      values.push(id);
+      const result = await this.pool.query(
+        `UPDATE budgets SET ${updates.join(', ')}
+         WHERE id = $${paramIndex}::uuid
+         RETURNING id, name, scope, scope_id, period, cap_usd, cap_tokens,
+                   action_on_exceed, active, created_at`,
+        values
+      );
+      return this._normalizeBudgetRow(result.rows[0]);
+    } catch (err) {
+      console.warn('[asana] updateBudget failed:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Derived spend for one budget over its current period bucket. Same
+   * COALESCE(reported_at, started_at, created_at) >= date_trunc(...) rule as
+   * the cost summary, so unreported runs still land. Window start comes from
+   * lib/budget-eval.js so SQL and pure evaluation agree on bucket edges.
+   *
+   * @returns {null | {periodKey:string, windowStartIso:string, spendUsd:number,
+   *                    spendTokens:number, runCount:number}}
+   */
+  async getBudgetLedger(budget, opts = {}) {
+    try {
+      if (this._budgetUnavailable()) return null;
+      const nowMs = Number.isFinite(opts.nowMs) ? opts.nowMs : Date.now();
+      const windowStartMs = budgetEval.periodWindowStartMs(budget.period, nowMs);
+      const params = [new Date(windowStartMs).toISOString()];
+      const scopePredicate = this._budgetScopePredicate(budget, params);
+      const result = await this.pool.query(
+        `SELECT COALESCE(SUM(cost_estimate), 0)::float8 AS spend_usd,
+                COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0)::bigint AS spend_tokens,
+                COUNT(*)::int AS run_count
+         FROM workflow_runs
+         WHERE ${scopePredicate}
+           AND COALESCE(reported_at, started_at, created_at) >= $1::timestamptz`,
+        params
+      );
+      const row = result.rows[0] || {};
+      return {
+        periodKey: budgetEval.periodKey(budget.period, nowMs),
+        windowStartIso: new Date(windowStartMs).toISOString(),
+        spendUsd: Number(row.spend_usd || 0),
+        spendTokens: Number(row.spend_tokens || 0),
+        runCount: Number(row.run_count || 0),
+      };
+    } catch (err) {
+      console.warn('[asana] getBudgetLedger failed:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Append an enforcement event. Idempotent on UNIQUE (budget_id, period_key,
+   * event_kind): ON CONFLICT DO NOTHING returns no rows on re-emission and
+   * null is returned, so callers can gate notifications on "actually inserted".
+   *
+   * @returns {object|null} inserted event row, or null when unavailable /
+   *   duplicate / insert failed
+   */
+  async recordBudgetEvent({ budgetId, periodKey, eventKind, detail }) {
+    try {
+      if (this._budgetUnavailable()) return null;
+      const result = await this.pool.query(
+        `INSERT INTO budget_events (budget_id, period_key, event_kind, detail)
+         VALUES ($1::uuid, $2, $3, $4::jsonb)
+         ON CONFLICT (budget_id, period_key, event_kind) DO NOTHING
+         RETURNING id, budget_id, period_key, event_kind, detail, created_at`,
+        [budgetId, periodKey, eventKind, detail ? JSON.stringify(detail) : null]
+      );
+      return result.rows[0] || null;
+    } catch (err) {
+      console.warn('[asana] recordBudgetEvent failed:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Enforcement audit trail for one budget, newest first.
+   * @returns {Array|null} event rows ([] when none, null when unavailable)
+   */
+  async listBudgetEvents(budgetId, limit = 100) {
+    try {
+      if (this._budgetUnavailable()) return null;
+      const capped = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
+      const result = await this.pool.query(
+        `SELECT id, budget_id, period_key, event_kind, detail, created_at
+         FROM budget_events
+         WHERE budget_id = $1::uuid
+         ORDER BY created_at DESC, id DESC
+         LIMIT ${capped}`,
+        [budgetId]
+      );
+      return result.rows || [];
+    } catch (err) {
+      console.warn('[asana] listBudgetEvents failed:', err.message);
+      return null;
+    }
   }
 
   async close() {

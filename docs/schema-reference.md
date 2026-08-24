@@ -650,6 +650,45 @@ Multi-workspace support with per-space configuration.
 | 20260216f | `20260216_add_updated_at_index_to_tasks.sql` | 2026-02-16 | Add `updated_at` index to tasks for incremental sync |
 | 20260429b | `20260429_spaces_constraints.sql` | 2026-04-29 | Enforce single default workspace via partial unique index on `workspaces.is_default` |
 | 022 | `022_add_run_token_cost_tracking.sql` | 2026-08-23 | Add per-run token/cost tracking to `workflow_runs`: input_tokens, output_tokens, cached_tokens, model_id, cost_estimate, currency, reported_at |
+| 023 | `023_add_budget_ledger.sql` | 2026-08-24 | Add `budgets` rules + `budget_events` append-only audit trail (budget ledger slice 1) |
+
+---
+
+## Budget Ledger Tables
+
+### budgets *(023)*
+
+Named spending rules; spend is derived from `workflow_runs` (migration 022) at evaluation time, never stored twice.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `UUID` | PK, default `gen_random_uuid()` |
+| `name` | `TEXT` | NOT NULL — operator-facing label |
+| `scope` | `TEXT` | NOT NULL, CHECK: `agent` \| `department` \| `project` \| `fleet` |
+| `scope_id` | `TEXT` | nullable — agent id / department id / workflow_type; NULL only for fleet |
+| `period` | `TEXT` | NOT NULL, CHECK: `daily` \| `weekly` \| `monthly` |
+| `cap_usd` | `NUMERIC(12,6)` | nullable — XOR with `cap_tokens` (table CHECK) |
+| `cap_tokens` | `BIGINT` | nullable — over `input_tokens + output_tokens`; XOR with `cap_usd` |
+| `action_on_exceed` | `TEXT` | NOT NULL, CHECK: `warn` \| `pause_new_runs` \| `hard_stop` |
+| `active` | `BOOLEAN` | NOT NULL, default `true` |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, default `now()` |
+
+**Indexes:** partial unique `uq_budgets_active_scope_period (scope, COALESCE(scope_id, ''), period) WHERE active` — one active budget per scope+period; `idx_budgets_scope_period (scope, period, active)`.
+
+### budget_events *(023)*
+
+Append-only enforcement audit trail. `UNIQUE (budget_id, period_key, event_kind)` is the idempotency latch (`ON CONFLICT DO NOTHING`) so repeated dispatcher ticks never duplicate an event.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `BIGSERIAL` | PK |
+| `budget_id` | `UUID` | NOT NULL, FK → `budgets(id)` ON DELETE CASCADE |
+| `period_key` | `TEXT` | NOT NULL — e.g. `2026-08-24` / `2026-W35` / `2026-08` |
+| `event_kind` | `TEXT` | NOT NULL, CHECK: `warned` \| `paused` \| `hard_stopped` \| `recovered` |
+| `detail` | `JSONB` | nullable — spend at breach, affected run ids, actor |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, default `now()` |
+
+**Indexes:** unique `(budget_id, period_key, event_kind)`; `idx_budget_events_budget_created (budget_id, created_at DESC)`.
 
 ---
 

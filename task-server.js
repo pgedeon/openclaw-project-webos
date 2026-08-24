@@ -68,6 +68,7 @@ const { registerExportRoutes } = require('./routes/export-routes');
 const { registerSpaceRoutes } = require('./routes/space-routes');
 const { registerWorkflowRoutingRoutes } = require('./routes/workflow-routing-routes');
 const { registerCostRoutes } = require('./routes/cost-routes');
+const { registerBudgetRoutes } = require('./routes/budget-routes');
 const { timingSafeTokenEqual } = require('./routes/auth-policy');
 const { createGatewayBridge } = require('./lib/gateway-bridge');
 const { createGatewayConsoleFeed } = require('./lib/gateway-console-feed');
@@ -691,6 +692,7 @@ registerExportRoutes(router, settingsDeps, settingsStore);
 registerSpaceRoutes(router, settingsDeps);
 registerWorkflowRoutingRoutes(router, settingsDeps);
 registerCostRoutes(router);
+registerBudgetRoutes(router);
 const server = http.createServer(async (req, res) => {
   const timestamp = new Date().toISOString();
   const url = req.url.split('?')[0];
