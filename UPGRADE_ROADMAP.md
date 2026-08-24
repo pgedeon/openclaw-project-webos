@@ -77,7 +77,7 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       "no data yet" from "no database"), named anomaly-threshold constants with
       justification comments pinned by boundary fixtures in tests/test-cost-routes.js,
       thresholds note in docs/views-reference.md.
-- [ ] **Gateway websocket bridge**: replace 20s polling (`realtime-sync.mjs`) with live
+- [x] **Gateway websocket bridge**: replace 20s polling (`realtime-sync.mjs`) with live
       push. LANDMINE: gateway is loopback-bound (`wss://127.0.0.1:18789`) inside WSL2 —
       browser-to-gateway direct breaks remotely. Pattern: one backend subscribes to the
       gateway server-side, fans out to browsers over its own WS/SSE. Token stays
