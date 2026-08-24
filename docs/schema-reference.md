@@ -648,6 +648,8 @@ Multi-workspace support with per-space configuration.
 | 20260216d | `20260216_add_cron_job_runs.sql` | 2026-02-16 | Add `cron_job_runs` table |
 | 20260216e | `20260216_add_saved_views.sql` | 2026-02-16 | Add `saved_views` table |
 | 20260216f | `20260216_add_updated_at_index_to_tasks.sql` | 2026-02-16 | Add `updated_at` index to tasks for incremental sync |
+| 20260429b | `20260429_spaces_constraints.sql` | 2026-04-29 | Enforce single default workspace via partial unique index on `workspaces.is_default` |
+| 022 | `022_add_run_token_cost_tracking.sql` | 2026-08-23 | Add per-run token/cost tracking to `workflow_runs`: input_tokens, output_tokens, cached_tokens, model_id, cost_estimate, currency, reported_at |
 
 ---
 
