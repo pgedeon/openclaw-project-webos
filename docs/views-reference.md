@@ -1,6 +1,6 @@
 # Views Reference — All Desktop Windows
 
-The OpenClaw Project WebOS exposes **34 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
+The OpenClaw Project WebOS exposes **35 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
 
 Views are organized into four categories in the start menu: **Work**, **Operations**, **System**, and **Admin**.
 
@@ -30,6 +30,7 @@ Views are organized into four categories in the start menu: **Work**, **Operatio
 - [Metrics](#metrics)
 - [Runbooks](#runbooks)
 - [Memory](#memory)
+- [Memory Browser](#memory-browser)
 - [Handoffs](#handoffs)
 - [History](#history)
 - [Audit](#audit) ✓ (see user-guide.md)
@@ -275,6 +276,45 @@ Memory system browser for viewing and editing OpenClaw workspace memory files.
 - `GET /api/memory/facts/search`
 - `GET /api/memory/status`
 - `GET /api/memory/stats`
+
+---
+
+### Memory Browser
+
+**Category:** Operations · **ID:** `memory-browser` · **Default size:** 1120×740
+
+Memory Browser 2.0 — the read/analyze companion to the Memory view: a chronological
+timeline over memory entries with cross-agent link chips and the existing semantic
+search kept prominent. Registered beside (not replacing) the v1 Memory view, which
+keeps the write surface (file editing, facts CRUD, reindex/promote).
+
+**Features:**
+- **Timeline mode** — memory files are parsed into dated entries client-side
+  (headings and dated bullets become blocks; daily files date from their name,
+  undated files from their modified time) and laid out newest-first
+- **Agent + date-range filters** — filter the timeline by referenced agent and
+  inclusive from/to dates; undated entries are excluded once a range is set
+  (honest omission beats wrong placement)
+- **Cross-agent links** — an entry references another agent when it @mentions a
+  name, names a roster agent on a word boundary, or cites a shared
+  run/task/session/wf identifier; rendered as chips on rows and in the detail pane,
+  clicking one filters the timeline to that agent
+- **Semantic search** — the existing `GET /api/memory/search` stays primary in the
+  header; results render in a Search results tab with relevance scores
+- **Detail pane** — click an entry for full content plus an "Open full file" reader;
+  editing remains in the v1 Memory view
+- **Virtualized rail** — fixed-row virtualization reused from Session Replay:
+  DOM stays ~50 rows regardless of entry count; content parsing is capped at the
+  newest 150 files with an honest amber banner when hit
+- **Zero-throw degradation** — memory API unreachable → named unavailable state
+  with retry; empty directory → empty state; partial content-fetch failures →
+  amber banner while showing what loaded
+
+**API endpoints used:**
+- `GET /api/memory/list`
+- `GET /api/memory/file/:name`
+- `GET /api/memory/search`
+- `GET /api/agents`
 
 ---
 

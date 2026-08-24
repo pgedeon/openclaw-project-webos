@@ -141,11 +141,19 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       tests/test-action-client.js DB-free suite 47/47). Remaining (non-blocking): slice 3
       surfacing per brief §6 — action-update SSE emission, workflows-view budget strip,
       Mission Control budget-events line.
-- [ ] **Memory browser 2.0**: graph/timeline view of agent memories + cross-agent links
+- [x] **Memory browser 2.0**: graph/timeline view of agent memories + cross-agent links
       (semantic search already exists). Graph-first per market scan rec #5; designated
       filler run when DB-dependent items are blocked (working rule 8). FLEX per review
       2026-08-24b: stays a Phase 1 filler box but does NOT block Phase 2 start — lowest
       daily-value item in phase; parity can trail.
+      Shipped 2026-08-25 (053adfa): src/shell/native-views/memory-browser-view.mjs —
+      timeline mode (client-side dated-entry parsing, newest-first) + cross-agent link
+      chips (@mentions / roster names / shared run-task-session ids, click-to-filter)
+      + semantic search kept primary + fixed-row virtualized rail reused from session
+      replay + zero-throw unavailable/empty/partial states. Registered BESIDE v1 memory
+      view (35th app) — v1 keeps the write surface. DB-free suite 51/51; staging-verified
+      on :8120. Graph rendering beyond the chip/link model remains open if wanted —
+      timeline-first shipped per scheduled brief.
 
 ## Phase 2 — Killer Features (things no other dashboard has)
 
