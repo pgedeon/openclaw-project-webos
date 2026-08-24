@@ -293,6 +293,16 @@ export const APP_REGISTRY = Object.freeze([
     defaultHeight: 720,
   },
   {
+    id: 'memory-browser',
+    label: 'Memory Browser',
+    icon: appIcon.clock,
+    url: '/?view=memory-browser',
+    viewModule: './native-views/memory-browser-view.mjs',
+    category: 'Operations',
+    defaultWidth: 1120,
+    defaultHeight: 740,
+  },
+  {
     id: 'spaces',
     label: 'Spaces',
     icon: appIcon.folder,
