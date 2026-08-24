@@ -58,10 +58,22 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 - [x] **Version bump to 1.1.0** once Phase 0 lands. Update CHANGELOG + RELEASE.
       Done 2026-08-23: released 1.1.0 (CHANGELOG section added; RELEASE.md carries
       no version line, nothing to update).
-- [ ] **Cost/token history backfill** (promoted from prose inside the cost-schema
+- [x] **Cost/token history backfill** (promoted from prose inside the cost-schema
       box, review 2026-08-24): backfill `workflow_runs` token/cost columns from
       historical gateway data where available. Without it the Mission Control cost
       panel and anomaly flag 4 stay near-empty for a week. Small, one run.
+      Shipped 2026-08-24 (12f7115): `scripts/backfill-run-costs.js` reads exact
+      per-message usage from session JSONL transcripts (CLI/status and state sqlite
+      carry no per-run split), joins via `gateway_session_id` session key →
+      sessions.json → transcript files, sums only inside each run's window,
+      never invents prices (`cost_estimate` stays NULL without a price source),
+      idempotent + dry-run default. First live `--apply` run: considered 22,
+      matched 0, updated 0 — honest zero: every session-bound run predates
+      gateway transcript retention (oldest surviving transcript 2026-07-25;
+      runs are March–May 2026; most bindings were monitor `spawned-*` pid
+      strings, never real session keys). Aggregation itself verified end-to-end
+      against a live session. Migration 022 was found unapplied on this machine
+      and applied before the run.
 - [ ] **`npm audit` as CI gate** (promoted from prose inside the security-pass box,
       review 2026-08-24): advisory leftover from the closed security pass; add to
       `.github/workflows/ci.yml`. Small, one run.
