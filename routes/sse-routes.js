@@ -14,6 +14,12 @@ const clients = new Set();
 const streamClients = new Map();
 const STREAM_QUEUE_MAX = 100;
 
+// Extra per-interval heartbeat hooks (e.g. the console feed pings its own
+// clients through this). Additive — the state-channel paths stay untouched.
+const extraHeartbeatFns = new Set();
+/** Feed instances already wired into the heartbeat (idempotent registration). */
+const consoleHeartbeatWired = new WeakSet();
+
 let heartbeatInterval = null;
 
 /**
@@ -133,16 +139,33 @@ function startHeartbeat() {
         streamClients.delete(res);
       }
     }
+    for (const fn of extraHeartbeatFns) {
+      try { fn(); } catch (_) { /* a broken pinger must not kill the heartbeat */ }
+    }
   }, 30_000);
   // Don't prevent process exit
   if (heartbeatInterval.unref) heartbeatInterval.unref();
 }
 
 /**
+ * Register a callback invoked on every heartbeat tick (used by the console
+ * feed to keep /api/console/stream connections alive).
+ * @param {Function} fn
+ * @returns {Function} unregister
+ */
+function registerExtraHeartbeat(fn) {
+  extraHeartbeatFns.add(fn);
+  return () => extraHeartbeatFns.delete(fn);
+}
+
+/**
  * Register SSE routes on the router.
  * @param {Router} router
+ * @param {{consoleFeed?: object}} [options] - optional gateway console feed
+ *   instance (lib/gateway-console-feed.js). When omitted, the shared singleton
+ *   is used lazily so tests can inject their own.
  */
-function registerSSERoutes(router) {
+function registerSSERoutes(router, options = {}) {
   // GET /api/events — SSE stream
   router.add('GET', '/api/events', async (req, res, ctx) => {
     res.writeHead(200, {
@@ -186,6 +209,59 @@ function registerSSERoutes(router) {
     startHeartbeat();
     return true;
   });
+
+  // GET /api/console/stream?session=<sessionKey> — Live Agent Console feed.
+  // Fed by lib/gateway-console-feed.js (additive second gateway subscriber;
+  // bridge v1 untouched per docs/briefs/live-console.md §7). Auth is inherited
+  // from task-server's /api/* middleware exactly like /api/events/stream.
+  // Overflow semantics are CONSOLE-appropriate: drop-oldest WITHOUT resync —
+  // implemented inside the feed's own registry, which is why this route does
+  // not reuse broadcastStream()'s state-channel queue (isolated backpressure
+  // domain; keeps the frozen state-channel contract byte-identical).
+  const injectedFeed = options.consoleFeed || null;
+  const resolveConsoleFeed = () => {
+    if (injectedFeed) return injectedFeed;
+    try { return require('../lib/gateway-console-feed').getSharedConsoleFeed(); }
+    catch (_) { return null; }
+  };
+
+  // Keep attached console clients alive: hook the feed's own pinger into the
+  // shared heartbeat tick. Idempotent per feed instance (WeakSet guard) so
+  // repeated registerSSERoutes calls never stack duplicate pingers.
+  if (injectedFeed && typeof injectedFeed.pingClients === 'function' && !consoleHeartbeatWired.has(injectedFeed)) {
+    consoleHeartbeatWired.add(injectedFeed);
+    registerExtraHeartbeat(() => { injectedFeed.pingClients(); });
+  }
+
+  router.add('GET', '/api/console/stream', async (req, res, ctx) => {
+    const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
+    const sessionKey = (query.get('session') || '').trim();
+    if (!sessionKey) {
+      ctx.sendJSON(res, 400, { error: 'Missing required query parameter: session' });
+      return true;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || 3876),
+    });
+    res.write(`: connected\n\n`);
+    const feed = resolveConsoleFeed();
+    if (!feed || typeof feed.attach !== 'function' || feed.attach(sessionKey, res) === false) {
+      // Clean-disable path: no gateway config → end the stream immediately.
+      try {
+        res.write('event: console:end\ndata: {"reason":"unsubscribed"}\n\n');
+        res.end();
+      } catch (_) { /* ignore */ }
+      return true;
+    }
+    startHeartbeat();
+    req.on('close', () => {
+      try { feed.detach(res); } catch (_) { /* ignore */ }
+    });
+    return true;
+  });
 }
 
-module.exports = { registerSSERoutes, broadcast, broadcastStream, getStreamClientCount };
+module.exports = { registerSSERoutes, broadcast, broadcastStream, getStreamClientCount, registerExtraHeartbeat };

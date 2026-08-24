@@ -70,6 +70,7 @@ const { registerWorkflowRoutingRoutes } = require('./routes/workflow-routing-rou
 const { registerCostRoutes } = require('./routes/cost-routes');
 const { timingSafeTokenEqual } = require('./routes/auth-policy');
 const { createGatewayBridge } = require('./lib/gateway-bridge');
+const { createGatewayConsoleFeed } = require('./lib/gateway-console-feed');
 const SettingsStore = require('./lib/settings-store');
 
 function loadDashboardEnv() {
@@ -585,7 +586,18 @@ const diagnosticsHandler = createDiagnosticsHandler();
 
 // ── ROUTER SETUP (Phase 4A) ──────────────────────────────
 const router = new Router();
-registerSSERoutes(router);
+
+// Gateway console feed: second gateway subscriber for the Live Agent Console
+// (/api/console/stream). Additive sibling of the bridge — own connection, same
+// v4 handshake; disabled cleanly when no gateway config resolves. Created
+// before route registration so the SSE module gets the started instance.
+let gatewayConsoleFeed = null;
+try {
+  gatewayConsoleFeed = createGatewayConsoleFeed({ logger: console });
+  gatewayConsoleFeed.start();
+} catch (err) { console.error('⚠️  Gateway console feed not available:', err.message); }
+
+registerSSERoutes(router, { consoleFeed: gatewayConsoleFeed });
 registerSessionRoutes(router);
 
 // ── Gateway client for chat ──────────────────────

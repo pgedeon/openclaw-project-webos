@@ -27,6 +27,7 @@ const INCLUDED = [
   'test-bing-routes.js',
   'test-catalog-api.js',
   'test-chat-routes.js',
+  'test-console-feed.js',
   'test-cost-routes.js',
   'test-cron-routes.js',
   'test-dispatcher-v2.js',

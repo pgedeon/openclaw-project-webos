@@ -129,9 +129,13 @@ const appIcon = {
     <path d="M12 15v3M12 18c0 1.5-1 2.5-2.5 3" />
     <circle cx="12" cy="12" r="1.6" />
   `),
+  terminal: iconTemplate(`
+    <polyline points="4 17 10 11 4 5" />
+    <line x1="12" y1="19" x2="20" y2="19" />
+  `),
 };
 
-export const APP_CATEGORY_ORDER = ['Work', 'Operations', 'Admin'];
+export const APP_CATEGORY_ORDER = ['Work', 'Operations', 'Integration', 'Admin'];
 
 export const APP_REGISTRY = Object.freeze([
   {
@@ -449,6 +453,17 @@ export const APP_REGISTRY = Object.freeze([
     category: 'Admin',
     description: 'Configure OpenClaw Desktop',
     viewModule: './native-views/settings-view.mjs',
+  },
+  {
+    id: 'console',
+    label: 'Live Console',
+    icon: appIcon.terminal,
+    url: '/?view=console',
+    category: 'Integration',
+    description: 'Terminal-style live stream of a running agent session',
+    defaultWidth: 900,
+    defaultHeight: 600,
+    viewModule: './native-views/console-view.mjs',
   },
 ]);
 
