@@ -119,3 +119,47 @@ FILESYSTEM_API_PORT=3880
 1. **Environment variables** — highest priority
 2. **`.env` file** — loaded by Node.js dotenv (if configured)
 3. **Code defaults** — fallback values in source code and scripts
+
+---
+
+## Staging Deployment (LAN dev machine)
+
+The dashboard runs a dedicated staging slot on the LAN dev machine per
+`DEPLOY-POLICY.md` (Amendment 10) — all verification happens there; production is
+written only by the daily release batch.
+
+| Property | Value |
+|----------|-------|
+| Staging URL | `http://192.168.0.81:8120/` |
+| Host access | `ssh dev` (192.168.0.81, user `pgedeon`, key auth) |
+| Webroot | `~/www/staging/openclaw-dashboard/` |
+| Server file | `~/openclaw-dashboard-staging-server.js` (launcher: loads webroot `.env`, then requires `task-server.js`) |
+| Keepalive | per-minute cron on dev: `curl http://127.0.0.1:8120/api/health || nohup node …` (same pattern as the other staging slots) |
+| Deploy command | `scripts/dashboard-staging-deploy.sh` from a repo checkout (idempotent: rsync → env check → deps → restart → health verify) |
+| Log | `~/openclaw-dashboard-staging.log` on dev |
+
+Staging `.env` values (provisioned once in the webroot, never overwritten by the
+deploy script):
+
+```env
+PORT=8120
+HOST=0.0.0.0
+STORAGE_TYPE=json_snapshot
+DASHBOARD_AUTH_TOKEN=<fresh random — provisioned secret, not in git>
+OPENCLAW_WORKSPACE=/home/pgedeon/www/staging/openclaw-dashboard/workspace
+ASANA_JSON_SNAPSHOT_PATH=/home/pgedeon/www/staging/openclaw-dashboard/workspace/data/asana-db.json
+```
+
+Notes:
+
+- `WORKSPACE` is resolved via `OPENCLAW_WORKSPACE` so the static UI is served from
+  `<webroot>/workspace/dashboard` (symlink to the webroot) instead of the hardcoded
+  `/root/.openclaw/workspace` default.
+- `STORAGE_TYPE=json_snapshot` runs the read-only snapshot backend — no PostgreSQL
+  on the staging host; `/api/health` reports `storage_type: json_snapshot` with
+  status `degraded` by design.
+- The server sets `X-Robots-Tag: noindex, nofollow` on every response (staging
+  platform invariant).
+- All `/api/*` routes except `/api/health` and `/api/auth/self` require the
+  `Authorization: Bearer <DASHBOARD_AUTH_TOKEN>` header; unauthenticated requests
+  get `401`.

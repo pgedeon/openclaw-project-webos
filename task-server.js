@@ -131,7 +131,7 @@ process.on('unhandledRejection', (reason, promise) => {
 const PORT = process.env.PORT || 3876;
 const HOST = process.env.HOST || '127.0.0.1';
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
-const WORKSPACE = '/root/.openclaw/workspace';
+const WORKSPACE = process.env.OPENCLAW_WORKSPACE || '/root/.openclaw/workspace';
 const TASKS_FILE = path.join(WORKSPACE, 'tasks.md');
 const DASHBOARD_ROOT = path.join(WORKSPACE, 'dashboard');
 const GATEWAY_STATUS_FILE = path.join(DASHBOARD_ROOT, 'gateway-status.json');
@@ -696,6 +696,8 @@ registerCostRoutes(router);
 registerBudgetRoutes(router);
 registerActionRoutes(router);
 const server = http.createServer(async (req, res) => {
+  // Staging-platform invariant (DEPLOY-POLICY.md): staging instances must never be indexed.
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   const timestamp = new Date().toISOString();
   const url = req.url.split('?')[0];
   const method = req.method;
