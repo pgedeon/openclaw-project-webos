@@ -99,11 +99,17 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       multi-tab fanout. Review 2026-08-24: evaluate SSE-first fanout before raw WS —
       task-server already ships an auth-hardened SSE event-stream route (F7);
       run the streaming verification spike (live console item) BEFORE this build.
-- [ ] **Budget ledger + auto-pause** (pulled forward from Phase 2 per market scan
+- [x] **Budget ledger + auto-pause** (pulled forward from Phase 2 per market scan
       2026-08-24: Paperclip made per-agent budgets with hard-stop enforcement table
       stakes at 79k★ scale): per-agent/task budget rows over the shipped cost schema,
       dispatch-time check, pause + notify on breach via existing approvals/pause
       machinery. Depends on the Phase 0 cost/token backfill checkbox landing first.
+      Shipped 2026-08-24: slice 1 model+API 0a1ed9b (migration 023, budgets API,
+      pure eval), slice 2 dispatcher enforcement 420758b (scope-chain evaluation,
+      idempotent events, fail-open), slice 3 surfacing d276068 (latched SSE
+      budget:breach fan-out, Mission Control budget bars + budget_breach flag,
+      notification-center breach entries). Slice 4 management window stays the
+      §6 fast-follow go/no-go.
 - [x] **Live agent console**: stream agent output/tool-calls into a terminal window. Shipped 2026-08-24: implementation 83919c4, validated against live gateway (docs/research/console-validation-2026-08-24.md) — tool-start/output/end frames, per-session filtering, secret redaction all confirmed.
 - [x] **Session replay inspector**: browse OpenClaw sessions, replay a transcript in a
       window with a time-travel stepper over tool-call events (prev/next/jump, payload
