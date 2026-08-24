@@ -100,12 +100,18 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       already-shipped session-reader routes, no gating design needed.
 - [ ] **One-click agent actions** from any view: assign task → dispatch run → approve
       → publish, without leaving the window. Needs its own brief first (action set,
-      confirmation UX, idempotency) — none exists yet; write it during bridge/console runs.
+      confirmation UX, idempotency) — none exists yet; the "write it during bridge/console
+      runs" window closed 2026-08-24 without producing one, so the brief is now the item's
+      critical path (review 2026-08-24b: docs-lane run immediately; collides with nothing).
       Brief must include protected-action preview + receipts per market scan 2026-08-24
-      (LoopX pattern: typed preview, explicit confirmation, receipt appended to audit trail).
+      (LoopX pattern: typed preview, explicit confirmation, receipt appended to audit trail)
+      AND define the confirmation/idempotency/receipt machinery that the Phase 2 NL command
+      bar reuses — gating design is written once, here.
 - [ ] **Memory browser 2.0**: graph/timeline view of agent memories + cross-agent links
       (semantic search already exists). Graph-first per market scan rec #5; designated
-      filler run when DB-dependent items are blocked (working rule 8).
+      filler run when DB-dependent items are blocked (working rule 8). FLEX per review
+      2026-08-24b: stays a Phase 1 filler box but does NOT block Phase 2 start — lowest
+      daily-value item in phase; parity can trail.
 
 ## Phase 2 — Killer Features (things no other dashboard has)
 
@@ -113,6 +119,10 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       schema. Sparkline widgets already exist — feed them this. Budget ledger component
       pulled forward to Phase 1 (market scan 2026-08-24); this item keeps the rollup UI.
       Depends on the Phase 0 cost/token backfill checkbox landing first (review 2026-08-24).
+      Scope narrowed per review 2026-08-24b: fleet-level coverage already delivered by side
+      effect (`GET /api/costs/summary` + Mission Control cost panel + budget bars arriving
+      in budget slice 3) — remaining true scope is per-agent/department/workflow-type
+      rollup endpoint(s) + sparkline wiring, ≈1 run. Do not re-plan the fleet aggregate.
 - [ ] **MCP server exposure** (added per market scan 2026-08-23): wrap existing REST
       routes as MCP tools so OpenClaw agents can read tasks/runs/metrics directly in
       their tool loop; read-only tool set first, write actions behind approval gates.
