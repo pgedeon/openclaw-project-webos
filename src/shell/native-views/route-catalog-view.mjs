@@ -45,6 +45,8 @@ const DESCRIPTIONS = {
   'DELETE /api/projects/:id': 'Delete project',
   'GET /api/workflows': 'List workflows',
   'GET /api/history': 'List audit history',
+  'GET /api/state-snapshots': 'List state snapshots (Time Travel)',
+  'GET /api/snapshots': 'List full-state snapshot artifacts',
   'GET /api/snapshots/:entityType/:entityId': 'List state snapshots',
   'GET /api/spaces': 'List workspaces',
   'POST /api/spaces': 'Create workspace',

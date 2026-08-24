@@ -196,7 +196,7 @@
   - [GET /api/history/:taskId](#get-apihistorytaskid)
   - [GET /api/history/:taskId/snapshot](#get-apihistorytaskidsnapshot)
   - [GET /api/history/:taskId/diff](#get-apihistorytaskiddiff)
-  - [GET /api/snapshots](#get-apisnapshots)
+  - [GET /api/state-snapshots](#get-apistate-snapshots)
   - [GET /api/snapshots/:entityType/:entityId](#get-apisnapshotsentitytypeentityid)
   - [POST /api/snapshots/:snapshotId/preview-revert](#post-apisnapshotssnapshotidpreview-revert)
   - [POST /api/snapshots/:snapshotId/revert](#post-apisnapshotssnapshotidrevert)
@@ -749,6 +749,8 @@ Capture a full-state snapshot: reads all §2.1 tier tables in one pass, redacts,
 ### `GET /api/snapshots`
 
 Disk index scan of `storage/snapshots/*.json`, newest-first by `created_at`. Works without PostgreSQL.
+
+**Route-order note (slice 3):** this path is shared with the Time Travel feature's state-snapshots listing. `task-server.js` registers snapshot-routes BEFORE history-routes, so the bare path serves THIS registry; Time Travel's listing moved to the identical-handler alias [`GET /api/state-snapshots`](#get-apistate-snapshots). Regression-pinned in tests/test-snapshot-panel.js.
 
 **Response** `200`: `{ "available": true, "count": 2, "snapshots": [{ "snapshot_id", "name", "created_at", "total_rows", "size_bytes", "generator" }] }` — `size_bytes` is the honest on-disk size; unreadable/corrupt files are skipped rather than breaking the listing.
 
@@ -3002,9 +3004,9 @@ Diff between two points in time.
 
 **Response:** `{ taskId, changes: [{ field, from, to }], from, to }`
 
-### `GET /api/snapshots`
+### `GET /api/state-snapshots`
 
-List recent snapshots across all entities.
+List recent state snapshots across all entities (Time Travel). Canonical path for this listing since the snapshot/restore build: the bare `/api/snapshots` path now serves the full-state artifact registry (see Snapshots API) because task-server.js registers snapshot-routes first. `/api/snapshots` remains registered on this handler too for isolated use, but is shadowed at integration time.
 
 **Query parameters:** `limit` (max 200)
 

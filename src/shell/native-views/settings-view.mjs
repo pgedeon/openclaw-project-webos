@@ -10,6 +10,7 @@
  */
 
 import { ensureNativeRoot, escapeHtml } from './helpers.mjs';
+import { mountSnapshotsPanel } from './snapshot-panel.mjs';
 
 const CATEGORY_META = {
   general:     { icon: '⚙️', label: 'General' },
@@ -20,10 +21,11 @@ const CATEGORY_META = {
   security:    { icon: '🔒', label: 'Security' },
   integrations:{ icon: '🔗', label: 'Integrations' },
   sse:         { icon: '📡', label: 'SSE & RT' },
+  snapshots:   { icon: '💾', label: 'Snapshots & Restore' },
   system:      { icon: 'ℹ️', label: 'System Info' },
 };
 
-const CATEGORY_ORDER = ['general','database','gateway','appearance','apps','security','integrations','sse','system'];
+const CATEGORY_ORDER = ['general','database','gateway','appearance','apps','security','integrations','sse','snapshots','system'];
 
 import { mutate } from '../mutation-manager.mjs';
 
@@ -395,6 +397,11 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
       return;
     }
 
+    if (activeTab === 'snapshots') {
+      renderSnapshotsTab(el);
+      return;
+    }
+
     const catSettings = settingsData[activeTab] || {};
     const meta = CATEGORY_META[activeTab];
 
@@ -494,6 +501,24 @@ export async function renderSettingsView({ mountNode, api, adapter, stateStore, 
       clGroup.appendChild(clList);
       el.appendChild(clGroup);
     }
+  }
+
+  function renderSnapshotsTab(el) {
+    const meta = CATEGORY_META.snapshots;
+    el.innerHTML = `
+      <div class="cp-header">
+        <span class="cp-title">${meta.icon} ${meta.label}</span>
+      </div>`;
+    const group = document.createElement('div');
+    group.className = 'cp-group';
+    el.appendChild(group);
+    mountSnapshotsPanel({
+      container: group,
+      apiGet,
+      apiPost,
+      authHeaders: getAuthHeaders,
+      showToast,
+    });
   }
 
   function renderSystemTab(el) {

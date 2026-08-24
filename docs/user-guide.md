@@ -234,6 +234,31 @@ Retrying a timed-out action is safe: the same confirmed intent carries the same 
 
 ---
 
+## Snapshots & Restore (Settings)
+
+Full-state insurance lives in **Settings → 💾 Snapshots & Restore** (no separate windowed app). A snapshot is a named, versioned, downloadable JSON artifact of every dashboard table plus non-secret settings; restore is preview-first and never writes anything until you confirm.
+
+### Create a snapshot
+
+1. Open Settings → Snapshots & Restore. The name field defaults to `snapshot-YYYYMMDD-HHmm` — rename it or leave it.
+2. Press **Create snapshot**. The button disables while generating; on success a toast reports the total row count and the list refreshes.
+3. Each row shows name/id, created time, honest on-disk size, total rows, and the schema verdict from your last preview (`not checked` until then).
+4. **⬇ Download** saves the artifact JSON as an attachment — keep copies off-box; that file alone reconstructs the state it captured.
+
+The registry and downloads work even when PostgreSQL is down (they are disk-only). Creating snapshots requires the database.
+
+### Restore in three steps
+
+1. **Pick an artifact**: "↻ Restore…" on any server-side row, or "📥 Restore from file…" for a downloaded artifact (files over 100 MB are refused client-side before upload).
+2. **Read the preview** — nothing is written yet: a per-table diff grid (added / updated / conflicts / unchanged, expandable PK samples), the schema-compat badge, and warnings such as *target newer* (target DB has migrations the artifact predates) or *active runs* (pause the dispatcher before a destructive replace). The rollback hint reminds you to re-create a snapshot of the current state first — that one click is the honest undo.
+3. **Confirm by mode**: **Merge** (default) upserts artifact rows and deletes nothing — a plain Confirm. **Replace** additionally deletes live rows absent from the artifact — destructive, so the confirm flips to hold-to-confirm: press and hold the red ring for **1.2 s** (or focus it and hold `Enter`); release early and nothing fires. A typed fallback (type `REPLACE`) exists for keyboards where holding is awkward.
+
+### While it runs
+
+A determinate progress bar advances as `restore-progress` events arrive per completed table. Closing the panel — or the whole window — does not cancel the apply; when you come back, the panel offers to reattach by its `restoreId`. If a table fails mid-restore, everything committed before it stays committed (that is the resume point, not corruption): press **Retry resume** and the same `restoreId` continues at the first incomplete table. Completed restores end in a summary that says plainly whether it finished fresh, resumed from a checkpoint, or was a duplicate replay of an already-finished restore (executing nothing).
+
+---
+
 ## Agent Integration
 
 Tasks can be assigned to an agent directly in the composer or edit form. The Agent view lets an agent:

@@ -689,9 +689,14 @@ registerTaskRoutes(router);
 registerProjectRoutes(router);
 registerViewRoutes(router);
 registerMemoryRoutes(router);
+// Snapshot/restore routes register BEFORE history-routes (slice-3 fix): the
+// first-match router would otherwise let history's DB-gated GET /api/snapshots
+// (Time Travel listing) shadow the disk-only snapshot registry and
+// /api/snapshots/:id/download (docs/briefs/snapshot-restore.md §4.1 pins these
+// five paths). Time Travel's listing moved to the /api/state-snapshots alias.
+registerSnapshotRoutes(router, { settingsStore });
 registerHistoryRoutes(router, settingsDeps);
 registerExportRoutes(router, settingsDeps, settingsStore);
-registerSnapshotRoutes(router, { settingsStore });
 registerSpaceRoutes(router, settingsDeps);
 registerWorkflowRoutingRoutes(router, settingsDeps);
 registerCostRoutes(router);

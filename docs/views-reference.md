@@ -320,7 +320,7 @@ Two-pane history/diff UI for browsing audit log entries and state snapshots.
 - Filter by actor, action type
 - Per-task history drilling
 - Snapshot preview and revert
-- API: `GET /api/history`, `GET /api/snapshots/:type/:id`
+- API: `GET /api/history`, `GET /api/state-snapshots` (Time Travel listing alias — bare `GET /api/snapshots` serves the snapshot/restore artifact registry), `GET /api/snapshots/:type/:id`
 
 ---
 
@@ -681,3 +681,4 @@ Configuration panel for OpenClaw Desktop settings and preferences.
 - Import/export configuration bundles
 - View settings changelog
 - Persist settings across sessions
+- **Snapshots & Restore** tab (snapshot/restore slice 3, brief §3): one-click full-state snapshot creation with a default `snapshot-YYYYMMDD-HHmm` name; newest-first server-side registry listing name/id, created_at, honest on-disk size and total rows plus the last-previewed schema-compat verdict badge (`not checked` until a preview runs); per-row artifact download (Bearer stays in headers, never the URL) and restore entry points for server-side snapshots or uploaded artifacts. The restore flow is preview-first: dry-run diff grid per table (added / updated / conflicts / unchanged with expandable PK samples), schema verdict + warnings (`target_newer`, `active_runs`, dropped settings section) and the rollback hint to re-create a snapshot BEFORE confirming. Merge confirms plainly; Replace flips to the HOLD_CONFIRM gate — press-and-hold ≥1.2 s conic-gradient ring with Enter-hold keyboard parity and a typed-confirm fallback (type REPLACE), early release fires nothing (AC12). Apply POSTs with a client-minted `restoreId` minted once per confirmed intent, drives a determinate progress bar from `restore-progress` SSE frames on `/api/events/stream`, survives page closes via a localStorage reattach record, retries failures by resuming at the first incomplete table under the same `restoreId`, and ends in a completion summary distinguishing fresh vs resumed vs duplicate replays. Zero-throw degradation throughout: loading / empty / unavailable / error-retry list states, and without PostgreSQL create/preview/apply surface the server's 503 `{available:false}` while the disk-only registry and downloads keep working (AC7).

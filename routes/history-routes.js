@@ -160,8 +160,13 @@ function registerHistoryRoutes(router, deps) {
     return true;
   });
 
-  // GET /api/snapshots — list recent snapshots across all entities
-  router.add('GET', '/api/snapshots', async (req, res, ctx) => {
+  // GET /api/snapshots — list recent snapshots across all entities.
+  // NOTE (slice-3 route-order fix): task-server.js registers snapshot-routes
+  // FIRST, so at integration time the bare path serves the full-state artifact
+  // registry (docs/briefs/snapshot-restore.md §4.1). Time Travel listing is
+  // canonical on the /api/state-snapshots alias — same handler, both paths
+  // registered so standalone/isolated consumers keep working.
+  const listAllStateSnapshots = async (req, res, ctx) => {
     if (!_ensurePool(res, ctx)) return true;
     try {
       const urlStr = req.url || '';
@@ -175,7 +180,9 @@ function registerHistoryRoutes(router, deps) {
       ctx.sendJSON(res, 500, { error: err.message });
     }
     return true;
-  });
+  };
+  router.add('GET', '/api/state-snapshots', listAllStateSnapshots);
+  router.add('GET', '/api/snapshots', listAllStateSnapshots);
 
   // GET /api/snapshots/:entityType/:entityId — list state snapshots for a specific entity
   router.add('GET', '/api/snapshots/:entityType/:entityId', async (req, res, ctx, params) => {

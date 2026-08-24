@@ -623,7 +623,10 @@ export function createAPIClient(baseURL = '/api', options = {}) {
 
     // State Snapshots
     snapshots: {
-      listAll(params = {}) { return request(pathWithQuery('/snapshots', params)); },
+      // Time Travel state_snapshots listing — /api/state-snapshots alias
+      // (slice-3 route-order fix: bare GET /api/snapshots now serves the
+      // full-state artifact registry, docs/briefs/snapshot-restore.md §4.1).
+      listAll(params = {}) { return request(pathWithQuery('/state-snapshots', params)); },
       list(entityType, entityId, params = {}) { return request(pathWithQuery(`/snapshots/${entityType}/${entityId}`, params)); },
       previewRevert(snapshotId) { return jsonRequest(`/snapshots/${snapshotId}/preview-revert`, { method: 'POST', body: {} }); },
       revert(snapshotId, actor = 'dashboard') { return jsonRequest(`/snapshots/${snapshotId}/revert`, { method: 'POST', body: { actor } }); },

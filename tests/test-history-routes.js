@@ -95,6 +95,10 @@ async function run() {
     ['GET', '/api/history/:taskId'],
     ['GET', '/api/history/:taskId/snapshot'],
     ['GET', '/api/history/:taskId/diff'],
+    // /api/state-snapshots is the canonical Time Travel listing alias
+    // (slice-3 route-order fix); the bare path stays registered for isolated
+    // use but is shadowed at integration time by snapshot-routes.
+    ['GET', '/api/state-snapshots'],
     ['GET', '/api/snapshots'],
     ['GET', '/api/snapshots/:entityType/:entityId'],
     ['POST', '/api/snapshots/:snapshotId/preview-revert'],
@@ -259,6 +263,12 @@ async function run() {
   result = await dispatch(liveRouter, 'GET', '/api/snapshots?limit=999', createContext());
   assert.deepStrictEqual(pool.calls[0].params, [200]);
   assert.deepStrictEqual(result, { status: 200, payload: { snapshots: [{ id: 'snap-1' }, { id: 'snap-2' }], total: 2 } });
+
+  // Alias serves the identical handler (slice-3 route-order fix).
+  pool = createPool(async () => ({ rows: [{ id: 'snap-alias' }] }));
+  result = await dispatch(liveRouter, 'GET', '/api/state-snapshots?limit=50', createContext());
+  assert.deepStrictEqual(pool.calls[0].params, [50]);
+  assert.deepStrictEqual(result, { status: 200, payload: { snapshots: [{ id: 'snap-alias' }], total: 1 } });
 
   pool = createPool(async () => ({ rows: [{ id: 'snap-entity' }] }));
   result = await dispatch(liveRouter, 'GET', '/api/snapshots/project/project-1?limit=25', createContext());
