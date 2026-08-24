@@ -58,6 +58,7 @@ const INCLUDED = [
   'test-session-replay-view.js',
   'test-settings-routes.js',
   'test-settings.js',
+  'test-snapshot-lib.js',
   'test-space-routes.js',
   'test-sse-routes.js',
   'test-task-routes.js',
