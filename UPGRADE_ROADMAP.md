@@ -92,11 +92,7 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       stakes at 79k★ scale): per-agent/task budget rows over the shipped cost schema,
       dispatch-time check, pause + notify on breach via existing approvals/pause
       machinery. Depends on the Phase 0 cost/token backfill checkbox landing first.
-- [ ] **Live agent console**: stream agent output/tool-calls into a terminal window.
-      First verify what the gateway actually exposes for streaming (likely
-      permission-gated); mock-first until confirmed. Review 2026-08-24: that
-      verification is an explicit spike RUN with a written findings doc in
-      docs/briefs/ — it gates both this item and the WS bridge.
+- [x] **Live agent console**: stream agent output/tool-calls into a terminal window. Shipped 2026-08-24: implementation 83919c4, validated against live gateway (docs/research/console-validation-2026-08-24.md) — tool-start/output/end frames, per-session filtering, secret redaction all confirmed.
 - [ ] **Session replay inspector**: browse OpenClaw sessions, replay a transcript in a
       window with a time-travel stepper over tool-call events (prev/next/jump, payload
       inspection) — pattern proven by AgentOps/Mission Control (market scan 2026-08-23).
