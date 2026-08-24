@@ -132,14 +132,7 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 
 ## Phase 2 — Killer Features (things no other dashboard has)
 
-- [ ] **Cost & token analytics UI**: per-agent/task/department rollups over the Phase 0
-      schema. Sparkline widgets already exist — feed them this. Budget ledger component
-      pulled forward to Phase 1 (market scan 2026-08-24); this item keeps the rollup UI.
-      Depends on the Phase 0 cost/token backfill checkbox landing first (review 2026-08-24).
-      Scope narrowed per review 2026-08-24b: fleet-level coverage already delivered by side
-      effect (`GET /api/costs/summary` + Mission Control cost panel + budget bars arriving
-      in budget slice 3) — remaining true scope is per-agent/department/workflow-type
-      rollup endpoint(s) + sparkline wiring, ≈1 run. Do not re-plan the fleet aggregate.
+- [x] **Cost & token analytics UI**: per-agent/task/department rollups over the Phase 0 schema. Fleet-level landed as side effect of Mission Control + costs summary; per-agent rollup endpoint (`GET /api/costs/rollup?group_by=`) + sparkline widget shipped 2026-08-24 (32a0a3d). Budget ledger component pulled forward to Phase 1 (market scan 2026-08-24) — shipped separately (023 + slices 1-2).
 - [ ] **MCP server exposure** (added per market scan 2026-08-23): wrap existing REST
       routes as MCP tools so OpenClaw agents can read tasks/runs/metrics directly in
       their tool loop; read-only tool set first, write actions behind approval gates.
