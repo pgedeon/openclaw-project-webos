@@ -22,6 +22,7 @@ const TEST_TIMEOUT_MS = 45000;
 
 // DB-free test subset (all pass with PostgreSQL unreachable).
 const INCLUDED = [
+  'test-action-routes.js',
   'test-agent-routes.js',
   'test-auth-policy.js',
   'test-backfill-run-costs.js',

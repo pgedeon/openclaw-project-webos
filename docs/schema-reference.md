@@ -651,6 +651,7 @@ Multi-workspace support with per-space configuration.
 | 20260429b | `20260429_spaces_constraints.sql` | 2026-04-29 | Enforce single default workspace via partial unique index on `workspaces.is_default` |
 | 022 | `022_add_run_token_cost_tracking.sql` | 2026-08-23 | Add per-run token/cost tracking to `workflow_runs`: input_tokens, output_tokens, cached_tokens, model_id, cost_estimate, currency, reported_at |
 | 023 | `023_add_budget_ledger.sql` | 2026-08-24 | Add `budgets` rules + `budget_events` append-only audit trail (budget ledger slice 1) |
+| 024 | `024_add_action_receipts.sql` | 2026-08-24 | Add `action_receipts` idempotency latch + persisted operator-action receipts (one-click actions slice 1) |
 
 ---
 
@@ -689,6 +690,28 @@ Append-only enforcement audit trail. `UNIQUE (budget_id, period_key, event_kind)
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, default `now()` |
 
 **Indexes:** unique `(budget_id, period_key, event_kind)`; `idx_budget_events_budget_created (budget_id, created_at DESC)`.
+
+---
+
+## Action Receipts Tables
+
+### action_receipts *(024)*
+
+One receipt per executed operator action (one-click actions slice 1). The primary key IS the idempotency latch: a replayed client-minted `action_id` returns the stored row (`duplicate:true`) instead of re-executing; the same `action_id` with a different `params_hash` is a stale retry (HTTP 409) and never executes.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `action_id` | `TEXT` | PK — client-minted UUID, one per confirmed intent; retries reuse it, a deliberate repeat mints a new one |
+| `kind` | `TEXT` | NOT NULL, CHECK: `task.assign` \| `run.dispatch` \| `approval.decide` \| `run.cancel` \| `run.redispatch` |
+| `target_id` | `TEXT` | NOT NULL — task / approval / run id per kind |
+| `params_hash` | `TEXT` | NOT NULL — sha256 over canonical JSON (sorted keys) of params; staleness guard |
+| `actor` | `TEXT` | NOT NULL, default `'dashboard-operator'` |
+| `outcome` | `TEXT` | nullable, CHECK: `executed` \| `rejected_governance` \| `blocked_budget` \| `failed` \| `duplicate`; NULL while executing (latch inserted before the side effect). Budget-blocked refusals are answered pre-latch and intentionally leave NO receipt so the action stays retryable after a cap raise |
+| `rollback_hint` | `TEXT` | nullable — human-readable recovery move shown before confirm and in the tray; hints only, nothing auto-reverts |
+| `detail` | `JSONB` | nullable — executor result ids (e.g. new run_id), governance verdict, error text |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, default `now()` |
+
+**Indexes:** `idx_action_receipts_created (created_at DESC)` for the recent-receipts feed. Every completed receipt is mirrored into `audit_log` (`action = 'action.<kind>'`) in the same transaction that stamps the outcome.
 
 ---
 

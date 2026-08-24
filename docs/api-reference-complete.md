@@ -28,6 +28,9 @@
   - [POST /api/budgets](#post-apibudgets)
   - [PATCH /api/budgetsid](#patch-apibudgetsid)
   - [GET /api/budgetsidledger](#get-apibudgetsidledger)
+- [Actions API](#actions-api)
+  - [POST /api/actionsexecute](#post-apiactionsexecute)
+  - [GET /api/actionsrecent](#get-apiactionsrecent)
 - [Realtime Events API](#realtime-events-api)
   - [GET /api/events](#get-apievents)
   - [GET /api/events/stream](#get-apieventsstream)
@@ -563,6 +566,93 @@ Derived current-period spend plus the append-only enforcement event trail for on
 ```
 
 `events[]` is newest-first (limit 100) from `budget_events`; `event_kind` is one of `warned` | `paused` | `hard_stopped` | `recovered`, and `UNIQUE (budget_id, period_key, event_kind)` makes every emission idempotent. Unknown id → `404`.
+
+---
+
+## Actions API
+
+One governed path for every consequential operator action (One-Click Agent Actions slice 1, migration `024_add_action_receipts.sql`; design brief `docs/briefs/one-click-actions.md`). Every catalog action (`task.assign`, `run.dispatch`, `approval.decide`, `run.cancel`, `run.redispatch`) is a typed envelope validated against the registry (`lib/action-registry.js`), latched by an idempotency receipt, gated by governance, and — for dispatch-class actions — probed against budget headroom before execution. Backing business logic is the existing workflow-runs/tasks machinery called in-process; the raw endpoints stay uncordoned for scripts and agents.
+
+**Idempotency contract:** `actionId` is minted client-side ONCE per confirmed intent; retries of that intent reuse it. A replayed `actionId` returns the stored receipt with `"duplicate": true` and performs nothing. Same `actionId` with a different `paramsHash` → `409 stale_retry`. Two different `actionId`s with identical params are a legitimate repeat: both execute, both receipted.
+
+**Degradation contract:** without PostgreSQL `POST /api/actions/execute` refuses ALL actions with HTTP `503` `{ "available": false, "reason": "no_database" }` — audit-first: no receipt persistence, no side effect. Migration 024 unapplied → `503 { "available": false, "reason": "receipts_unavailable" }`. Read endpoint degrades with the house contract: HTTP `200` `{ "available": false, "reason": "no_database" | "receipts_unavailable" | "query_failed" }`. Envelope violations answer `400 { "error": "invalid_action", "details": [...] }` before any permission check or execution.
+
+### `POST /api/actions/execute`
+
+Execute one catalog action. Request body:
+
+```json
+{
+  "actionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "kind": "run.dispatch",
+  "targetId": "task-uuid",
+  "params": { "template": "code-change", "input_payload": { "prompt": "fix login bug" } },
+  "actor": "dashboard-operator"
+}
+```
+
+Per-kind `params`: `task.assign` → `{ owner }` (required); `run.dispatch` → `{ template }` (required) + optional `input_payload` object; `approval.decide` → `{ decision }` (`approved` | `rejected`, required) + optional `notes`; `run.cancel` → optional `{ reason }`; `run.redispatch` → `{}`. `paramsHash` is computed server-side as sha256 over canonical JSON (sorted keys) of `params`. `actor` defaults to `dashboard-operator`.
+
+**Response** `200` (executed):
+
+```json
+{
+  "receipt": {
+    "action_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "kind": "run.dispatch",
+    "target_id": "task-uuid",
+    "params_hash": "9f2a…",
+    "actor": "dashboard-operator",
+    "outcome": "executed",
+    "rollback_hint": "Cancel run run-new-1 if unwanted",
+    "detail": { "result": { "new_run_id": "run-new-1", "status": "running" } },
+    "created_at": "2026-08-24T12:00:00.000Z"
+  }
+}
+```
+
+Replays return `200 { "receipt": { … }, "duplicate": true }` with zero side effects.
+
+**Other responses:**
+
+| Status | Body | When |
+|---|---|---|
+| `400` | `{ "error": "invalid_action", "details": [...] }` | unknown kind / bad target format / params-schema violation — checked BEFORE governance or execution |
+| `400` | `{ "error": "execution_failed", "message", "receipt" }` | backing operation failed; receipt records `outcome: "failed"` (`404` when the message indicates not-found) |
+| `403` | `{ "error": "rejected_governance", "reason", "receipt" }` | actor lacks the mapped governance capability (`reassign_owner` / `launch_workflow` / `approve`–`reject` / `cancel_run` / `override_failure`); receipt records `outcome: "rejected_governance"`, no side effect |
+| `409` | `{ "error": "stale_retry" }` | same `actionId` replayed with different params |
+| `422` | `{ "error": "budget_blocked", "action": "pause_new_runs" \| "hard_stop", "budgets": [{ "name", "scope", "period_key", "spend_usd" \| "spend_tokens", "cap_usd" \| "cap_tokens", "pct_of_cap" }] }` | dispatch-class pre-execution headroom probe breached over the same scope chain the dispatcher enforces. **No receipt is written** — a refusal is not an outcome, and the action stays retryable after a cap raise (deliberate divergence from brief AC8's blocked_budget receipt). Probe failures fail OPEN; the dispatcher remains the enforcement backstop |
+| `503` | `{ "available": false, "reason": "no_database" \| "receipts_unavailable" \| "query_failed" }` | audit-first refusal — never executes without durable receipts |
+
+Every executed (or failed/rejected) receipt is mirrored into `audit_log` as one row with `action = "action.<kind>"` (e.g. `action.run.cancel`) inside the same transaction that stamps the receipt outcome, so the Audit view shows actions with zero view changes. Transactionality note: the backing executors own their internal transactions, so the receipt latch is written BEFORE the side effect (PK constraint guarantees exactly-one-execution under concurrent double-clicks); a receipt left with `outcome: null` means "executing, fate unknown" and replays return `duplicate: true`.
+
+### `GET /api/actions/recent?limit=50`
+
+Recent receipts, newest first (tray feed). `limit` clamped to 1–200, default 50.
+
+**Response** `200`:
+
+```json
+{
+  "available": true,
+  "receipts": [
+    {
+      "action_id": "7c9e6679-…",
+      "kind": "run.cancel",
+      "target_id": "run-uuid",
+      "params_hash": "aa13…",
+      "actor": "dashboard-operator",
+      "outcome": "executed",
+      "rollback_hint": "Re-dispatch via run.redispatch",
+      "detail": { "result": { "run_id": "run-uuid", "status": "cancelled" } },
+      "created_at": "2026-08-24T11:59:00.000Z"
+    }
+  ],
+  "timestamp": "2026-08-24T12:00:00.000Z"
+}
+```
+
+Without PostgreSQL or with migration 024 unapplied: `200 { "available": false, "reason": "no_database" | "receipts_unavailable" }`.
 
 ---
 
