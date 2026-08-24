@@ -66,13 +66,17 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 
 ## Phase 1 — Live OpenClaw Integration (the "stand out" core)
 
-- [ ] **Mission Control view** (pulled forward per advisory): read-only aggregation —
+- [x] **Mission Control view** (pulled forward per advisory): read-only aggregation —
       fleet status, blocked/stale runs, cron health, cost estimate. Cheap, huge daily
       value, watches the hourly automation itself. Ships on polling; upgrades to WS later.
       Market scan 2026-08-23: include run-anomaly flags (stale heartbeat, zero-token
-      loops) — top steal across AgentOps/FleetQ. Build in flight 2026-08-24 per
-      docs/briefs/mission-control.md (part 1 = DB-free panels; part 2 = Postgres
-      panels + anomaly engine); sequencing per docs/briefs/roadmap-review-2026-08-24.md §4.
+      loops) — top steal across AgentOps/FleetQ. Build per docs/briefs/mission-control.md.
+      Done 2026-08-24: part 1 (112b224) — six-panel skeleton + `routes/cost-routes.js`
+      `GET /api/costs/summary`; part 2 (0a667ab) — Win11 visual pass (no hscroll at
+      1180×780, distinct loading/empty/error states per panel, cost panel separates
+      "no data yet" from "no database"), named anomaly-threshold constants with
+      justification comments pinned by boundary fixtures in tests/test-cost-routes.js,
+      thresholds note in docs/views-reference.md.
 - [ ] **Gateway websocket bridge**: replace 20s polling (`realtime-sync.mjs`) with live
       push. LANDMINE: gateway is loopback-bound (`wss://127.0.0.1:18789`) inside WSL2 —
       browser-to-gateway direct breaks remotely. Pattern: one backend subscribes to the
