@@ -127,6 +127,39 @@ run('normalizeGatewayEvent: task without id → null', () => {
   assert.strictEqual(normalizeGatewayEvent('task', {}), null);
 });
 
+run('normalizeGatewayEvent: budget.breach envelope → budget:breach frame (slice 3)', () => {
+  const evt = normalizeGatewayEvent('budget.breach', {
+    seq: 12,
+    budget_id: 'b-1',
+    budget_name: 'fleet monthly cap',
+    scope: 'fleet',
+    scope_id: null,
+    period: 'monthly',
+    period_key: '2026-08',
+    event_kind: 'paused',
+    action: 'pause_new_runs',
+    spend_usd: 12.5,
+    spend_tokens: 7000,
+    cap_usd: 10,
+    cap_tokens: null,
+    timestamp: '2026-08-24T12:00:00.000Z',
+  });
+  assert.ok(evt, 'budget.breach should normalize');
+  assert.strictEqual(evt.type, 'budget:breach');
+  assert.strictEqual(evt.id, 'b-1:2026-08:paused', 'id = budget_id:period_key:event_kind (latch throttle key)');
+  assert.strictEqual(evt.updatedAt, 12, 'seq wins when present');
+  assert.strictEqual(evt.data.type, 'budget:breach');
+  assert.strictEqual(evt.data.budget_name, 'fleet monthly cap');
+  assert.strictEqual(evt.data.action, 'pause_new_runs');
+  assert.ok(evt.data.message.includes('pause_new_runs enforced at $12.50 of $10.00 cap (2026-08)'));
+});
+
+run('normalizeGatewayEvent: budget.breach without identity → null', () => {
+  assert.strictEqual(normalizeGatewayEvent('budget.breach', { seq: 1 }), null);
+  assert.strictEqual(normalizeGatewayEvent('budget.breach', { seq: 1, budget_id: 'b-1' }), null,
+    'period_key and event_kind are required for the latch id');
+});
+
 run('normalizeGatewayEvent: agent item stream → agent-status-changed', () => {
   const evt = normalizeGatewayEvent('agent', {
     stream: 'item',

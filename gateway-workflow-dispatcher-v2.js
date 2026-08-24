@@ -1,6 +1,6 @@
 const { Pool } = require('pg');
 const { execSync } = require('child_process');
-const { createBudgetEnforcement } = require('./lib/budget-enforcement');
+const { createBudgetEnforcement, buildBudgetBreachFrame } = require('./lib/budget-enforcement');
 
 const DEFAULT_OPTIONS = Object.freeze({
   pollIntervalMs: 30_000,
@@ -603,6 +603,12 @@ class GatewayWorkflowDispatcherV2 {
    * the idempotent budget_events rows for any breach. Returns the verdict, or
    * null when enforcement is OFF (no pool / evaluation failed — fail open so
    * dispatch behavior is unchanged; brief degradation matrix).
+   *
+   * Slice 3: when enforcement takes a non-warn action (pause_new_runs or
+   * hard_stop), every latched budget_events row is surfaced as one
+   * `budget:breach` frame on the SSE fan-out. The UNIQUE
+   * (budget_id, period_key, event_kind) latch throttles emission to exactly
+   * one frame per budget+period+kind across repeated ticks.
    */
   async enforceBudgets(runRef) {
     const gate = this.getBudgetGate();
@@ -611,14 +617,68 @@ class GatewayWorkflowDispatcherV2 {
       const verdict = await gate.checkRun(runRef);
       if (!verdict || !verdict.evaluated || verdict.action === 'ok') return verdict;
       const runIds = runRef && runRef.runId ? [runRef.runId] : [];
+      const collected = [];
       if (verdict.action === 'hard_stop') {
-        await gate.hardStopInFlight(verdict.breached);
+        // hardStopInFlight owns the PRIMARY hard_stopped insert (with
+        // cancelled_run_ids detail); its latched row carries the frame.
+        collected.push(...await gate.hardStopInFlight(verdict.breached));
       }
-      await gate.recordBreachEvents(verdict.breached, verdict.action, { run_ids: runIds });
+      collected.push(...await gate.collectBreachEventRows(verdict.breached, verdict.action, { run_ids: runIds }));
+      if (verdict.action === 'pause_new_runs' || verdict.action === 'hard_stop') {
+        // Non-warn actions only: warn records its event but never pages.
+        this.emitBudgetBreachFrames(collected);
+      }
       return verdict;
     } catch (error) {
       this.log.error('[DispatcherV2] Budget enforcement error (failing open):', error.message);
       return null;
+    }
+  }
+
+  /**
+   * Resolve the SSE sink for budget breach frames. Injected
+   * options.budgetSseBroadcast wins (tests); otherwise both server channels
+   * are used additively — broadcastStream (/api/events/stream, the bridge-fed
+   * state channel) plus broadcast (legacy /api/events, always connected so
+   * notification-center delivery does not depend on opt-in liveSync).
+   */
+  getBudgetBroadcaster() {
+    if (this._budgetSseBroadcast !== undefined) return this._budgetSseBroadcast;
+    const injected = this.options.budgetSseBroadcast;
+    if (typeof injected === 'function') {
+      this._budgetSseBroadcast = injected;
+      return injected;
+    }
+    try {
+      const sseRoutes = require('./routes/sse-routes');
+      this._budgetSseBroadcast = (event, data) => {
+        if (typeof sseRoutes.broadcastStream === 'function') sseRoutes.broadcastStream(event, data);
+        if (typeof sseRoutes.broadcast === 'function') sseRoutes.broadcast(event, data);
+      };
+    } catch (_) {
+      this._budgetSseBroadcast = null; // surfacing unavailable; enforcement unaffected
+    }
+    return this._budgetSseBroadcast;
+  }
+
+  /**
+   * Fan out one `budget:breach` frame per latched event row. Emission failures
+   * are logged and swallowed — surfacing must never break dispatch.
+   */
+  emitBudgetBreachFrames(collected) {
+    const broadcaster = this.getBudgetBroadcaster();
+    if (!broadcaster) return;
+    const seen = new Set();
+    for (const item of collected || []) {
+      const frame = buildBudgetBreachFrame(item || {});
+      if (!frame) continue;
+      if (seen.has(frame.id)) continue; // belt-and-braces vs the DB latch
+      seen.add(frame.id);
+      try {
+        broadcaster('budget:breach', frame);
+      } catch (error) {
+        this.log.error('[DispatcherV2] Budget breach SSE emit failed:', error.message);
+      }
     }
   }
 

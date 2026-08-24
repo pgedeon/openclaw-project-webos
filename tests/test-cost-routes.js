@@ -12,7 +12,8 @@
  *   per-group daily series, group_by validation (400 on unknown values),
  *   days clamping, and the same degradation contract as /summary.
  * - computeAnomalies() table-driven fixtures: one deterministic fixture per flag
- *   type plus negative fixtures producing zero flags; max 5 flag types.
+ *   type plus negative fixtures producing zero flags; max 6 flag types
+ *   (budget_breach joined in budget-ledger slice 3).
  */
 
 const assert = require('assert');
@@ -147,7 +148,7 @@ async function testQueryFailureDegradation() {
 
 async function loadAnomalyEngine() {
   const mod = await import(VIEW_MODULE);
-  assert.strictEqual(mod.ANOMALY_FLAG_TYPES.length, 5, 'exactly 5 flag types defined');
+  assert.strictEqual(mod.ANOMALY_FLAG_TYPES.length, 6, 'exactly 6 flag types defined');
   // Part 2: thresholds are named exported constants; pin their values so an
   // accidental retune fails loudly instead of silently changing operator
   // semantics (views-reference documents these exact numbers).
@@ -156,6 +157,8 @@ async function loadAnomalyEngine() {
   assert.strictEqual(mod.CRASH_LOOP_CONSECUTIVE_FAILURES, 2);
   assert.strictEqual(mod.COST_SPIKE_MULTIPLIER, 2);
   assert.strictEqual(mod.COST_SPIKE_MIN_HISTORY_DAYS, 3);
+  assert.strictEqual(mod.BUDGET_WARN_FRACTION, 0.75);
+  assert.strictEqual(mod.BUDGET_BREACH_FRACTION, 1);
   return mod;
 }
 
@@ -347,8 +350,68 @@ async function testAnomalies() {
   });
   assert.strictEqual(flags.length, 0);
 
+  // Flag 6 — budget breach (slice 3): status 'breached' or pct_of_cap >= 100.
+  // Payload shape mirrors GET /api/budgets items exactly.
+  const breachedBudget = {
+    id: 'b-1',
+    name: 'fleet monthly cap',
+    scope: 'fleet',
+    scope_id: null,
+    period: 'monthly',
+    cap_usd: 10,
+    cap_tokens: null,
+    action_on_exceed: 'pause_new_runs',
+    active: true,
+    period_key: '2026-08',
+    current_spend: { usd: 12.5, tokens: 7000, runs: 2 },
+    pct_of_cap: 125,
+    status: 'breached',
+  };
+  flags = computeAnomalies({ budgets: [breachedBudget] });
+  assert.strictEqual(flags.filter(f => f.type === 'budget_breach').length, 1);
+  assert.strictEqual(flags[0].severity, 'error', 'budget_breach pins severity error');
+  assert.strictEqual(flags[0].subject, 'fleet monthly cap', 'subject = budget name');
+  assert.match(flags[0].detail, /\$12\.50 of \$10\.00 cap/, 'detail carries spend/cap');
+  assert.match(flags[0].detail, /pause_new_runs/, 'detail carries the action');
+  assert.strictEqual(flags[0].since, '2026-08');
+
+  // Flag 6 boundary — exactly BUDGET_BREACH_FRACTION×100 pct IS a breach even
+  // when the status string disagrees (pct fallback guards a lagging payload).
+  flags = computeAnomalies({ budgets: [{ ...breachedBudget, pct_of_cap: 100, status: 'under' }] });
+  assert.strictEqual(flags.filter(f => f.type === 'budget_breach').length, 1, 'pct >= 100 flags');
+
+  // Flag 6 negative — amber-only zone (75–99%) is bar color, never a flag.
+  flags = computeAnomalies({ budgets: [{ ...breachedBudget, pct_of_cap: 75, status: 'under' }] });
+  assert.strictEqual(flags.filter(f => f.type === 'budget_breach').length, 0, '75% is warn-zone only');
+  flags = computeAnomalies({ budgets: [{ ...breachedBudget, pct_of_cap: 99.9, status: 'warned' }] });
+  assert.strictEqual(flags.filter(f => f.type === 'budget_breach').length, 0);
+
+  // Flag 6 negative — healthy budget stays silent.
+  flags = computeAnomalies({ budgets: [{ ...breachedBudget, pct_of_cap: 42, status: 'under' }] });
+  assert.strictEqual(flags.length, 0);
+
+  // Flag 6 token-cap formatting.
+  flags = computeAnomalies({
+    budgets: [{
+      ...breachedBudget,
+      cap_usd: null,
+      cap_tokens: 100000,
+      current_spend: { usd: 0, tokens: 120000, runs: 4 },
+      pct_of_cap: 120,
+    }],
+  });
+  assert.match(flags.find(f => f.type === 'budget_breach').detail, /120,000 of 100,000 tokens/);
+
+  // Flag 6 max-flags interaction — the sixth type participates in the
+  // MAX_ANOMALY_FLAGS slicing like every other type.
+  flags = computeAnomalies({
+    budgets: Array.from({ length: 30 }, (_, i) => ({ ...breachedBudget, id: `b-${i}`, name: `cap-${i}` })),
+  });
+  assert.strictEqual(flags.length, 25, '30 breached budgets slice to MAX_ANOMALY_FLAGS');
+  assert.ok(flags.every(f => f.type === 'budget_breach'));
+
   // Missing inputs skip silently (no throw, no bogus flags).
-  flags = computeAnomalies({ fleet: null, runs: null, cron: null, cost: null });
+  flags = computeAnomalies({ fleet: null, runs: null, cron: null, cost: null, budgets: null });
   assert.deepStrictEqual(flags, []);
 }
 

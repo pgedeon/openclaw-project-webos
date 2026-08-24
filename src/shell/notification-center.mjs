@@ -123,6 +123,7 @@ export class NotificationCenter {
       'workflow:status': 'workflow',
       'task:changed': 'system',
       'space:changed': 'system',
+      'budget:breach': 'blocker', // budget ledger slice 3 — actionable, links to Mission Control budgets
     };
     const type = typeMap[event.type] || 'system';
     const d = typeof event.data === 'object' ? (event.data || {}) : {};
@@ -133,6 +134,7 @@ export class NotificationCenter {
       'workflow:status': () => `Workflow ${d.status || 'update'}: ${d.name || d.run_id?.substring(0,8) || 'Run'}`,
       'task:changed': () => `Task updated: ${d.title || d.task_title || d.name || 'Task'}`,
       'space:changed': () => `Space changed: ${d.name || d.space?.name || 'Workspace'}`,
+      'budget:breach': () => `Budget breached: ${d.budget_name || d.name || d.budget_id || 'budget'}`,
     };
     const title = (titleMap[event.type] || (() => event.type))();
     const desc = d.description || d.message || (typeof event.data === 'string' ? event.data.slice(0, 120) : '');
@@ -226,6 +228,14 @@ export class NotificationCenter {
 
     const data = notification.data || {};
     const type = notification.type;
+
+    // Budget breaches deep-link to the Mission Control cost panel's budget
+    // bars (slice 3) — the budgets surface operators act from.
+    if (data.budget_id || data.budgetId) {
+      nav('mission-control');
+      this.close();
+      return;
+    }
 
     // Route based on notification type and available data
     if (data.task_id || data.taskId) {

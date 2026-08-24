@@ -36,9 +36,18 @@ export const COST_SPIKE_MULTIPLIER = 2;
 export const COST_SPIKE_MIN_HISTORY_DAYS = 3;
 // ≥3 trailing days of history: with fewer days the mean is dominated by
 // migration-022 startup noise (R2 — expect the flag silent during week one).
+export const BUDGET_WARN_FRACTION = 0.75;
+// 75% of cap: budget bars turn amber here (bar color only — no flag). Early-
+// warning zone BEFORE the breach boundary so a cap can be raised before
+// dispatch holds start; below 75% routine burn noise dominates and the bar
+// stays green.
+export const BUDGET_BREACH_FRACTION = 1;
+// 100% of cap: bar turns red AND the budget_breach anomaly flag fires.
+// Exactly-at-cap IS a breach (>= boundary), matching decisionFor() in
+// lib/budget-eval.js and brief §2.4's derived-breach semantics.
 export const MAX_ANOMALY_FLAGS = 25;
 // Render cap: a pathological payload (e.g. 50 simultaneously stale runs) must
-// not flood the flags panel; types remain fixed at 5 by construction.
+// not flood the flags panel; types remain a fixed set of 6 by construction.
 
 // ── Anomaly engine (pure, exported for unit tests) ──────────────
 // Inputs (all optional; missing inputs skip their flags silently):
@@ -48,7 +57,7 @@ export const MAX_ANOMALY_FLAGS = 25;
 //             failures: [{id, name, failureType, failureCount}] }
 //   cost  = { available: true, today: {cost}, days: [{date, cost}] }
 // Output: Flag[] where Flag = {type, severity, subject, detail, since}
-export function computeAnomalies({ fleet = null, runs = null, cron = null, cost = null, now = Date.now() } = {}) {
+export function computeAnomalies({ fleet = null, runs = null, cron = null, cost = null, budgets = null, now = Date.now() } = {}) {
   const flags = [];
 
   // Flag 1 — Stale run: running with no heartbeat/updated_at for > STALE_RUN_MINUTES
@@ -173,7 +182,42 @@ export function computeAnomalies({ fleet = null, runs = null, cron = null, cost 
     }
   }
 
-  return flags.slice(0, MAX_ANOMALY_FLAGS); // hard cap; types are fixed at 5 by construction
+  // Flag 6 — Budget breach: active budget at/over cap. Primary signal is the
+  // derived `status: 'breached'` from GET /api/budgets; the pct_of_cap >=
+  // BUDGET_BREACH_FRACTION×100 check is the payload fallback so a lagging or
+  // missing status string cannot hide an at-cap budget. severity error,
+  // subject = budget name, detail carries spend/cap/action (brief §3.7).
+  if (budgets && Array.isArray(budgets)) {
+    for (const budget of budgets) {
+      const pct = Number(budget.pct_of_cap);
+      const atCap = Number.isFinite(pct) && pct >= BUDGET_BREACH_FRACTION * 100;
+      if (budget.status !== 'breached' && !atCap) continue;
+      flags.push({
+        type: 'budget_breach',
+        severity: 'error',
+        subject: budget.name || budget.id,
+        detail: `${describeBudgetSpend(budget)} · ${budget.action_on_exceed || 'action unset'}`,
+        since: budget.period_key || null,
+      });
+    }
+  }
+
+  return flags.slice(0, MAX_ANOMALY_FLAGS); // hard cap; types are a fixed set of 6 by construction
+}
+
+/**
+ * Human spend-vs-cap fragment for budget flags/bars: "$12.50 of $10.00 cap"
+ * for USD caps, "120,000 of 100,000 tokens" for token caps. Pure.
+ */
+function describeBudgetSpend(budget) {
+  const spend = budget.current_spend || {};
+  if (budget.cap_usd != null) {
+    return `$${Number(spend.usd || 0).toFixed(2)} of $${Number(budget.cap_usd).toFixed(2)} cap`;
+  }
+  if (budget.cap_tokens != null) {
+    return `${Number(spend.tokens || 0).toLocaleString('en-US')} of ${Number(budget.cap_tokens).toLocaleString('en-US')} tokens`;
+  }
+  return `spend $${Number(spend.usd || 0).toFixed(2)}`;
 }
 
 export const ANOMALY_FLAG_TYPES = Object.freeze([
@@ -182,6 +226,7 @@ export const ANOMALY_FLAG_TYPES = Object.freeze([
   'crash_loop_cron',
   'cost_spike',
   'idle_agent_queue',
+  'budget_breach',
 ]);
 
 // ── Fetch helper: never throws, GET-only, timeout-guarded ───────
@@ -253,6 +298,17 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     .mc-flag-error { border-left:3px solid #ef4444; }
     .mc-flag-subject { font-weight:600;overflow-wrap:anywhere; }
     .mc-flag-detail { color:var(--win11-text-secondary);overflow-wrap:anywhere; }
+    /* Budget bars (slice 3): track + fill with ok/warn/error tones matching
+       .mc-badge semantics; head row keeps name + action badge on one line. */
+    .mc-budget { display:flex;flex-direction:column;gap:4px;padding:6px 8px;border:1px solid var(--win11-border);border-radius:6px;margin-top:6px;min-width:0; }
+    .mc-budget-head { display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:0.8rem;min-width:0; }
+    .mc-budget-name { font-weight:600;overflow-wrap:anywhere;min-width:0; }
+    .mc-budget-track { height:6px;border-radius:3px;background:var(--win11-surface-active);overflow:hidden; }
+    .mc-budget-fill { height:100%;border-radius:3px; }
+    .mc-budget-fill.ok { background:#22c55e; }
+    .mc-budget-fill.warn { background:#eab308; }
+    .mc-budget-fill.error { background:#ef4444; }
+    .mc-budget-sub { display:flex;justify-content:space-between;gap:8px;font-size:0.72rem;color:var(--win11-text-secondary);min-width:0;overflow-wrap:anywhere; }
     .mc-links { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px; }
     .mc-link-btn { padding:8px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-active);color:var(--win11-text);cursor:pointer;font-size:0.82rem;text-align:center;min-width:0; }
     .mc-link-btn:hover { border-color:var(--win11-accent,#60a5fa);background:var(--win11-accent-light); }
@@ -335,6 +391,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     runs: null,
     cron: null,
     cost: null,
+    budgets: null,
     anomalies: [],
     lastSweep: null,
   };
@@ -550,23 +607,36 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     setPanelStatus('cron', 'live', 'ok');
   }
 
-  // ── Panel D: Cost Today / 7d (120s) ──
+  // ── Panel D: Cost Today / 7d (120s) + budget bars (slice 3) ──
   async function pollCost() {
-    const res = await fetchJSON('/api/costs/summary?days=7');
+    // Budgets ride the same poll: one extra GET, degraded independently —
+    // a budgets failure never blanks the cost rows (AC10).
+    const [costSettled, budgetsSettled] = await Promise.allSettled([
+      fetchJSON('/api/costs/summary?days=7'),
+      fetchJSON('/api/budgets'),
+    ]);
     if (state.destroyed) return;
+    const res = costSettled.status === 'fulfilled' ? costSettled.value : { ok: false };
     if (!res.ok) {
       state.cost = null;
+      state.budgets = null;
       handlePanelFailure('cost', 'Cost unavailable — no database');
       recomputeAnomalies();
       return;
     }
     if (res.data && res.data.available === false) {
       state.cost = null;
+      state.budgets = null;
       handlePanelFailure('cost', 'Cost unavailable — no database');
       recomputeAnomalies();
       return;
     }
     state.cost = res.data;
+    const budgetsRes = budgetsSettled.status === 'fulfilled' ? budgetsSettled.value : { ok: false };
+    state.budgets = budgetsRes.ok && budgetsRes.data && budgetsRes.data.available === true
+      && Array.isArray(budgetsRes.data.budgets)
+      ? budgetsRes.data.budgets
+      : null; // absent / unavailable → no section, panel keeps its own states
     renderCost();
     recomputeAnomalies();
   }
@@ -582,7 +652,10 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
       || (c.days || []).some(d => Number(d.cost || 0) !== 0)
       || Boolean(c.top_run);
     if (!hasSpend) {
-      setPanelState('cost', 'empty', 'No cost data recorded yet.');
+      // Empty cost ≠ absent budgets: token-capped budgets can breach with
+      // zero cost_estimate, so bars still render under the empty-state line.
+      panels.cost.body.innerHTML = '<div class="mc-state mc-state-empty">No cost data recorded yet.</div>'
+        + renderBudgetBars(state.budgets);
       setPanelStatus('cost', 'live', 'ok');
       return;
     }
@@ -603,9 +676,43 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     if (c.top_run) {
       parts.push(`<div class="mc-row"><span class="mc-label">Top run</span><span class="mc-value">${escapeHtml(c.top_run.workflow_type)} ${escapeHtml(fmt(c.top_run.cost))}</span></div>`);
     }
-    panels.cost.body.innerHTML = parts.join('');
+    panels.cost.body.innerHTML = parts.join('') + renderBudgetBars(state.budgets);
     panels.cost.hasData = true;
     setPanelStatus('cost', 'live', 'ok');
+  }
+
+  /**
+   * Budget bars under the today/7d block (brief §3.7): burn vs cap with
+   * green/amber/red tones — amber above BUDGET_WARN_FRACTION, red at breach
+   * (status 'breached' or pct >= BUDGET_BREACH_FRACTION×100). Absent or
+   * unavailable payloads render NO section (AC10); zero defined budgets are
+   * equally silent (feature inert until first POST).
+   */
+  function renderBudgetBars(budgets) {
+    if (!budgets || !budgets.length) return '';
+    return budgets.map((b) => {
+      const pct = Number(b.pct_of_cap);
+      const breached = b.status === 'breached' || (Number.isFinite(pct) && pct >= BUDGET_BREACH_FRACTION * 100);
+      const amber = !breached && Number.isFinite(pct) && pct > BUDGET_WARN_FRACTION * 100;
+      const tone = breached ? 'error' : amber ? 'warn' : 'ok';
+      const width = Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0;
+      const pctLabel = Number.isFinite(pct) ? `${Math.round(pct)}%` : '—';
+      const badge = b.action_on_exceed && b.action_on_exceed !== 'warn'
+        ? `<span class="mc-badge ${breached ? 'error' : 'neutral'}">${escapeHtml(b.action_on_exceed)}</span>`
+        : '';
+      return `
+        <div class="mc-budget">
+          <div class="mc-budget-head">
+            <span class="mc-budget-name">${escapeHtml(b.name || b.id)}</span>
+            ${badge}
+          </div>
+          <div class="mc-budget-track"><div class="mc-budget-fill ${tone}" style="width:${width}%"></div></div>
+          <div class="mc-budget-sub">
+            <span>${escapeHtml(describeBudgetSpend(b))}</span>
+            <span>${escapeHtml(pctLabel)} · ${escapeHtml(b.period_key || b.period || '')}</span>
+          </div>
+        </div>`;
+    }).join('');
   }
 
   function currentLocalTodayKey() {
@@ -620,6 +727,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
       runs: state.runs ? { running: state.runs.running || [] } : null,
       cron: state.cron ? { jobs: state.cron.jobs || [], failures: state.cron.failures || [] } : null,
       cost: state.cost,
+      budgets: state.budgets,
     });
     renderAnomalies();
   }

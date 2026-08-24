@@ -386,6 +386,16 @@ export function createRealtimeSync({ api, interval = SYNC_INTERVAL_MS }) {
       for (const type of LIVE_EVENT_TYPES) {
         liveSource.addEventListener(type, handleLiveEvent);
       }
+      // Budget breach frames (budget ledger slice 3): surface as actionable
+      // notification-center entries. Data-only listener — does NOT trigger the
+      // generic refresh (breaches don't change polled row shapes).
+      liveSource.addEventListener('budget:breach', (e) => {
+        let data = null;
+        try { data = JSON.parse(e.data); } catch (_) { return; }
+        if (globalThis.__notifCenter) {
+          globalThis.__notifCenter.pushSSE({ type: 'budget:breach', data });
+        }
+      });
       liveSource.addEventListener('resync', () => {
         refresh(true);
       });
@@ -583,6 +593,17 @@ export function connectSSE() {
       if (typeof globalThis.__realtimeSyncForceRefresh === 'function') {
         globalThis.__realtimeSyncForceRefresh();
       }
+    });
+
+    // Budget breach frames (budget ledger slice 3): the dispatcher mirrors
+    // them onto the legacy always-connected channel so notification-center
+    // delivery does not depend on opt-in liveSync.
+    sseSource.addEventListener('budget:breach', (e) => {
+      if (!globalThis.__notifCenter) return;
+      try {
+        const data = e.data ? JSON.parse(e.data) : {};
+        globalThis.__notifCenter.pushSSE({ type: 'budget:breach', data });
+      } catch {}
     });
 
     sseSource.onerror = () => {

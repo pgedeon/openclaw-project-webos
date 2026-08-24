@@ -25,6 +25,10 @@
  *   budget, while retries-exhausted timeouts still fire.
  * - Lazy rollover marker: prior-period events produce one 'recovered' event
    * for the current period before new breach events (audit chain).
+ * - Slice 3 SSE surfacing: non-warn enforcement actions emit exactly one
+ *   `budget:breach` frame per (budget_id, period_key, event_kind) — latched by
+ *   the budget_events UNIQUE constraint; warn emits none; frame shape pinned;
+ *   a throwing broadcaster never breaks dispatch.
  */
 
 const assert = require('assert');
@@ -61,7 +65,20 @@ function makePool(opts = {}) {
 
       if (/INSERT INTO budget_events/.test(flat)) {
         const next = eventInsertRows.shift();
-        return { rows: next ? [next] : [] }; // [] = latched duplicate
+        if (!next) return { rows: [] }; // [] = latched duplicate
+        // Synthesize the RETURNING clause shape (id, budget_id, period_key,
+        // event_kind, detail, created_at) from the bind params — slice-3 frame
+        // building reads event_kind/created_at off the latched row.
+        return {
+          rows: [{
+            id: next.id != null ? next.id : 1,
+            budget_id: params[0],
+            period_key: params[1],
+            event_kind: params[2],
+            detail: params[3] ? JSON.parse(params[3]) : null,
+            created_at: next.created_at || '2026-08-24T12:00:00.000Z',
+          }],
+        };
       }
       if (/FROM budget_events/.test(flat)) return { rows: priorEvents };
       if (/SUM\(cost_estimate\)/.test(flat)) {
@@ -687,6 +704,146 @@ async function testTickSummaryCarriesBudgetCounts() {
   assert.deepStrictEqual(summary.budgetEnforcement, { held: 1, stopped: 0, warned: 0 });
 }
 
+// ─── Slice 3: SSE breach surfacing ─────────────────────────────
+
+async function testCollectBreachEventRowsLatch() {
+  const pool = makePool({ eventInsertRows: [{ id: 1 }] });
+  const gate = createBudgetEnforcement(pool, { log: quietLog() });
+  const entry = {
+    budget: budgetRow(),
+    decision: 'pause_new_runs',
+    key: '2026-08',
+    spendUsd: 12.5,
+    spendTokens: 7000,
+  };
+
+  const first = await gate.collectBreachEventRows([entry], 'pause_new_runs', { run_ids: ['run-1'] });
+  assert.strictEqual(first.length, 1, 'first emission yields the inserted row');
+  assert.strictEqual(first[0].event.id, 1);
+  assert.strictEqual(first[0].budget.id, 'b-1');
+  assert.strictEqual(first[0].key, '2026-08');
+
+  const second = await gate.collectBreachEventRows([entry], 'pause_new_runs', {});
+  assert.strictEqual(second.length, 0, 'latched duplicate yields no row → no frame');
+
+  // recordBreachEvents keeps its slice-2 count semantics on top of the collector.
+  assert.strictEqual(await gate.recordBreachEvents([entry], 'pause_new_runs'), 0);
+}
+
+async function testDispatcherEmitsOnePauseFramePerLatch() {
+  const pool = makePool({
+    budgets: [budgetRow({ name: 'fleet monthly cap', cap_usd: 10, action_on_exceed: 'pause_new_runs' })],
+    spendRows: [{ spend_usd: 12.5, spend_tokens: 7000, run_count: 2 }],
+    eventInsertRows: [{ id: 1 }], // first insert lands, later ticks latch
+    candidateBatches: [[candidateRow()], [candidateRow()]],
+    markDispatchedRow: dispatchedRunRow(),
+  });
+  const frames = [];
+  const d = new GatewayWorkflowDispatcherV2(pool, {
+    pollIntervalMs: 30000,
+    budgetSseBroadcast: (event, data) => frames.push({ event, data }),
+  });
+
+  await d.dispatchQueuedRuns();
+  assert.strictEqual(frames.length, 1, 'exactly one breach frame on the first tick');
+  assert.strictEqual(frames[0].event, 'budget:breach');
+  assert.deepStrictEqual(frames[0].data, {
+    type: 'budget:breach',
+    id: 'b-1:2026-08:paused',
+    budget_id: 'b-1',
+    budget_name: 'fleet monthly cap',
+    scope: 'fleet',
+    scope_id: null,
+    period: 'monthly',
+    period_key: '2026-08',
+    event_kind: 'paused',
+    action: 'pause_new_runs',
+    spend_usd: 12.5,
+    spend_tokens: 7000,
+    cap_usd: 10,
+    cap_tokens: null,
+    message: 'pause_new_runs enforced at $12.50 of $10.00 cap (2026-08)',
+    timestamp: frames[0].data.timestamp,
+  });
+
+  await d.dispatchQueuedRuns();
+  assert.strictEqual(frames.length, 1, 'second tick latched — no duplicate frame (throttle via UNIQUE latch)');
+}
+
+async function testDispatcherEmitsHardStopFrameFromPrimaryInsert() {
+  const pool = makePool({
+    budgets: [budgetRow({ name: 'fleet monthly cap', cap_usd: 10, action_on_exceed: 'hard_stop' })],
+    spendRows: [{ spend_usd: 55, spend_tokens: 0, run_count: 9 }],
+    cancelledIds: ['run-inflight-1'],
+    eventInsertRows: [{ id: 7 }], // consumed by hardStopInFlight's PRIMARY hard_stopped insert
+    candidates: [candidateRow()],
+  });
+  const frames = [];
+  const d = new GatewayWorkflowDispatcherV2(pool, {
+    pollIntervalMs: 30000,
+    budgetSseBroadcast: (event, data) => frames.push({ event, data }),
+  });
+
+  await d.dispatchQueuedRuns();
+  assert.strictEqual(frames.length, 1, 'hard_stop surfaces from its primary latch insert, not a duplicate');
+  assert.strictEqual(frames[0].data.event_kind, 'hard_stopped');
+  assert.strictEqual(frames[0].data.action, 'hard_stop');
+  assert.strictEqual(frames[0].data.id, 'b-1:2026-08:hard_stopped');
+  assert.strictEqual(frames[0].data.budget_name, 'fleet monthly cap');
+}
+
+async function testDispatcherWarnEmitsNoBreachFrame() {
+  const pool = makePool({
+    budgets: [budgetRow({ cap_usd: 10, action_on_exceed: 'warn' })],
+    spendRows: [{ spend_usd: 10, spend_tokens: 0, run_count: 2 }],
+    eventInsertRows: [{ id: 1 }],
+    candidates: [candidateRow()],
+    markDispatchedRow: dispatchedRunRow(),
+  });
+  const frames = [];
+  const d = new GatewayWorkflowDispatcherV2(pool, {
+    pollIntervalMs: 30000,
+    budgetSseBroadcast: (event, data) => frames.push({ event, data }),
+  });
+
+  const dispatched = await d.dispatchQueuedRuns();
+  assert.strictEqual(dispatched.length, 1);
+  assert.strictEqual(d.lastBudgetEnforcement.warned, 1);
+  assert.strictEqual(frames.length, 0, 'warn records an event but never pages (non-warn actions only)');
+}
+
+async function testBroadcasterThrowDoesNotBreakDispatch() {
+  const pool = makePool({
+    budgets: [budgetRow({ cap_usd: 10, action_on_exceed: 'pause_new_runs' })],
+    spendRows: [{ spend_usd: 12, spend_tokens: 0, run_count: 1 }],
+    eventInsertRows: [{ id: 1 }],
+    candidates: [candidateRow()],
+  });
+  const d = new GatewayWorkflowDispatcherV2(pool, {
+    pollIntervalMs: 30000,
+    budgetSseBroadcast: () => { throw new Error('sse sink down'); },
+  });
+
+  const dispatched = await d.dispatchQueuedRuns();
+  assert.strictEqual(dispatched.length, 0);
+  assert.strictEqual(d.lastBudgetEnforcement.held, 1, 'enforcement verdict unaffected by emission failure');
+}
+
+async function testDefaultBroadcasterResolvesWithoutInjection() {
+  // No injected broadcaster: the lazy routes/sse-routes resolution must work
+  // and fan out to zero connected clients without error.
+  const pool = makePool({
+    budgets: [budgetRow({ cap_usd: 10, action_on_exceed: 'pause_new_runs' })],
+    spendRows: [{ spend_usd: 12, spend_tokens: 0, run_count: 1 }],
+    eventInsertRows: [{ id: 1 }],
+    candidates: [candidateRow()],
+  });
+  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  const dispatched = await d.dispatchQueuedRuns();
+  assert.strictEqual(dispatched.length, 0);
+  assert.strictEqual(typeof d.getBudgetBroadcaster(), 'function', 'default dual-channel broadcaster resolves');
+}
+
 // ─── utils ─────────────────────────────────────────────────────────
 
 function quietLog() {
@@ -719,6 +876,12 @@ async function run() {
   await testRetryPathHardStopCancelsInFlight();
   await testRetryPathDispatchesWhenUnderCap();
   await testTickSummaryCarriesBudgetCounts();
+  await testCollectBreachEventRowsLatch();
+  await testDispatcherEmitsOnePauseFramePerLatch();
+  await testDispatcherEmitsHardStopFrameFromPrimaryInsert();
+  await testDispatcherWarnEmitsNoBreachFrame();
+  await testBroadcasterThrowDoesNotBreakDispatch();
+  await testDefaultBroadcasterResolvesWithoutInjection();
   console.log('✅ tests/test-budget-enforcement.js — all assertions passed');
 }
 
