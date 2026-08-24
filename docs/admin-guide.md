@@ -50,6 +50,29 @@ PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTG
 psql -U postgres -d mission_control -f schema/openclaw-dashboard.sql
 ```
 
+### Snapshots & Restore (backup)
+
+Full-state backup as JSON artifacts in `storage/snapshots/` (docs/briefs/snapshot-restore.md; no new DB tables — the registry is the directory listing). Artifacts are secret-free by construction: settings carry config-source keys only, and a deny-regex pass redacts secret-looking values anywhere in the payload.
+
+```bash
+# Create (requires PostgreSQL)
+curl -X POST http://localhost:3876/api/snapshots -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"name":"pre-maintenance"}'
+
+# List / download
+curl http://localhost:3876/api/snapshots -H "Authorization: Bearer $TOKEN"
+curl -OJ http://localhost:3876/api/snapshots/<snapshot_id>/download -H "Authorization: Bearer $TOKEN"
+
+# Dry-run diff preview (nothing written), then apply merge or replace
+curl -X POST http://localhost:3876/api/restore/preview -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"snapshot_id":"<id>"}'
+curl -X POST http://localhost:3876/api/restore/apply -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"snapshot_id":"<id>","mode":"merge","restoreId":"<uuid>"}'
+```
+
+Notes: restore requests over `RESTORE_MAX_BYTES` (default 100 MB) are rejected 413 before parsing. Apply is checkpointed per table — re-POST with the same `restoreId` to resume after a partial failure; a completed apply replays as `{duplicate:true}` doing nothing. Replace mode deletes rows absent from the artifact — take a fresh snapshot first (that IS the rollback move). Without PostgreSQL, create/preview/apply answer `503 {available:false}` while list/download keep working from disk.
+
 ## Cron Job Management
 
 ### Install Cron Jobs

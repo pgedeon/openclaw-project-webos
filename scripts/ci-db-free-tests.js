@@ -59,6 +59,7 @@ const INCLUDED = [
   'test-settings-routes.js',
   'test-settings.js',
   'test-snapshot-lib.js',
+  'test-snapshot-routes.js',
   'test-space-routes.js',
   'test-sse-routes.js',
   'test-task-routes.js',

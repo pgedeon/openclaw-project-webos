@@ -17,6 +17,10 @@ gateway-status.json
 task-server.pid
 *.pid
 
+# Snapshot/restore artifacts (docs/briefs/snapshot-restore.md §6): runtime
+# full-state exports + restore checkpoint files — never committed.
+storage/snapshots/
+
 # Legacy archive (contains old backups with stale passwords)
 _legacy-archive/
 *.backup

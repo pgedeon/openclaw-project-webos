@@ -32,6 +32,12 @@
 - [Actions API](#actions-api)
   - [POST /api/actionsexecute](#post-apiactionsexecute)
   - [GET /api/actionsrecent](#get-apiactionsrecent)
+- [Snapshots API](#snapshots-api)
+  - [POST /api/snapshots](#post-apisnapshots)
+  - [GET /api/snapshots](#get-apisnapshots)
+  - [GET /api/snapshotsiddownload](#get-apisnapshotsiddownload)
+  - [POST /api/restorepreview](#post-apirestorepreview)
+  - [POST /api/restoreapply](#post-apirestoreapply)
 - [Realtime Events API](#realtime-events-api)
   - [GET /api/events](#get-apievents)
   - [GET /api/events/stream](#get-apieventsstream)
@@ -702,6 +708,92 @@ Recent receipts, newest first (tray feed). `limit` clamped to 1–200, default 5
 ```
 
 Without PostgreSQL or with migration 024 unapplied: `200 { "available": false, "reason": "no_database" | "receipts_unavailable" }`.
+
+---
+
+## Snapshots API
+
+Full-state snapshot/restore (docs/briefs/snapshot-restore.md). A snapshot is a JSON **artifact** — every dashboard table plus non-secret (config-source) settings, wrapped in a manifest carrying exact row counts, the applied-migration list, and a `content_hash` integrity digest. Artifacts live in `storage/snapshots/<snapshot_id>.json` (runtime state, gitignored); there are NO new database tables — the registry IS the directory listing.
+
+Secrets policy: the settings section carries config-source keys ONLY (every env-source key, including all five password-type keys, is structurally absent), then a deny-regex pass (`\b(password|passwd|secret|token|api[_-]?key|apikey|auth[_-]?token|credential)\b`, case-insensitive) replaces matching values anywhere in the artifact with `[REDACTED]`. Restoring a settings section that contains secret-looking keys drops the WHOLE section with a warning instead of partially trusting it.
+
+**Size cap:** restore requests larger than `RESTORE_MAX_BYTES` (env, default 100 MB) are rejected `413 {"error": "payload_too_large"}` BEFORE the body is parsed.
+
+**Degradation contract:** create/preview/apply answer `503 {"available": false, "reason": "no_database"}` without PostgreSQL with zero writes — deliberately stricter than the cost-routes HTTP-200 variant because these endpoints mutate state. The disk-only endpoints (`GET /api/snapshots`, `/download`) keep working without a database.
+
+### `POST /api/snapshots`
+
+Capture a full-state snapshot: reads all §2.1 tier tables in one pass, redacts, computes the manifest, and atomically writes the artifact (tmp + rename inside the same directory).
+
+**Request:** `{ "name": "snapshot-20260824-1536" }` (name optional; default `snapshot-YYYYMMDD-HHmm`).
+
+**Response** `201`:
+
+```json
+{
+  "snapshot_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "manifest": {
+    "artifact_version": 1,
+    "snapshot_id": "7c9e6679-...",
+    "name": "snapshot-20260824-1536",
+    "created_at": "2026-08-24T15:36:00.000Z",
+    "actor": "dashboard-operator",
+    "generator": "openclaw-project-webos 1.1.0",
+    "schema_version": { "migrations_applied": ["001_add_workflow_runs", "..."] },
+    "counts": { "workflows": 4, "projects": 12, "tasks": 123 },
+    "content_hash": "sha256-hex-over-canonical-{tables,settings}"
+  }
+}
+```
+
+### `GET /api/snapshots`
+
+Disk index scan of `storage/snapshots/*.json`, newest-first by `created_at`. Works without PostgreSQL.
+
+**Response** `200`: `{ "available": true, "count": 2, "snapshots": [{ "snapshot_id", "name", "created_at", "total_rows", "size_bytes", "generator" }] }` — `size_bytes` is the honest on-disk size; unreadable/corrupt files are skipped rather than breaking the listing.
+
+### `GET /api/snapshots/:id/download`
+
+Streams the raw artifact as an attachment (`Content-Disposition: attachment; filename="<name>.json"`). Unknown or malformed ids answer `404 {"error": "snapshot_not_found"}`. Works without PostgreSQL.
+
+### `POST /api/restore/preview`
+
+Dry-run diff against the live database — nothing is written. Request: `{ "artifact": {...} }` (a full artifact) or `{ "snapshot_id": "..." }` (a server-side snapshot).
+
+Validation pipeline, in order: JSON parse → manifest structure (`400 invalid_manifest`) → `content_hash` integrity check (`400 artifact_corrupt`, before any diffing) → database availability (`503`) → schema compatibility → per-table diff.
+
+**Schema compatibility (§4.3):** an artifact naming migrations absent from the target is refused `409 {"error": "schema_too_new", "missing": ["..."]}`; a target ahead of the artifact is allowed with `warnings: ["target_newer"]`.
+
+**Warnings:** `target_newer` (additive migrations assumed safe), `active_runs` (dispatcher/gateway writers active during preview — R4 race caution), `settings_section_dropped` (artifact settings carried secret-looking keys).
+
+**Response** `200`:
+
+```json
+{
+  "schema_compat": "ok",
+  "warnings": [],
+  "tables": {
+    "tasks": { "added": 3, "updated": 2, "conflicts": 1, "unchanged": 117, "added_pks": ["..."], "conflict_pks": ["..."] }
+  },
+  "totals": { "added": 3, "updated": 2, "conflicts": 1, "unchanged": 117 },
+  "settings": { "keys": 18, "dropped": false },
+  "snapshot_id": "7c9e6679-...",
+  "created_at": "2026-08-24T15:36:00.000Z",
+  "timestamp": "2026-08-24T16:00:00.000Z"
+}
+```
+
+Classification per table (PK-keyed): **added** = PK absent from target; **updated** = hash differs, target row not modified after the snapshot; **conflict** = hash differs AND the live row changed after `created_at`; **unchanged** = identical canonical hash.
+
+### `POST /api/restore/apply`
+
+Apply a previewed artifact. Request: `{ "artifact" | "snapshot_id", "mode": "merge" | "replace", "restoreId": "<client-minted uuid>" }`. `merge` (default) upserts added+updated+conflict rows by PK and deletes nothing; `replace` additionally deletes rows absent from the artifact, per table, in FK-safe reverse dependency order (destructive — the UI gates it behind HOLD_CONFIRM). Table writes follow the pinned dependency chain `workflows → projects → tasks → workflow_runs → workflow_steps → workflow_approvals → workflow_artifacts → …`, one transaction per table (~500-row batches).
+
+**Idempotency + resume (§4.4):** the latch is file-backed — `storage/snapshots/<restoreId>.resume.json` records completed tables after each fully-applied table. Re-POST with the same `restoreId` after a partial failure resumes at the first incomplete table (completed tables skipped; a crashed table rolled back entirely and re-applies from scratch — checkpoints track tables, not rows). A COMPLETED restore replays as `{ "duplicate": true, "summary": {...} }` executing nothing.
+
+**Progress:** one additive SSE `restore-progress` frame fans out on the existing `/api/events/stream` channel per completed table: `{ "restoreId", "table", "doneRows", "totalRows" }`. Missing frames degrade safely to the final summary.
+
+**Response** `200`: `{ "restoreId", "duplicate": false, "resumed": false, "summary": { "mode", "tables": { "<t>": { "upserted", "deleted" } }, "totals": { "upserted", "deleted" }, "settings": { "applied", "dropped_section" }, "startedAt", "completedAt" } }`. A mid-apply crash answers `500 {"error": "restore_failed", ...}` with prior tables committed — re-POST the same `restoreId` to resume.
 
 ---
 
