@@ -1,6 +1,6 @@
 # Widget Catalog
 
-Complete reference for all 18 desktop widgets in the OpenClaw Project WebOS.
+Complete reference for all 19 desktop widgets in the OpenClaw Project WebOS.
 
 > Generated from source in `src/shell/widgets/widgets/`.  
 > Shared utilities live in `src/shell/widgets/widgets/widget-utils.mjs`.
@@ -14,19 +14,20 @@ Complete reference for all 18 desktop widgets in the OpenClaw Project WebOS.
 3. [Blocker Alert](#3-blocker-alert) — small
 4. [Clock](#4-clock) — small
 5. [Command Runner](#5-command-runner) — medium
-6. [Cron Countdown](#6-cron-countdown) — small
-7. [Department Status](#7-department-status) — medium
-8. [Error Feed](#8-error-feed) — tall
-9. [Mini Sparkline](#9-mini-sparkline) — small
-10. [MOTD](#10-motd) — small
-11. [Project Stats](#11-project-stats) — wide
-12. [Queue Monitor](#12-queue-monitor) — medium
-13. [Quick Notes](#13-quick-notes) — large
-14. [Session Timer](#14-session-timer) — small
-15. [System Health](#15-system-health) — medium
-16. [System Uptime](#16-system-uptime) — small
-17. [Task Pulse](#17-task-pulse) — small
-18. [Workflow Pulse](#18-workflow-pulse) — small
+6. [Cost Rollup](#6-cost-rollup) — medium
+7. [Cron Countdown](#7-cron-countdown) — small
+8. [Department Status](#8-department-status) — medium
+9. [Error Feed](#9-error-feed) — tall
+10. [Mini Sparkline](#10-mini-sparkline) — small
+11. [MOTD](#11-motd) — small
+12. [Project Stats](#12-project-stats) — wide
+13. [Queue Monitor](#13-queue-monitor) — medium
+14. [Quick Notes](#14-quick-notes) — large
+15. [Session Timer](#15-session-timer) — small
+16. [System Health](#16-system-health) — medium
+17. [System Uptime](#17-system-uptime) — small
+18. [Task Pulse](#18-task-pulse) — small
+19. [Workflow Pulse](#19-workflow-pulse) — small
 
 ---
 
@@ -39,6 +40,7 @@ Complete reference for all 18 desktop widgets in the OpenClaw Project WebOS.
 | Blocker Alert | small | `blockersSummary` | ✅ | ❌ | ❌ |
 | Clock | small | *(none)* | ❌ | ❌ | ❌ |
 | Command Runner | medium | *(none — uses API calls)* | ❌ | ❌ | ❌ |
+| Cost Rollup | medium | *(none — uses API call to `costs.rollup`)* | ✅ | ❌ | ❌ |
 | Cron Countdown | small | `stats` | ✅ | ❌ | ❌ |
 | Department Status | medium | `orgSummary` | ✅ | ❌ | ❌ |
 | Error Feed | tall | `blockersSummary` | ❌ | ❌ | ❌ |
@@ -159,7 +161,32 @@ Select an endpoint, click "Run". Shows loading state, then the response (or HTTP
 
 ---
 
-### 6. Cron Countdown
+### 6. Cost Rollup
+
+| Property | Value |
+|---|---|
+| **Widget ID** | `cost-rollup` |
+| **Label** | Cost Rollup |
+| **Description** | Top agents by estimated spend over the trailing week, with daily sparklines. |
+| **Size** | medium |
+| **Data Keys** | *(none — uses API call to `costs.rollup`)* |
+| **Capabilities** | clickable ✅ · configurable ❌ · resizable ❌ |
+
+**What it renders:**  
+Fetches `GET /api/costs/rollup?group_by=agent&days=7` on render and lists the top 5 agents by
+estimated spend over the trailing 7 days. Each row shows the agent key, an inline SVG sparkline of
+the agent's daily cost series (normalized to its own min/max so small-but-rising spend reads as
+rising), and the total cost. A footer line shows the group count, overflow (`+N more`), and the
+window total. Degradation states mirror the Mission Control cost panel: fetch failure → "Cost data
+unavailable", `available === false` → "Cost unavailable — no database", empty groups → "No cost
+data recorded yet".
+
+**Click action:**  
+Navigates to the `mission-control` view (`ctx.navigate('mission-control')`).
+
+---
+
+### 7. Cron Countdown
 
 | Property | Value |
 |---|---|
@@ -187,7 +214,7 @@ Navigates to the `cron` view (`ctx.navigate('cron')`).
 
 ---
 
-### 7. Department Status
+### 8. Department Status
 
 | Property | Value |
 |---|---|
@@ -210,7 +237,7 @@ Navigates to the `departments` view (`ctx.navigate('departments')`).
 
 ---
 
-### 8. Error Feed
+### 9. Error Feed
 
 | Property | Value |
 |---|---|
@@ -229,7 +256,7 @@ Each item shows severity (defaulting to "medium"), title, and meta (description,
 
 ---
 
-### 9. Mini Sparkline
+### 10. Mini Sparkline
 
 | Property | Value |
 |---|---|
@@ -248,7 +275,7 @@ An inline SVG sparkline chart showing the task completion ratio over time. Each 
 
 ---
 
-### 10. MOTD
+### 11. MOTD
 
 | Property | Value |
 |---|---|
@@ -277,7 +304,7 @@ Click the edit button to enter inline `contentEditable` mode. Press Enter or blu
 
 ---
 
-### 11. Project Stats
+### 12. Project Stats
 
 | Property | Value |
 |---|---|
@@ -302,7 +329,7 @@ Uses the shared `deriveQueueMetrics` utility for the "Completed" count.
 
 ---
 
-### 12. Queue Monitor
+### 13. Queue Monitor
 
 | Property | Value |
 |---|---|
@@ -330,7 +357,7 @@ Navigates to the `tasks` view (`ctx.navigate('tasks')`).
 
 ---
 
-### 13. Quick Notes
+### 14. Quick Notes
 
 | Property | Value |
 |---|---|
@@ -349,7 +376,7 @@ A `<textarea>` with placeholder text "Capture an idea, command, or reminder…".
 
 ---
 
-### 14. Session Timer
+### 15. Session Timer
 
 | Property | Value |
 |---|---|
@@ -375,7 +402,7 @@ Uses a module-level `timerState` singleton — only one timer instance at a time
 
 ---
 
-### 15. System Health
+### 16. System Health
 
 | Property | Value |
 |---|---|
@@ -405,7 +432,7 @@ Navigates to the `health` view (`ctx.navigate('health')`).
 
 ---
 
-### 16. System Uptime
+### 17. System Uptime
 
 | Property | Value |
 |---|---|
@@ -421,7 +448,7 @@ Displays time since page load in `Xd Yh Zm` format (e.g. "2d 3h 15m"). Captures 
 
 ---
 
-### 17. Task Pulse
+### 18. Task Pulse
 
 | Property | Value |
 |---|---|
@@ -444,7 +471,7 @@ Navigates to the `tasks` view (`ctx.navigate('tasks')`).
 
 ---
 
-### 18. Workflow Pulse
+### 19. Workflow Pulse
 
 | Property | Value |
 |---|---|
@@ -510,6 +537,7 @@ Widgets that are clickable link to these shell views:
 | `departments` | Department Status |
 | `health` | System Health |
 | `workflows` | Workflow Pulse |
+| `mission-control` | Cost Rollup |
 
 ---
 

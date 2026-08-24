@@ -23,6 +23,7 @@
   - [GET /api/routes](#get-apiroutes)
 - [Cost Analytics API](#cost-analytics-api)
   - [GET /api/costs/summary](#get-apicostssummary)
+  - [GET /api/costs/rollup](#get-apicostsrollup)
 - [Budgets API](#budgets-api)
   - [GET /api/budgets](#get-apibudgets)
   - [POST /api/budgets](#post-apibudgets)
@@ -474,6 +475,54 @@ Aggregate token/cost summary over the `workflow_runs` cost columns shipped in mi
 ```
 
 Daily buckets use `reported_at` when usage was reported, falling back to `started_at` then `created_at`, so unreported runs still land in a day bucket. `days[]` is the per-day series (`date`, `cost`, `runs`, `tokens`); `avg_daily_7d` is the mean daily cost across all buckets in the window.
+
+### `GET /api/costs/rollup`
+
+Per-group cost/token rollups over the same migration-022 `workflow_runs` columns as `/summary`, grouped by agent, department, or workflow type. Consumed by the Cost Rollup desktop widget (top-N agents with sparklines).
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `group_by` | enum | `agent` | Rollup dimension: `agent` (per `owner_agent_id`), `department` (via `agent_profiles` → `departments`; agents without a mapping land in `Unassigned`), or `workflow_type`. Unknown values answer `400 validation_failed`. |
+| `days` | number | 7 | Lookback window in days (today inclusive, clamped to 1–90) |
+
+**Degradation contract:** identical to `/summary` — HTTP `200` with `{ "available": false }` (`reason: no_database` or `query_failed`) instead of an error status.
+
+**Response** `200` (database available):
+
+```json
+{
+  "available": true,
+  "group_by": "agent",
+  "window_days": 7,
+  "currency": "USD",
+  "group_count": 2,
+  "groups": [
+    {
+      "key": "affiliate-editorial",
+      "cost": 4.1,
+      "runs": 6,
+      "tokens": { "input": 1500, "output": 300 },
+      "series": [
+        { "date": "2026-08-23", "cost": 3.1 },
+        { "date": "2026-08-24", "cost": 1.0 }
+      ]
+    },
+    {
+      "key": "coder",
+      "cost": 9.99,
+      "runs": 7,
+      "tokens": { "input": 8000, "output": 900 },
+      "series": [{ "date": "2026-08-24", "cost": 9.99 }]
+    }
+  ],
+  "total_window": 14.09,
+  "timestamp": "2026-08-24T12:00:00.000Z"
+}
+```
+
+`groups[]` is sorted by cost descending; each group's `series[]` is date-ascending and sparkline-ready (one point per day that had runs). Daily bucketing reuses the exact `COALESCE(reported_at, started_at, created_at)` pattern from `/summary`.
 
 ---
 

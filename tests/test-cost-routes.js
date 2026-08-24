@@ -8,6 +8,9 @@
  *   HTTP 200 `{ available: false }` JSON without PostgreSQL (json_snapshot mode,
  *   missing pool, or query failure) instead of erroring.
  * - `days` query parameter defaults to 7 and clamps to [1, 90].
+ * - GET /api/costs/rollup: agent / department / workflow_type grouping with
+ *   per-group daily series, group_by validation (400 on unknown values),
+ *   days clamping, and the same degradation contract as /summary.
  * - computeAnomalies() table-driven fixtures: one deterministic fixture per flag
  *   type plus negative fixtures producing zero flags; max 5 flag types.
  */
@@ -349,12 +352,136 @@ async function testAnomalies() {
   assert.deepStrictEqual(flags, []);
 }
 
+// ── Rollup endpoint (/api/costs/rollup) ─────────────────────────
+
+// Pool stub for the rollup endpoint: distinguishes the currency lookup from
+// the grouped rollup query by SQL shape and records every query so tests can
+// assert on the SQL (joins present, params bound).
+function makeRollupPool(rows, failWith = null) {
+  const queries = [];
+  return {
+    queries,
+    async query(sql, params) {
+      queries.push({ sql, params });
+      if (failWith) throw failWith;
+      if (/ORDER BY reported_at DESC/i.test(sql)) {
+        return { rows: [{ currency: 'EUR' }] };
+      }
+      return { rows };
+    },
+  };
+}
+
+async function testRollupAgentGrouping() {
+  const pool = makeRollupPool([
+    { key: 'affiliate-editorial', date: '2026-08-23', runs: 4, cost: 3.1, input_tokens: 1000, output_tokens: 200 },
+    { key: 'affiliate-editorial', date: '2026-08-24', runs: 2, cost: 1.0, input_tokens: 500, output_tokens: 100 },
+    { key: 'coder', date: '2026-08-24', runs: 7, cost: 9.99, input_tokens: 8000, output_tokens: 900 },
+  ]);
+
+  const result = await dispatch('/api/costs/rollup?group_by=agent&days=7', pool);
+
+  assert.strictEqual(result.status, 200);
+  const payload = result.payload;
+  assert.strictEqual(payload.available, true);
+  assert.strictEqual(payload.group_by, 'agent');
+  assert.strictEqual(payload.window_days, 7);
+  assert.strictEqual(payload.currency, 'EUR');
+  assert.strictEqual(payload.group_count, 2);
+  // Sorted by cost descending.
+  assert.deepStrictEqual(payload.groups.map((g) => g.key), ['coder', 'affiliate-editorial']);
+  assert.strictEqual(payload.groups[0].cost, 9.99);
+  assert.strictEqual(payload.groups[0].runs, 7);
+  assert.deepStrictEqual(payload.groups[0].tokens, { input: 8000, output: 900 });
+  assert.strictEqual(payload.total_window, 14.09);
+  // Series is date-ascending within a group (sparkline-ready).
+  const editorial = payload.groups[1];
+  assert.strictEqual(editorial.cost, 4.1);
+  assert.deepStrictEqual(editorial.series.map((p) => p.date), ['2026-08-23', '2026-08-24']);
+  assert.deepStrictEqual(editorial.series.map((p) => p.cost), [3.1, 1.0]);
+  // days param bound into both queries.
+  assert.strictEqual(pool.queries.length, 2);
+  assert.ok(pool.queries.every((q) => q.params[0] === 7));
+}
+
+async function testRollupDepartmentJoinAndDefault() {
+  const pool = makeRollupPool([
+    { key: 'Content & Publishing', date: '2026-08-24', runs: 5, cost: 2.5, input_tokens: 100, output_tokens: 50 },
+    { key: 'Unassigned', date: '2026-08-24', runs: 1, cost: 0.25, input_tokens: 10, output_tokens: 5 },
+  ]);
+
+  const result = await dispatch('/api/costs/rollup?group_by=department', pool);
+  assert.strictEqual(result.status, 200);
+  assert.strictEqual(result.payload.group_by, 'department');
+  assert.deepStrictEqual(result.payload.groups.map((g) => g.key), ['Content & Publishing', 'Unassigned']);
+
+  // Department mode must join agent_profiles → departments.
+  const rollupSql = pool.queries[0].sql;
+  assert.match(rollupSql, /LEFT JOIN agent_profiles ap ON ap\.agent_id = wr\.owner_agent_id/);
+  assert.match(rollupSql, /LEFT JOIN departments d ON d\.id = ap\.department_id/);
+  assert.match(rollupSql, /COALESCE\(d\.name, 'Unassigned'\)/);
+  // Shared COALESCE bucketing pattern with /summary.
+  assert.match(rollupSql, /COALESCE\(reported_at, started_at, created_at\)/);
+
+  // Missing group_by defaults to agent (no joins in SQL).
+  const defaultPool = makeRollupPool([]);
+  const defaultResult = await dispatch('/api/costs/rollup', defaultPool);
+  assert.strictEqual(defaultResult.payload.group_by, 'agent');
+  assert.doesNotMatch(defaultPool.queries[0].sql, /LEFT JOIN departments/);
+}
+
+async function testRollupWorkflowTypeAndDaysClamp() {
+  const pool = makeRollupPool([]);
+  const result = await dispatch('/api/costs/rollup?group_by=workflow_type&days=5000', pool);
+  assert.strictEqual(result.status, 200);
+  assert.strictEqual(result.payload.group_by, 'workflow_type');
+  assert.strictEqual(result.payload.window_days, 90, 'days clamps to [1, 90] like /summary');
+  assert.deepStrictEqual(result.payload.groups, []);
+}
+
+async function testRollupValidation() {
+  const result = await dispatch('/api/costs/rollup?group_by=bogus', makeRollupPool([]));
+  assert.strictEqual(result.status, 400);
+  assert.strictEqual(result.payload.error, 'validation_failed');
+  assert.match(result.payload.message, /agent, department, workflow_type/);
+}
+
+async function testRollupDegradation() {
+  // No storage at all.
+  const noStorage = await dispatch('/api/costs/rollup?group_by=agent', undefined);
+  assert.strictEqual(noStorage.status, 200);
+  assert.strictEqual(noStorage.payload.available, false);
+  assert.strictEqual(noStorage.payload.reason, 'no_database');
+
+  // Pool without query function.
+  const dumbPool = await dispatch('/api/costs/rollup?group_by=workflow_type', {});
+  assert.strictEqual(dumbPool.payload.available, false);
+  assert.strictEqual(dumbPool.payload.reason, 'no_database');
+  assert.strictEqual(dumbPool.payload.group_by, 'workflow_type');
+
+  // Query failure degrades instead of erroring.
+  const failing = await dispatch(
+    '/api/costs/rollup?group_by=department&days=3',
+    makeRollupPool([], new Error('relation "agent_profiles" does not exist'))
+  );
+  assert.strictEqual(failing.status, 200);
+  assert.strictEqual(failing.payload.available, false);
+  assert.strictEqual(failing.payload.reason, 'query_failed');
+  assert.match(failing.payload.details, /agent_profiles/);
+  assert.strictEqual(failing.payload.window_days, 3);
+}
+
 async function run() {
   await testCostSummaryHappyPath();
   await testDaysParamParsing();
   await testNoDatabaseDegradation();
   await testQueryFailureDegradation();
   await testAnomalies();
+  await testRollupAgentGrouping();
+  await testRollupDepartmentJoinAndDefault();
+  await testRollupWorkflowTypeAndDaysClamp();
+  await testRollupValidation();
+  await testRollupDegradation();
   console.log('✅ tests/test-cost-routes.js — all assertions passed');
 }
 

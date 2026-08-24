@@ -11,6 +11,7 @@ export const WIDGET_INDEX = [
   { id: 'blocker-alert', module: './widgets/blocker-alert.mjs' },
   { id: 'clock-widget', module: './widgets/clock-widget.mjs' },
   { id: 'command-runner', module: './widgets/command-runner.mjs' },
+  { id: 'cost-rollup', module: './widgets/cost-rollup.mjs' },
   { id: 'cron-countdown', module: './widgets/cron-countdown.mjs' },
   { id: 'department-status', module: './widgets/department-status.mjs' },
   { id: 'error-feed', module: './widgets/error-feed.mjs' },
