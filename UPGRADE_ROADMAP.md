@@ -160,8 +160,10 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 - [ ] **Workflow visual editor — staged** (demoted per advisory): Stage 1 = read-only
       graph render of existing workflows. Drag-drop editing only if Stage 1 earns use.
       Hardest item under the no-frameworks rule.
-- [ ] **Snapshot/restore**: one-click full-state export (tasks + runs + config) and
-      restore. Builds on export-routes.
+- [x] **Snapshot/restore**: one-click full-state export (tasks + runs + config) and
+      restore. Builds on export-routes. Shipped through slice 3 2026-08-24: pure libs
+      (0efa391), five endpoints (slice 2), settings-view panel + staging verification
+      (f8c1af7) — live at http://192.168.0.81:8120/ (Settings → Snapshots & Restore).
 
 ## Phase 3 — Polish & Reach
 
