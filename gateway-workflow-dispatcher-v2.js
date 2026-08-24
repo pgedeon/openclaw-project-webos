@@ -1,5 +1,5 @@
 const { Pool } = require('pg');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { createBudgetEnforcement, buildBudgetBreachFrame } = require('./lib/budget-enforcement');
 
 const DEFAULT_OPTIONS = Object.freeze({
@@ -564,8 +564,9 @@ class GatewayWorkflowDispatcherV2 {
     ].join('\n');
 
     try {
-      const result = execSync(
-        'openclaw system event --mode now --json --text ' + JSON.stringify(eventText),
+      const result = execFileSync(
+        'openclaw',
+        ['system', 'event', '--mode', 'now', '--json', '--text', eventText],
         { timeout: 15000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }
       );
       const parsed = JSON.parse(result.trim());
