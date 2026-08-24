@@ -5,7 +5,9 @@
 > Revised 2026-08-23 after advisory memo from OpenClaw main agent (post-mortem of
 > the dead webos-auto-improve.py pipeline + codebase landmines).
 > Evidence base: docs/research/market-scan-2026-08-23.md (competitive landscape,
-> 18 platforms scanned).
+> 18 platforms scanned) + docs/research/market-scan-2026-08-24.md (24h delta refresh:
+> FleetQ/Mission Control quiet; Paperclip 79k★ ships budget hard-stops + approval
+> governance at scale; LoopX receipts pattern).
 
 ## Mission
 
@@ -85,6 +87,11 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       multi-tab fanout. Review 2026-08-24: evaluate SSE-first fanout before raw WS —
       task-server already ships an auth-hardened SSE event-stream route (F7);
       run the streaming verification spike (live console item) BEFORE this build.
+- [ ] **Budget ledger + auto-pause** (pulled forward from Phase 2 per market scan
+      2026-08-24: Paperclip made per-agent budgets with hard-stop enforcement table
+      stakes at 79k★ scale): per-agent/task budget rows over the shipped cost schema,
+      dispatch-time check, pause + notify on breach via existing approvals/pause
+      machinery. Depends on the Phase 0 cost/token backfill checkbox landing first.
 - [ ] **Live agent console**: stream agent output/tool-calls into a terminal window.
       First verify what the gateway actually exposes for streaming (likely
       permission-gated); mock-first until confirmed. Review 2026-08-24: that
@@ -98,6 +105,8 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 - [ ] **One-click agent actions** from any view: assign task → dispatch run → approve
       → publish, without leaving the window. Needs its own brief first (action set,
       confirmation UX, idempotency) — none exists yet; write it during bridge/console runs.
+      Brief must include protected-action preview + receipts per market scan 2026-08-24
+      (LoopX pattern: typed preview, explicit confirmation, receipt appended to audit trail).
 - [ ] **Memory browser 2.0**: graph/timeline view of agent memories + cross-agent links
       (semantic search already exists). Graph-first per market scan rec #5; designated
       filler run when DB-dependent items are blocked (working rule 8).
@@ -105,10 +114,9 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 ## Phase 2 — Killer Features (things no other dashboard has)
 
 - [ ] **Cost & token analytics UI**: per-agent/task/department rollups over the Phase 0
-      schema. Sparkline widgets already exist — feed them this. Include a budget ledger
-      with per-agent/task caps and auto-pause-on-breach (FleetQ pattern, market scan
-      2026-08-23); Phase 0 migration already accumulates cost history. Depends on the
-      Phase 0 cost/token backfill checkbox landing first (review 2026-08-24).
+      schema. Sparkline widgets already exist — feed them this. Budget ledger component
+      pulled forward to Phase 1 (market scan 2026-08-24); this item keeps the rollup UI.
+      Depends on the Phase 0 cost/token backfill checkbox landing first (review 2026-08-24).
 - [ ] **MCP server exposure** (added per market scan 2026-08-23): wrap existing REST
       routes as MCP tools so OpenClaw agents can read tasks/runs/metrics directly in
       their tool loop; read-only tool set first, write actions behind approval gates.
