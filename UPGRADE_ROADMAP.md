@@ -93,11 +93,16 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       dispatch-time check, pause + notify on breach via existing approvals/pause
       machinery. Depends on the Phase 0 cost/token backfill checkbox landing first.
 - [x] **Live agent console**: stream agent output/tool-calls into a terminal window. Shipped 2026-08-24: implementation 83919c4, validated against live gateway (docs/research/console-validation-2026-08-24.md) — tool-start/output/end frames, per-session filtering, secret redaction all confirmed.
-- [ ] **Session replay inspector**: browse OpenClaw sessions, replay a transcript in a
+- [x] **Session replay inspector**: browse OpenClaw sessions, replay a transcript in a
       window with a time-travel stepper over tool-call events (prev/next/jump, payload
       inspection) — pattern proven by AgentOps/Mission Control (market scan 2026-08-23).
       Promoted above one-click actions (review 2026-08-24): read-only, rides on the
       already-shipped session-reader routes, no gating design needed.
+      Shipped 2026-08-24: backend reader + routes 49eef27, inspector view a26c0cc —
+      scrubber + ←/→/Home/End stepper, as-of-t chat pane, expandable tool calls with
+      exitCode badges from persisted details, cached on-demand full-output fetch,
+      virtualized rail (bounded DOM at 10k+ events), partial/truncated banners;
+      registered under Work (34 windowed apps).
 - [ ] **One-click agent actions** from any view: assign task → dispatch run → approve
       → publish, without leaving the window. Needs its own brief first (action set,
       confirmation UX, idempotency) — none exists yet; the "write it during bridge/console
