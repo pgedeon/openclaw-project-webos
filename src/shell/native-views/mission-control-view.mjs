@@ -1,14 +1,44 @@
 import { ensureNativeRoot, escapeHtml, createStatCard } from './helpers.mjs';
 
-// ── Tunables (brief §4) ─────────────────────────────────────────
-export const STALE_RUN_MINUTES = 15;
-export const ZERO_TOKEN_MINUTES = 10;
+// ── Poll tunables (brief §3 data contracts) ─────────────────────
 const FLEET_POLL_MS = 30000;
 const RUNS_POLL_MS = 20000;   // aligned with realtime-sync.mjs SYNC_INTERVAL_MS
 const CRON_POLL_MS = 60000;
 const COST_POLL_MS = 120000;
 const FETCH_TIMEOUT_MS = 5000; // R1 mitigation: CLI-backed endpoints have no SLA
 const MAX_CRON_DETAIL_LOOKUPS = 3;
+
+// ── Anomaly thresholds (brief §4) ───────────────────────────────
+// Named + exported so unit tests can pin behavior exactly at each boundary
+// and operators can tune a knob without touching flag logic. Each constant
+// carries its justification; changing a value here changes the operator
+// contract, so bump the views-reference thresholds note in the same commit.
+export const STALE_RUN_MINUTES = 15;
+// 15 min: a healthy run refreshes its heartbeat at least once per 20 s runs
+// poll cycle; 15 min ≈ dozens of missed beats. Long enough to ride out a slow
+// CLI sweep or transient stall, short enough to surface a hung run within one
+// operator work block.
+export const ZERO_TOKEN_MINUTES = 10;
+// 10 min: recursive AgentOps-style loops burn wall-clock without reporting
+// usage and show symptoms within minutes. Below 10 min legitimate runs often
+// simply have not completed their first model call yet, so a lower value
+// false-positives on ordinary cold starts.
+export const CRASH_LOOP_CONSECUTIVE_FAILURES = 2;
+// 2 consecutive failures: one failure is noise (transient CLI/network blip);
+// two in a row on a scheduled job predicts the next run failing too. Earliest
+// signal worth attention without paging on every hiccup. Also gates the
+// diagnostics classification path (crash/pipeline_failed recurring).
+export const COST_SPIKE_MULTIPLIER = 2;
+// 2× trailing mean (today excluded): brief §4 flag 4, matching the market-scan
+// "top steal" heuristic. Spend half again above normal is routine variance;
+// doubling is when someone should look. Strictly greater-than: exactly 2× is
+// NOT a spike.
+export const COST_SPIKE_MIN_HISTORY_DAYS = 3;
+// ≥3 trailing days of history: with fewer days the mean is dominated by
+// migration-022 startup noise (R2 — expect the flag silent during week one).
+export const MAX_ANOMALY_FLAGS = 25;
+// Render cap: a pathological payload (e.g. 50 simultaneously stale runs) must
+// not flood the flags panel; types remain fixed at 5 by construction.
 
 // ── Anomaly engine (pure, exported for unit tests) ──────────────
 // Inputs (all optional; missing inputs skip their flags silently):
@@ -64,7 +94,7 @@ export function computeAnomalies({ fleet = null, runs = null, cron = null, cost 
     for (const job of cron.jobs) {
       if (job.status !== 'failed') continue;
       const consecutive = Number(job.consecutiveFailures || 0);
-      if (consecutive >= 2) {
+      if (consecutive >= CRASH_LOOP_CONSECUTIVE_FAILURES) {
         seenCronSubjects.add(job.id);
         flags.push({
           type: 'crash_loop_cron',
@@ -80,7 +110,7 @@ export function computeAnomalies({ fleet = null, runs = null, cron = null, cost 
     for (const failure of cron.failures) {
       const classification = failure.failureType || failure.classification;
       if (classification !== 'crash' && classification !== 'pipeline_failed') continue;
-      if (Number(failure.failureCount || 0) < 2) continue;
+      if (Number(failure.failureCount || 0) < CRASH_LOOP_CONSECUTIVE_FAILURES) continue;
       if (seenCronSubjects.has(failure.id)) continue;
       seenCronSubjects.add(failure.id);
       flags.push({
@@ -98,10 +128,10 @@ export function computeAnomalies({ fleet = null, runs = null, cron = null, cost 
   if (cost && cost.available && cost.today && Array.isArray(cost.days)) {
     const todayKey = new Date(now - new Date(now).getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     const history = cost.days.filter(d => d.date !== todayKey && Number(d.cost || 0) >= 0);
-    if (history.length >= 3) {
+    if (history.length >= COST_SPIKE_MIN_HISTORY_DAYS) {
       const mean = history.reduce((sum, d) => sum + Number(d.cost || 0), 0) / history.length;
       const todayCost = Number(cost.today.cost || 0);
-      if (mean > 0 && todayCost > 2 * mean) {
+      if (mean > 0 && todayCost > COST_SPIKE_MULTIPLIER * mean) {
         flags.push({
           type: 'cost_spike',
           severity: 'error',
@@ -143,7 +173,7 @@ export function computeAnomalies({ fleet = null, runs = null, cron = null, cost 
     }
   }
 
-  return flags.slice(0, 25); // hard cap; types are fixed at 5 by construction
+  return flags.slice(0, MAX_ANOMALY_FLAGS); // hard cap; types are fixed at 5 by construction
 }
 
 export const ANOMALY_FLAG_TYPES = Object.freeze([
@@ -193,29 +223,42 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     .mc-header { padding:14px 16px;border-bottom:1px solid var(--win11-border);flex-shrink:0;display:flex;justify-content:space-between;align-items:center;gap:12px; }
     .mc-title { font-size:1.15rem;font-weight:600;display:flex;align-items:center;gap:8px; }
     .mc-poll-dot { width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block; }
-    .mc-grid { flex:1;overflow-y:auto;padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px;align-content:start; }
-    .mc-panel { border:1px solid var(--win11-border);border-radius:10px;background:var(--win11-surface-solid);padding:12px;min-height:150px;display:flex;flex-direction:column;gap:8px;overflow:hidden; }
+    .mc-btn { padding:6px 12px;border-radius:5px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);cursor:pointer;font-size:0.82rem;flex-shrink:0; }
+    .mc-btn:hover { background:var(--win11-surface-active); }
+    /* minmax(0,1fr) columns + min-width:0 panels: content can never widen a
+       track, so the grid never hscrolls at the default 1180×780 window size */
+    .mc-grid { flex:1;overflow-y:auto;overflow-x:hidden;padding:14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-content:start; }
+    .mc-panel { border:1px solid var(--win11-border);border-radius:10px;background:var(--win11-surface-solid);padding:12px;min-height:150px;min-width:0;display:flex;flex-direction:column;gap:8px;overflow:hidden; }
     .mc-panel-wide { grid-column:1 / span 1; }
-    .mc-panel h3 { margin:0;font-size:0.82rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--win11-text-secondary);display:flex;justify-content:space-between;align-items:center; }
-    .mc-row { display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;padding:3px 0; }
-    .mc-label { color:var(--win11-text-secondary); }
-    .mc-value { font-weight:600; }
-    .mc-badge { font-size:0.72rem;padding:2px 8px;border-radius:4px;font-weight:600;white-space:nowrap; }
+    .mc-panel h3 { margin:0;font-size:0.82rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--win11-text-secondary);display:flex;justify-content:space-between;align-items:center;gap:8px; }
+    .mc-row { display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:0.85rem;padding:3px 0;min-width:0; }
+    .mc-label { color:var(--win11-text-secondary);min-width:0;overflow-wrap:anywhere; }
+    .mc-value { font-weight:600;text-align:right;min-width:0;overflow-wrap:anywhere; }
+    /* Badge tones shared with health-view.mjs (.hv-status-badge) semantics:
+       ok=green, warn=amber, error=red, neutral=muted — same rgba pairs. */
+    .mc-badge { font-size:0.72rem;padding:2px 8px;border-radius:4px;font-weight:600;white-space:nowrap;flex-shrink:0; }
     .mc-badge.ok { background:rgba(34,197,94,0.15);color:#22c55e; }
     .mc-badge.warn { background:rgba(234,179,8,0.15);color:#eab308; }
     .mc-badge.error { background:rgba(239,68,68,0.15);color:#ef4444; }
     .mc-badge.neutral { background:rgba(148,163,184,0.15);color:var(--win11-text-secondary); }
-    .mc-unavailable { font-size:0.82rem;color:var(--win11-text-tertiary);font-style:italic;padding:8px 0; }
-    .mc-flag { display:flex;flex-direction:column;gap:2px;padding:6px 8px;border-radius:6px;border:1px solid var(--win11-border);margin-bottom:6px;font-size:0.8rem; }
+    /* Distinct per-panel states: loading (pulsing), empty (muted italic),
+       error (red-tinted) — never reuse one look for two meanings. */
+    .mc-state { display:flex;align-items:center;gap:8px;font-size:0.82rem;padding:10px;border-radius:6px;min-width:0;overflow-wrap:anywhere; }
+    .mc-state-loading { color:var(--win11-text-secondary);animation:mc-pulse 1.6s ease-in-out infinite; }
+    .mc-state-empty { color:var(--win11-text-tertiary);font-style:italic;background:var(--win11-surface-active); }
+    .mc-state-error { color:#ef4444;background:rgba(239,68,68,0.08);border-left:3px solid #ef4444;font-weight:500; }
+    @keyframes mc-pulse { 0%,100% { opacity:1; } 50% { opacity:0.45; } }
+    .mc-flag { display:flex;flex-direction:column;gap:2px;padding:6px 8px;border-radius:6px;border:1px solid var(--win11-border);margin-bottom:6px;font-size:0.8rem;min-width:0; }
     .mc-flag-warn { border-left:3px solid #eab308; }
     .mc-flag-error { border-left:3px solid #ef4444; }
-    .mc-flag-subject { font-weight:600; }
-    .mc-flag-detail { color:var(--win11-text-secondary); }
-    .mc-links { display:grid;grid-template-columns:1fr 1fr;gap:8px; }
-    .mc-link-btn { padding:8px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-active);color:var(--win11-text);cursor:pointer;font-size:0.82rem;text-align:center; }
-    .mc-link-btn:hover { border-color:var(--win11-accent,#60a5fa); }
+    .mc-flag-subject { font-weight:600;overflow-wrap:anywhere; }
+    .mc-flag-detail { color:var(--win11-text-secondary);overflow-wrap:anywhere; }
+    .mc-links { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px; }
+    .mc-link-btn { padding:8px 10px;border-radius:6px;border:1px solid var(--win11-border);background:var(--win11-surface-active);color:var(--win11-text);cursor:pointer;font-size:0.82rem;text-align:center;min-width:0; }
+    .mc-link-btn:hover { border-color:var(--win11-accent,#60a5fa);background:var(--win11-accent-light); }
     .mc-footer { padding:8px 16px;border-top:1px solid var(--win11-border);font-size:0.75rem;color:var(--win11-text-tertiary);text-align:center;flex-shrink:0; }
-    @media (max-width: 900px) { .mc-grid { grid-template-columns:1fr; } }
+    @media (max-width: 900px) { .mc-grid { grid-template-columns:minmax(0,1fr); } }
+    @media (prefers-reduced-motion: reduce) { .mc-state-loading { animation:none; } }
   `;
   root.appendChild(style);
 
@@ -223,7 +266,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
   header.className = 'mc-header';
   header.innerHTML = `
     <div class="mc-title">🛰 Mission Control <span class="mc-poll-dot" title="polling"></span></div>
-    <button id="mc-refresh" class="mc-link-btn" style="width:auto;" aria-label="Refresh all panels">↻ Refresh</button>
+    <button id="mc-refresh" class="mc-btn" aria-label="Refresh all panels">↻ Refresh</button>
   `;
   root.appendChild(header);
 
@@ -255,11 +298,11 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     heading.innerHTML = `<span>${escapeHtml(title)}</span><span class="mc-panel-status" data-status></span>`;
     const body = document.createElement('div');
     body.className = 'mc-panel-body';
-    body.innerHTML = '<div class="mc-unavailable">Loading…</div>';
+    body.innerHTML = '<div class="mc-state mc-state-loading">Loading…</div>';
     panel.appendChild(heading);
     panel.appendChild(body);
     grid.appendChild(panel);
-    panels[key] = { el: panel, heading, body };
+    panels[key] = { el: panel, heading, body, hasData: false };
   }
 
   function setPanelStatus(key, text, tone = 'neutral') {
@@ -267,8 +310,22 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     if (el) el.innerHTML = text ? `<span class="mc-badge ${tone}">${escapeHtml(text)}</span>` : '';
   }
 
-  function setPanelUnavailable(key, reason) {
-    panels[key].body.innerHTML = `<div class="mc-unavailable">${escapeHtml(reason)}</div>`;
+  // Distinct named states per panel (brief AC3/AC4): loading pulses, empty is
+  // muted italic, error is red-tinted. One meaning = one look.
+  function setPanelState(key, kind, message) {
+    panels[key].hasData = false;
+    panels[key].body.innerHTML = `<div class="mc-state mc-state-${kind}">${escapeHtml(message)}</div>`;
+  }
+
+  // R1 mitigation companion: when a poll fails but the panel still shows
+  // last-good data, keep the data and flag it stale instead of blanking.
+  function handlePanelFailure(key, message) {
+    if (panels[key].hasData) {
+      setPanelStatus(key, 'stale', 'warn');
+    } else {
+      setPanelState(key, 'error', message);
+      setPanelStatus(key, 'down', 'error');
+    }
   }
 
   // ── Shared polled state ──
@@ -297,6 +354,13 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     const queue = results[3].status === 'fulfilled' ? results[3].value : { ok: false };
 
     const dbAvailable = orgAgents.ok && queue.ok;
+    if (!health.ok && !cliAgents.ok) {
+      // Every fleet input down: named error state (AC4 — only this panel blanks).
+      state.fleet = null;
+      handlePanelFailure('fleet', 'Fleet unavailable — gateway not reachable');
+      recomputeAnomalies();
+      return;
+    }
     state.fleet = {
       health: health.ok ? health.data : null,
       agents: cliAgents.ok && cliAgents.data?.agents ? cliAgents.data.agents : null,
@@ -316,7 +380,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
 
   function renderFleet() {
     const f = state.fleet;
-    if (!f) { setPanelUnavailable('fleet', 'Fleet unavailable'); return; }
+    if (!f) { setPanelState('fleet', 'error', 'Fleet unavailable — gateway not reachable'); return; }
     const overall = f.health?.status || 'unknown';
     const overallTone = overall === 'healthy' || overall === 'ok' ? 'ok' : overall === 'degraded' ? 'warn' : 'error';
     const gatewayStatus = f.health?.gateway?.status || '—';
@@ -347,6 +411,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
       row.innerHTML = `<span class="mc-label">${escapeHtml(label)}</span><span class="mc-value">${escapeHtml(value)}</span>`;
       panels.fleet.body.appendChild(row);
     }
+    panels.fleet.hasData = true;
     setPanelStatus('fleet', f.dbAvailable ? 'live' : 'partial (no DB)', f.dbAvailable ? 'ok' : 'warn');
   }
 
@@ -364,7 +429,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
 
     if (!running.ok) {
       state.runs = null;
-      setPanelUnavailable('runs', 'Runs unavailable — no database');
+      handlePanelFailure('runs', 'Runs unavailable — no database');
       recomputeAnomalies();
       return;
     }
@@ -380,12 +445,20 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
 
   function renderRuns() {
     const r = state.runs;
-    if (!r) { setPanelUnavailable('runs', 'Runs unavailable — no database'); return; }
+    if (!r) { setPanelState('runs', 'error', 'Runs unavailable — no database'); return; }
     const runningList = Array.isArray(r.running) ? r.running : [];
     const failedList = Array.isArray(r.failed24h) ? r.failed24h : [];
     const blockedCount = Array.isArray(r.stuck)
       ? r.stuck.filter(x => x.status === 'blocked').length
       : Number(r.blockersSummary?.blocked ?? r.blockersSummary?.counts?.blocked ?? 0);
+
+    // Distinct empty state: endpoint answered but there is genuinely nothing
+    // running, blocked, or recently failed.
+    if (!runningList.length && !blockedCount && !failedList.length) {
+      setPanelState('runs', 'empty', 'No active or blocked runs.');
+      setPanelStatus('runs', 'live', 'ok');
+      return;
+    }
 
     const now = Date.now();
     const parts = [];
@@ -401,6 +474,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
       parts.push(`<div class="mc-row"><span class="mc-label">• ${escapeHtml(run.workflow_type || run.id)}</span><span class="mc-badge ${stale ? 'warn' : 'neutral'}">${escapeHtml(`${run.status} ${mins}m${stale ? '⚠' : ''}`)}</span></div>`);
     }
     panels.runs.body.innerHTML = parts.join('');
+    panels.runs.hasData = true;
     setPanelStatus('runs', 'live', 'ok');
   }
 
@@ -410,7 +484,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     if (state.destroyed) return;
     if (!jobsRes.ok) {
       state.cron = null;
-      setPanelUnavailable('cron', 'Cron unavailable — CLI not reachable');
+      handlePanelFailure('cron', 'Cron unavailable — openclaw CLI not reachable');
       return;
     }
     const jobs = jobsRes.data?.jobs || [];
@@ -447,8 +521,13 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
 
   function renderCron() {
     const c = state.cron;
-    if (!c) { setPanelUnavailable('cron', 'Cron unavailable'); return; }
+    if (!c) { setPanelState('cron', 'error', 'Cron unavailable — openclaw CLI not reachable'); return; }
     const jobs = c.jobs || [];
+    if (!jobs.length) {
+      setPanelState('cron', 'empty', 'No cron jobs configured.');
+      setPanelStatus('cron', 'live', 'ok');
+      return;
+    }
     const enabled = jobs.filter(j => j.enabled !== false).length;
     const failingJobs = jobs.filter(j => j.status === 'failed');
     const summary = c.summary || {};
@@ -467,6 +546,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     }
     parts.push(`<div class="mc-row"><span class="mc-label">File-based health</span><span class="mc-value">${escapeHtml(`healthy:${summary.healthy ?? '—'} failing:${summary.failing ?? '—'} stale:${summary.stale ?? '—'} silenced:${summary.silenced ?? '—'}`)}</span></div>`);
     panels.cron.body.innerHTML = parts.join('');
+    panels.cron.hasData = true;
     setPanelStatus('cron', 'live', 'ok');
   }
 
@@ -476,13 +556,13 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     if (state.destroyed) return;
     if (!res.ok) {
       state.cost = null;
-      setPanelUnavailable('cost', 'Cost unavailable — no database');
+      handlePanelFailure('cost', 'Cost unavailable — no database');
       recomputeAnomalies();
       return;
     }
     if (res.data && res.data.available === false) {
       state.cost = null;
-      setPanelUnavailable('cost', 'Cost unavailable — no database');
+      handlePanelFailure('cost', 'Cost unavailable — no database');
       recomputeAnomalies();
       return;
     }
@@ -493,24 +573,38 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
 
   function renderCost() {
     const c = state.cost;
-    if (!c) { setPanelUnavailable('cost', 'Cost unavailable — no database'); return; }
+    if (!c) { setPanelState('cost', 'error', 'Cost unavailable — no database'); return; }
+
+    // Three-way distinction: error above (endpoint/DB down), empty here
+    // (endpoint healthy, migration-022 history simply not accumulated yet),
+    // real rows below. "No data" must never read as an outage.
+    const hasSpend = Number(c.today?.cost || 0) > 0
+      || (c.days || []).some(d => Number(d.cost || 0) !== 0)
+      || Boolean(c.top_run);
+    if (!hasSpend) {
+      setPanelState('cost', 'empty', 'No cost data recorded yet.');
+      setPanelStatus('cost', 'live', 'ok');
+      return;
+    }
+
     const fmt = n => `$${Number(n || 0).toFixed(2)}`;
     const historyDays = (c.days || []).filter(d => d.date !== currentLocalTodayKey());
     const spikeRatio = (() => {
-      if (historyDays.length < 3) return null;
+      if (historyDays.length < COST_SPIKE_MIN_HISTORY_DAYS) return null;
       const mean = historyDays.reduce((s, d) => s + Number(d.cost || 0), 0) / historyDays.length;
       if (!(mean > 0)) return null;
       return Number(c.today?.cost || 0) / mean;
     })();
 
     const parts = [];
-    parts.push(`<div class="mc-row"><span class="mc-label">Today</span><span class="mc-value">${escapeHtml(fmt(c.today?.cost))}${spikeRatio && spikeRatio > 2 ? ` <span class="mc-badge error">▲ spike ${spikeRatio.toFixed(1)}×</span>` : ''}</span></div>`);
+    parts.push(`<div class="mc-row"><span class="mc-label">Today</span><span class="mc-value">${escapeHtml(fmt(c.today?.cost))}${spikeRatio && spikeRatio > COST_SPIKE_MULTIPLIER ? ` <span class="mc-badge error">▲ spike ${spikeRatio.toFixed(1)}×</span>` : ''}</span></div>`);
     parts.push(`<div class="mc-row"><span class="mc-label">7-day total</span><span class="mc-value">${escapeHtml(fmt(c.total_window))}</span></div>`);
     parts.push(`<div class="mc-row"><span class="mc-label">7-day avg/day</span><span class="mc-value">${escapeHtml(fmt(c.avg_daily_7d))}</span></div>`);
     if (c.top_run) {
       parts.push(`<div class="mc-row"><span class="mc-label">Top run</span><span class="mc-value">${escapeHtml(c.top_run.workflow_type)} ${escapeHtml(fmt(c.top_run.cost))}</span></div>`);
     }
     panels.cost.body.innerHTML = parts.join('');
+    panels.cost.hasData = true;
     setPanelStatus('cost', 'live', 'ok');
   }
 
@@ -534,11 +628,13 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     const inputsDown = !state.fleet && !state.runs && !state.cron && !state.cost;
     setPanelStatus('anomalies', `${state.anomalies.length} active`, state.anomalies.length ? 'warn' : 'ok');
     if (inputsDown) {
-      setPanelUnavailable('anomalies', 'No anomalies detectable (inputs unavailable)');
+      // All inputs down is a degraded condition, so it uses the error look —
+      // distinct from the calm "no anomalies detected" empty state.
+      setPanelState('anomalies', 'error', 'No anomalies detectable (inputs unavailable)');
       return;
     }
     if (!state.anomalies.length) {
-      panels.anomalies.body.innerHTML = '<div class="mc-unavailable">No anomalies detected.</div>';
+      setPanelState('anomalies', 'empty', 'No anomalies detected.');
       return;
     }
     const parts = state.anomalies.map(flag => `
@@ -548,6 +644,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
       </div>
     `);
     panels.anomalies.body.innerHTML = parts.join('');
+    panels.anomalies.hasData = true;
   }
 
   // ── Panel F: Quick Links (static) ──

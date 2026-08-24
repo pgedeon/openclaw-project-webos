@@ -145,6 +145,14 @@ async function testQueryFailureDegradation() {
 async function loadAnomalyEngine() {
   const mod = await import(VIEW_MODULE);
   assert.strictEqual(mod.ANOMALY_FLAG_TYPES.length, 5, 'exactly 5 flag types defined');
+  // Part 2: thresholds are named exported constants; pin their values so an
+  // accidental retune fails loudly instead of silently changing operator
+  // semantics (views-reference documents these exact numbers).
+  assert.strictEqual(mod.STALE_RUN_MINUTES, 15);
+  assert.strictEqual(mod.ZERO_TOKEN_MINUTES, 10);
+  assert.strictEqual(mod.CRASH_LOOP_CONSECUTIVE_FAILURES, 2);
+  assert.strictEqual(mod.COST_SPIKE_MULTIPLIER, 2);
+  assert.strictEqual(mod.COST_SPIKE_MIN_HISTORY_DAYS, 3);
   return mod;
 }
 
@@ -179,6 +187,27 @@ async function testAnomalies() {
   assert.strictEqual(flags[0].severity, 'warn');
   assert.strictEqual(flags[0].subject, 'publish-daily');
 
+  // Flag 1 boundary — exactly STALE_RUN_MINUTES old is NOT stale (strictly
+  // greater-than); one second past is. Pins the constant behaviorally.
+  const T0 = new Date('2026-08-24T12:00:00Z').getTime();
+  const atThresholdRun = {
+    id: 'rb',
+    workflow_type: 'edge-exact',
+    status: 'running',
+    started_at: new Date(T0 - 30 * 60000).toISOString(),
+    last_heartbeat_at: new Date(T0 - 15 * 60000).toISOString(),
+  };
+  flags = computeAnomalies({ now: T0, runs: { running: [atThresholdRun] } });
+  assert.strictEqual(flags.filter(f => f.type === 'stale_run').length, 0, 'exactly 15 min is not stale');
+
+  flags = computeAnomalies({
+    now: T0,
+    runs: {
+      running: [{ ...atThresholdRun, last_heartbeat_at: new Date(T0 - 15 * 60000 - 1000).toISOString() }],
+    },
+  });
+  assert.strictEqual(flags.filter(f => f.type === 'stale_run').length, 1, '1s past threshold is stale');
+
   // Flag 2 — zero-token loop (running >10 min, reported_at NULL).
   const zeroTokenRun = {
     id: 'r3',
@@ -203,6 +232,20 @@ async function testAnomalies() {
   flags = computeAnomalies({ runs: { running: [zeroTokenRun, healthyLongRun] } });
   assert.strictEqual(flags.filter(f => f.type === 'zero_token_loop').length, 1);
   assert.strictEqual(flags.find(f => f.type === 'zero_token_loop').subject, 'seo-audit');
+
+  // Flag 2 boundary — exactly ZERO_TOKEN_MINUTES elapsed is NOT a loop.
+  const atZeroTokenBoundary = {
+    id: 'rz',
+    workflow_type: 'edge-exact',
+    status: 'running',
+    started_at: new Date(T0 - 10 * 60000).toISOString(),
+    last_heartbeat_at: new Date(T0).toISOString(),
+    reported_at: null,
+    input_tokens: 0,
+    output_tokens: 0,
+  };
+  flags = computeAnomalies({ now: T0, runs: { running: [atZeroTokenBoundary] } });
+  assert.strictEqual(flags.filter(f => f.type === 'zero_token_loop').length, 0, 'exactly 10 min is not a zero-token loop');
 
   // Flag 3 — crash-looping cron (≥2 consecutive failures), deduped against
   // diagnostics classification for the same job.
@@ -243,7 +286,9 @@ async function testAnomalies() {
   assert.strictEqual(flags[0].severity, 'error');
   assert.match(flags[0].detail, /2\.3×/);
 
-  // Flag 4 negatives — below threshold and insufficient history.
+  // Flag 4 negatives — below threshold and insufficient history. The first
+  // case doubles as the exact-boundary pin: today == exactly COST_SPIKE_MULTIPLIER ×
+  // mean must NOT flag (strictly greater-than comparison).
   flags = computeAnomalies({
     now: NOW,
     cost: {
