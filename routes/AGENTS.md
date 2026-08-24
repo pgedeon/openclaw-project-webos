@@ -18,7 +18,7 @@ Modular route handlers registered on the task-server.js router. Each file owns a
 | `agent-routes.js` | `/api/agents/*`, `/api/org/*` | Agent status, org summary |
 | `session-routes.js` | `/api/oc/sessions/*` | Session listing and history |
 | `chat-routes.js` | `/api/oc/chat/*` | Agent chat send/abort/status |
-| `sse-routes.js` | `/api/events` | Server-Sent Events push |
+| `sse-routes.js` | `/api/events`, `/api/events/stream` | Server-Sent Events push (poller-fed + gateway-bridge-fed) |
 | `bing-routes.js` | `/api/bing/*` | Bing webmaster integration |
 | `settings-routes.js` | `/api/settings/*` | Configuration management |
 | `memory-routes.js` | `/api/memory/*` | Proxy to memory-api-server (port 3879) |

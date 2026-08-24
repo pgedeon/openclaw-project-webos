@@ -34,6 +34,7 @@ const INCLUDED = [
   'test-filesystem-api-auth.mjs',
   'test-filesystem-proxy-availability.js',
   'test-filesystem-proxy-origin.js',
+  'test-gateway-bridge.js',
   'test-health-routes.js',
   'test-health-status-gateway-snapshot.js',
   'test-history-routes.js',

@@ -18,7 +18,7 @@ The OpenClaw WebOS desktop shell is a Win11-inspired single-page application bui
 │  ├── ViewAdapter (view-to-window bridge)                 │
 │  ├── ViewState (per-view reactive state)                 │
 │  ├── APIClient (HTTP abstraction)                        │
-│  └── RealtimeSync (20s polling, data distribution)       │
+│  └── RealtimeSync (20s polling / opt-in live SSE)        │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -144,6 +144,17 @@ Unified real-time data synchronization module. Fetches all key data sources in p
 |-----------|---------|-------------|
 | `interval` | 20000ms | Polling interval |
 | Debounce | 2000ms | Minimum time between refreshes |
+| Live mode | off | Opt-in via localStorage flag `openclaw.liveSync=1` |
+
+#### Live Mode (opt-in)
+
+When the operator sets `openclaw.liveSync=1` in localStorage, the sync module opens the
+bridge-fed SSE stream (`GET /api/events/stream`) and reacts to pushed events
+(`task-updated`, `agent-status-changed`, `run-updated` → coalesced refresh via the existing
+debounce; `resync` → one forced refresh). While the stream is connected, 20s polling is
+halted. Any SSE error/close restarts polling immediately; reconnect attempts are capped at 5
+before giving up and staying on polling permanently. Default OFF — zero behavior change
+unless enabled, and every failure path lands back on polling with no thrown errors.
 
 #### Data Sources
 
@@ -181,7 +192,7 @@ sync.getErrors(); // → FetchErrors
 #### Data Flow
 
 ```
-Every 20s:
+Every 20s (or push-fed when live mode is enabled):
   Promise.all([
     fetch /api/stats,
     fetch /api/health-status,
@@ -333,7 +344,7 @@ Browser
   │     │
   │     ├── APIClient ──HTTP──→ task-server:3876
   │     │
-  │     ├── RealtimeSync (20s poll)
+  │     ├── RealtimeSync (20s poll / live SSE fallback)
   │     │     └──→ 7 endpoints in parallel
   │     │     └──→ Cache + Notify subscribers
   │     │

@@ -25,6 +25,7 @@
   - [GET /api/costs/summary](#get-apicostssummary)
 - [Realtime Events API](#realtime-events-api)
   - [GET /api/events](#get-apievents)
+  - [GET /api/events/stream](#get-apieventsstream)
 - [Settings Control Panel API](#settings-control-panel-api)
   - [GET /api/settings](#get-apisettings)
   - [GET /api/settings/schema](#get-apisettingsschema)
@@ -496,6 +497,49 @@ Event frame shape:
 event: task:changed
 data: {"action":"update","taskId":"task-1"}
 ```
+
+### `GET /api/events/stream`
+
+Bridge-fed Server-Sent Events stream. Same authentication contract as `GET /api/events`
+(bearer token preferred, `?token=` legacy fallback for `EventSource`). Multiple browser tabs
+each get their own stream; the server broadcasts every normalized event to all of them.
+
+The feed is produced by the gateway bridge (`lib/gateway-bridge.js`): one server-side
+WebSocket subscribes to the OpenClaw gateway, normalizes events into a small internal set,
+and dedupes them by id + updatedAt/seq before fan-out (the gateway re-upserts the same task
+many times with only `updatedAt` bumped). When the bridge is disabled (no gateway config)
+or disconnected, no frames arrive — clients keep their polling fallback; the endpoint itself
+stays up and healthy.
+
+**Response** `200`: same headers as `GET /api/events`. Initial frame `: connected`, periodic
+heartbeat comments.
+
+Event frame shapes:
+
+```text
+event: task-updated
+data: {"id":"<task uuid>","updatedAt":1787530620467,"taskId":"…","kind":"cli","runtime":"cli","status":"running","title":"…","agentId":"coder","sessionKey":"agent:coder:main","runId":"…"}
+```
+
+```text
+event: agent-status-changed
+data: {"id":"agent:coder:main/tool:<callId>","updatedAt":7,"sessionKey":"agent:coder:main","agentId":"coder","runId":"…","itemId":"tool:<callId>","stream":"item","phase":"end","name":"exec","status":"completed","title":"…"}
+```
+
+```text
+event: run-updated
+data: {"id":"<runId>/<toolCallId>","updatedAt":2754,"runId":"…","sessionKey":"agent:coder:main","agentId":"coder","toolCallId":"<callId>","phase":"result","name":"exec","meta":"…","exitCode":0}
+```
+
+```text
+event: resync
+data: {"reason":"overflow|seq-gap|bridge-connected"}
+```
+
+`resync` tells the client its stream state may be incomplete (slow-consumer overflow with
+drop-oldest, missed gateway frames detected via envelope-seq gap, or a fresh bridge
+connect/reconnect): the client should do one manual refresh. Assistant token deltas are
+deliberately not fanned out in v1 — too chatty for dashboard state.
 
 ---
 

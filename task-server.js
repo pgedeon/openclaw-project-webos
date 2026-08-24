@@ -57,7 +57,7 @@ const { registerProjectRoutes } = require('./routes/project-routes');
 const { registerViewRoutes } = require('./routes/view-routes');
 const { registerCronRoutes } = require('./routes/cron-routes');
 const { registerAgentRoutes } = require('./routes/agent-routes');
-const { registerSSERoutes, broadcast } = require('./routes/sse-routes');
+const { registerSSERoutes, broadcast, broadcastStream } = require('./routes/sse-routes');
 const { registerSessionRoutes } = require('./routes/session-routes');
 const { registerChatRoutes } = require('./routes/chat-routes');
 const { registerBingRoutes } = require('./routes/bing-routes');
@@ -69,6 +69,7 @@ const { registerSpaceRoutes } = require('./routes/space-routes');
 const { registerWorkflowRoutingRoutes } = require('./routes/workflow-routing-routes');
 const { registerCostRoutes } = require('./routes/cost-routes');
 const { timingSafeTokenEqual } = require('./routes/auth-policy');
+const { createGatewayBridge } = require('./lib/gateway-bridge');
 const SettingsStore = require('./lib/settings-store');
 
 function loadDashboardEnv() {
@@ -641,6 +642,12 @@ try {
 } catch (err) {
   console.error('⚠️  Gateway client not available:', err.message);
 }
+
+// Gateway bridge v1: server-side subscriber feeding /api/events/stream. Opt-in
+// via GATEWAY_BRIDGE_URL env or openclaw.json; disabled cleanly when unset;
+// the gateway shared secret never leaves this process.
+try { createGatewayBridge({ broadcastStream }).start(); }
+catch (err) { console.error('⚠️  Gateway bridge not available:', err.message); }
 
 registerChatRoutes(router, gatewayClient);
 

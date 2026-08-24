@@ -39,6 +39,27 @@ The current auth mode is single-operator bearer token auth. Full login/session/R
 | `OPENCLAW_BIN` | No | `openclaw` | Path or command to the OpenClaw CLI binary | Dispatcher, agent wake |
 | `OPENCLAW_FS_ROOT` | No | `/root/.openclaw` | Root directory served by the filesystem API | `filesystem-api-server.mjs` |
 
+### Gateway Bridge (optional, default off)
+
+The gateway bridge (`lib/gateway-bridge.js`) opens one server-side WebSocket to the OpenClaw
+gateway and fans normalized events out to browsers over the bridge-fed SSE channel
+(`GET /api/events/stream`). It is enabled only when a gateway URL resolves; otherwise it
+disables cleanly and the dashboard keeps its 20s polling feed.
+
+Resolution order: environment overrides first, then the shared gateway config
+(`~/.openclaw/openclaw.json` → `gateway.port`, `gateway.auth.{mode,password,token}`),
+the same source the probe (`scripts/probe-gateway-ws.mjs`) uses. The gateway shared secret
+never leaves the server process — browsers only ever see the dashboard's own SSE surface.
+
+| Variable | Required | Default | Description | Component |
+|----------|----------|---------|-------------|-----------|
+| `GATEWAY_BRIDGE_URL` | No | derived from `openclaw.json` (`ws://127.0.0.1:<gateway.port>`) | Full WebSocket URL for the bridge (e.g. `wss://127.0.0.1:18789`); when neither this nor a readable `openclaw.json` resolves, the bridge stays disabled | `lib/gateway-bridge.js` |
+| `GATEWAY_BRIDGE_TOKEN` | No | `gateway.auth` from `openclaw.json` | Shared gateway secret in token mode; overrides the config-file credential | `lib/gateway-bridge.js` |
+
+Browser side, live mode is opt-in per operator via localStorage: set `openclaw.liveSync=1`
+to switch `src/shell/realtime-sync.mjs` from 20s polling to the SSE stream (polling remains
+the automatic fallback). Default OFF — zero behavior change unless enabled.
+
 ### Filesystem API
 
 | Variable | Required | Default | Description | Component |

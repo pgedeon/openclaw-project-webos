@@ -25,6 +25,8 @@ function createMockReq(method = 'GET', url = '/api/events') {
 }
 
 function createMockRes(options = {}) {
+  const listeners = {};
+  let writeCallCount = 0;
   return {
     statusCode: null,
     headers: {},
@@ -36,10 +38,21 @@ function createMockRes(options = {}) {
     },
     write(payload) {
       this.writeCalls++;
+      writeCallCount++;
+      if (options.writeReturnsFalse && options.writeReturnsFalse(payload, writeCallCount)) {
+        return false;
+      }
       if (options.throwOnWrite && options.throwOnWrite(payload, this.writeCalls)) {
         throw new Error('mock write failed');
       }
       this.writes.push(payload);
+      return true;
+    },
+    on(event, handler) {
+      listeners[event] = handler;
+    },
+    emit(event) {
+      if (listeners[event]) listeners[event]();
     },
   };
 }
@@ -105,7 +118,7 @@ async function connect(router, options = {}) {
   const res = createMockRes(options.resOptions);
   const pathname = req.url.split('?')[0];
   const handled = await router.handle(req, res, pathname, 'GET', options.context);
-  assert.strictEqual(handled, true, 'GET /api/events should be handled');
+  assert.strictEqual(handled, true, `GET ${options.url || '/api/events'} should be handled`);
   return { req, res };
 }
 
@@ -118,11 +131,15 @@ async function run() {
       router.list().some((route) => route.method === 'GET' && route.path === '/api/events'),
       'GET /api/events should be registered'
     );
+    assert.ok(
+      router.list().some((route) => route.method === 'GET' && route.path === '/api/events/stream'),
+      'GET /api/events/stream should be registered'
+    );
 
-    const req = createMockReq('POST', '/api/events');
+    const req = createMockReq('POST', '/api/events/stream');
     const res = createMockRes();
-    const handled = await router.handle(req, res, '/api/events', 'POST', undefined);
-    assert.strictEqual(handled, false, 'POST /api/events should not match the SSE route');
+    const handled = await router.handle(req, res, '/api/events/stream', 'POST', undefined);
+    assert.strictEqual(handled, false, 'POST /api/events/stream should not match the SSE route');
   });
 
   await withEnv({ PORT: '4999' }, async () => {
@@ -223,6 +240,84 @@ async function run() {
 
     broadcast('task:changed', null);
     assert.strictEqual(res.writes.at(-1), 'event: task:changed\ndata: null\n\n');
+  });
+
+  // ── Bridge-fed stream channel (/api/events/stream) ────────────────────
+
+  await withEnv({ PORT: '4999' }, async () => {
+    await withFreshSSEModule(async ({ registerSSERoutes, getStreamClientCount }) => {
+      const router = new Router();
+      registerSSERoutes(router);
+      const { res } = await connect(router, { url: '/api/events/stream' });
+
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.headers['Content-Type'], 'text/event-stream');
+      assert.deepStrictEqual(res.writes, [': connected\n\n']);
+      assert.strictEqual(getStreamClientCount(), 1, 'stream client should be tracked');
+    });
+  });
+
+  await withFreshSSEModule(async ({ registerSSERoutes, broadcast, broadcastStream }) => {
+    const router = new Router();
+    registerSSERoutes(router);
+    const legacy = await connect(router);
+    const streamA = await connect(router, { url: '/api/events/stream' });
+    const streamB = await connect(router, { url: '/api/events/stream' });
+
+    broadcastStream('task-updated', { id: 't-1', updatedAt: 100, status: 'running' });
+
+    const expected = 'event: task-updated\ndata: {"id":"t-1","updatedAt":100,"status":"running"}\n\n';
+    assert.strictEqual(streamA.res.writes.at(-1), expected);
+    assert.strictEqual(streamB.res.writes.at(-1), expected);
+    assert.deepStrictEqual(legacy.res.writes, [': connected\n\n'], 'bridge events must not reach legacy clients');
+
+    broadcast('task:changed', { action: 'update', taskId: 't-1' });
+    const legacyFrame = 'event: task:changed\ndata: {"action":"update","taskId":"t-1"}\n\n';
+    assert.strictEqual(legacy.res.writes.at(-1), legacyFrame);
+    assert.strictEqual(streamA.res.writes.at(-1), expected, 'legacy broadcasts must not reach stream clients');
+    assert.strictEqual(streamB.res.writes.at(-1), expected);
+  });
+
+  await withFreshSSEModule(async ({ registerSSERoutes, broadcastStream, getStreamClientCount }) => {
+    const router = new Router();
+    registerSSERoutes(router);
+    // Socket buffers everything (write always returns false): frames queue up.
+    let bufferMode = true;
+    const buffered = await connect(router, {
+      url: '/api/events/stream',
+      resOptions: { writeReturnsFalse: () => bufferMode },
+    });
+
+    for (let n = 1; n <= 105; n++) {
+      broadcastStream('task-updated', { n });
+    }
+    assert.strictEqual(buffered.res.writes.length, 0, 'nothing reaches the socket while it is buffered');
+
+    // Socket recovers: drain flushes the queue in order.
+    bufferMode = false;
+    buffered.res.emit('drain');
+
+    const flushed = buffered.res.writes;
+    const resyncFrames = flushed.filter((f) => f.startsWith('event: resync'));
+    assert.strictEqual(resyncFrames.length, 1, 'exactly one resync hint after overflow');
+    assert.strictEqual(resyncFrames[0], 'event: resync\ndata: {"reason":"overflow"}\n\n');
+    const firstFrame = 'event: task-updated\ndata: {"n":1}\n\n';
+    const lastFrame = 'event: task-updated\ndata: {"n":105}\n\n';
+    assert.ok(!flushed.includes(firstFrame), 'oldest frame dropped on overflow');
+    assert.ok(flushed.includes(lastFrame), 'newest frame survives');
+    assert.ok(flushed.length <= 101, `queue stays bounded (max 100 + resync hint; got ${flushed.length})`);
+
+    buffered.req.emit('close');
+    assert.strictEqual(getStreamClientCount(), 0, 'closed stream clients are removed');
+  });
+
+  await withFreshSSEModule(async ({ registerSSERoutes, broadcastStream }) => {
+    const router = new Router();
+    registerSSERoutes(router);
+    const circular = {};
+    circular.self = circular;
+    assert.throws(() => broadcastStream('task-updated', circular), /circular/i,
+      'unserializable bridge payloads throw at the sink, before any client write');
   });
 
   console.log('PASS: sse routes');
