@@ -110,6 +110,23 @@ The dispatcher enforces ACTIVE budgets from migration 023 (`budgets` table, mana
 
 **Tick visibility.** `lastTickSummary.budgetEnforcement` (and `GET /api/workflow-runs/dispatcher/stats` → `last_tick_summary`) carries `{ held, stopped, warned }` counts for the last dispatch phase.
 
+**SSE breach surfacing (Slice 3).** When enforcement takes a non-warn action, every latched
+`budget_events` row is surfaced as one `budget:breach` frame on the SSE fan-out
+(`collectBreachEventRows()` returns only rows that actually inserted past the UNIQUE latch,
+so repeated ticks throttle to exactly one frame per `(budget_id, period_key, event_kind)`) —
+`warn` records its audit event but never pages. `hard_stop` frames are built from the PRIMARY
+`hard_stopped` insert inside `hardStopInFlight()` (the later collector attempt for the same
+key conflicts away); pause frames come from the collector directly. The sink resolves via
+injected `options.budgetSseBroadcast` (tests) or both server channels additively —
+`broadcastStream` (`/api/events/stream`, documented in api-reference-complete.md) plus the
+legacy always-connected `broadcast`. Emission failures are logged and swallowed: surfacing
+never breaks dispatch. Consumers: notification center (blocker-tier entry deep-linking
+Mission Control's budgets panel) and Mission Control's budget bars + `budget_breach`
+anomaly flag (the flag derives from polled `GET /api/budgets`, independent of the stream).
+Frame contract: pure `buildBudgetBreachFrame()` in `lib/budget-enforcement.js`, shared with
+the bridge's additive `budget.breach` envelope normalizer so both producers emit
+byte-compatible frames.
+
 ### SQL Queries
 
 The dispatcher uses raw SQL for performance and atomicity:

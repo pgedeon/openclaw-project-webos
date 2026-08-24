@@ -770,6 +770,25 @@ data: {"id":"<runId>/<toolCallId>","updatedAt":2754,"runId":"…","sessionKey":"
 ```
 
 ```text
+event: budget:breach
+data: {"type":"budget:breach","id":"<budgetId>/<periodKey>/<eventKind>","budget_id":"…","budget_name":"fleet monthly cap","scope":"fleet","scope_id":null,"period":"monthly","period_key":"2026-08","event_kind":"paused","action":"pause_new_runs","spend_usd":12.5,"spend_tokens":7000,"cap_usd":10,"cap_tokens":null,"message":"pause_new_runs enforced at $12.50 of $10.00 cap (2026-08)","timestamp":"…"}
+```
+
+`budget:breach` (budget-ledger slice 3) fires when enforcement takes a non-warn action
+(`pause_new_runs` / `hard_stop`); `warn` records its audit event but never pages. Emission is
+throttled by the `budget_events` UNIQUE latch — exactly one frame per
+`(budget_id, period_key, event_kind)` per period, so repeated dispatch ticks do not re-page.
+Frames reach this channel two ways: the dispatcher fans out directly via `broadcastStream`
+(and mirrors onto the legacy always-connected `GET /api/events` channel so notification
+delivery does not depend on opt-in liveSync), and the gateway bridge additionally normalizes
+an additive `budget.breach` gateway envelope into the same frame shape
+(`lib/budget-enforcement.js buildBudgetBreachFrame`) for a future relay — both producers emit
+byte-compatible frames. Clients: `src/shell/realtime-sync.mjs` surfaces frames as actionable
+notification-center entries (blocker tier, deep-linking Mission Control's budgets panel);
+Mission Control also derives the `budget_breach` anomaly flag from polled `GET /api/budgets`
+data independently of this stream.
+
+```text
 event: resync
 data: {"reason":"overflow|seq-gap|bridge-connected"}
 ```
