@@ -1,6 +1,6 @@
 # CI pipeline — UPGRADE_ROADMAP.md Phase 0 item #1.
 #
-# Scope: syntax check + docs drift check + DB-free tests only.
+# Scope: syntax check + docs drift check + DB-free tests + npm audit (prod deps) only.
 # No PostgreSQL or any other service is started or required.
 #
 # Test inclusion/exclusion (originally verified 2026-08-23 by running every
@@ -69,6 +69,25 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      # npm audit gate (roadmap review #2 promoted item; unblocks the cost
+      # analytics dependency chain). Prod dependencies only (--omit=dev):
+      # dev-dep noise and moderate findings never block this gate.
+      #
+      # Level is CRITICAL initially, not high: local run 2026-08-24 found 5
+      # known-open HIGH findings (0 critical) that would fail a high-level
+      # gate on day one:
+      #   - ws 8.20.0 (direct prod dep): GHSA-58qx-3vcg-4xpx (uninitialized
+      #     memory disclosure) + GHSA-96hv-2xvq-fx4p (memory exhaustion DoS);
+      #     fixed in ws >= 8.20.2, non-breaking (`npm audit fix`).
+      #   - extract-zip 2.0.1 via @puppeteer/browsers 2.13.0 <- puppeteer /
+      #     puppeteer-core 24.42.0: GHSA-jmr9-qjv8-65gv (unvalidated symlink
+      #     path traversal); fix requires puppeteer-core@25.8.0 (breaking
+      #     major bump).
+      # Tightening path: upgrade ws to >= 8.20.2 and puppeteer[-core] to the
+      # next major, then change this flag to --audit-level=high.
+      - name: npm audit (prod deps, critical+ fails)
+        run: npm audit --omit=dev --audit-level=critical
 
       - name: Syntax check (node --check over root, routes/, storage/, scripts/, src/)
         run: |
