@@ -115,7 +115,7 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       exitCode badges from persisted details, cached on-demand full-output fetch,
       virtualized rail (bounded DOM at 10k+ events), partial/truncated banners;
       registered under Work (34 windowed apps).
-- [ ] **One-click agent actions** from any view: assign task → dispatch run → approve
+- [x] **One-click agent actions** from any view: assign task → dispatch run → approve
       → publish, without leaving the window. Needs its own brief first (action set,
       confirmation UX, idempotency) — none exists yet; the "write it during bridge/console
       runs" window closed 2026-08-24 without producing one, so the brief is now the item's
@@ -124,6 +124,17 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       (LoopX pattern: typed preview, explicit confirmation, receipt appended to audit trail)
       AND define the confirmation/idempotency/receipt machinery that the Phase 2 NL command
       bar reuses — gating design is written once, here.
+      Shipped 2026-08-24: server core 98efb8d (migration 024 receipts, action registry,
+      POST /api/actions/execute latch-first idempotency + budget probe, GET /api/actions/recent)
+      + view wiring afa7ba0 (slice 2: src/shell/action-client.mjs severity-mapped confirmations —
+      NONE / PREVIEW_MODAL / HOLD_CONFIRM 1.2 s with keyboard Enter-hold parity, budget-blocked
+      amber banners, outcome toasts; gated buttons in tasks-view (task.assign), agent queue
+      rows (run.dispatch template picker), approvals-view (approval.decide + Cancel→Delete R2
+      relabel), workflows-view run rows (run.cancel hold + run.redispatch); Recent-actions
+      tray as shell chrome ⚡ taskbar popover polling /recent on open — app count frozen at 34;
+      tests/test-action-client.js DB-free suite 47/47). Remaining (non-blocking): slice 3
+      surfacing per brief §6 — action-update SSE emission, workflows-view budget strip,
+      Mission Control budget-events line.
 - [ ] **Memory browser 2.0**: graph/timeline view of agent memories + cross-agent links
       (semantic search already exists). Graph-first per market scan rec #5; designated
       filler run when DB-dependent items are blocked (working rule 8). FLEX per review
