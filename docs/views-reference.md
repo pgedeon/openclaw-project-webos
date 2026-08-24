@@ -1,6 +1,6 @@
 # Views Reference — All Desktop Windows
 
-The OpenClaw Project WebOS exposes **33 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
+The OpenClaw Project WebOS exposes **34 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
 
 Views are organized into four categories in the start menu: **Work**, **Operations**, **System**, and **Admin**.
 
@@ -16,6 +16,7 @@ Views are organized into four categories in the start menu: **Work**, **Operatio
 - [Timeline](#timeline) ✓ (see user-guide.md)
 - [Agents](#agents) ✓ (see user-guide.md)
 - [Sessions](#sessions)
+- [Session Replay](#session-replay)
 - [Requests](#requests)
 - [Publish](#publish)
 - [Approvals](#approvals)
@@ -627,6 +628,27 @@ Live session browser and chat interface for interacting with OpenClaw agents. Sh
 - Abort running session tasks
 
 **API:** Uses `/api/oc/chat/send`, `/api/oc/chat/status`, `/api/oc/chat/abort`, `/api/oc/sessions` routes.
+
+### Session Replay
+
+**Category:** Work · **ID:** `session-replay` · **Default size:** 1000×700
+
+Time-travel stepper over a persisted session transcript (docs/briefs/session-replay.md). Pick an agent → pick a session → the transcript is fetched once through the read-only `/events` endpoint, then scrubbed entirely offline in memory.
+
+**Features:**
+- **Agent + session pickers** — mirror the Sessions view (`GET /api/oc/agents`, `GET /api/oc/sessions?agent=`); deep-linkable via `/?view=session-replay&agent=<id>&session=<sessionId>`
+- **Timeline scrubber + stepper** — horizontal slider proportional to event index; `←`/`→` step one event, `Home`/`End` jump to start/end (buttons too)
+- **As-of-t pane** — cumulative chat transcript rendered as of the current step: user/assistant bubbles plus collapsed thinking blocks; newest text appears as the stepper crosses its event
+- **Current-step detail card** — tool calls show args (IN) and result (OUT) previews, expandable inline; exitCode badge green (0) / red (non-zero) / gray status word for non-process tools from persisted `toolResult.details`; unpaired calls honestly show "no result recorded"
+- **Load full output** — on-demand single GET to `/api/oc/sessions/:sessionId/events/:line` replaces truncated previews with full bodies; cached per line (LRU cap 50)
+- **Virtualized event rail** — fixed-row-height windowed renderer: only visible rows (+overscan) exist in the DOM regardless of transcript size; chat pane renders a bounded 60-message tail
+
+**Graceful degradation:** missing transcript → named empty state; API errors → error state with retry; crash-truncated transcripts → amber banner (`partial`); over-size-cap files → banner (`truncated`); sessions beyond the client guardrail stop at 20,000 events with a banner. Read-only: replay emits zero non-GET requests.
+
+**API endpoints used:**
+- `GET /api/oc/sessions/:sessionId/events?agent=&afterLine=&limit=` — cursor-paginated normalized events
+- `GET /api/oc/sessions/:sessionId/events/:line?agent=` — full-fidelity single event
+- `GET /api/oc/agents`, `GET /api/oc/sessions` — pickers
 
 ### Bing Webmaster
 

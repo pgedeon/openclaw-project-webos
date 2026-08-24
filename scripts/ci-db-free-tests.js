@@ -51,6 +51,7 @@ const INCLUDED = [
   'test-service-requests-api.js',
   'test-session-jsonl-reader.js',
   'test-session-routes.js',
+  'test-session-replay-view.js',
   'test-settings-routes.js',
   'test-settings.js',
   'test-space-routes.js',

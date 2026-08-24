@@ -133,6 +133,10 @@ const appIcon = {
     <polyline points="4 17 10 11 4 5" />
     <line x1="12" y1="19" x2="20" y2="19" />
   `),
+  rewind: iconTemplate(`
+    <path d="m11 18-6-6 6-6" />
+    <path d="m19 18-6-6 6-6" />
+  `),
 };
 
 export const APP_CATEGORY_ORDER = ['Work', 'Operations', 'Integration', 'Admin'];
@@ -187,6 +191,16 @@ export const APP_REGISTRY = Object.freeze([
     category: 'Work',
     defaultWidth: 1120,
     defaultHeight: 740,
+  },
+  {
+    id: 'session-replay',
+    label: 'Session Replay',
+    icon: appIcon.rewind,
+    url: '/?view=session-replay',
+    viewModule: './native-views/session-replay-view.mjs',
+    category: 'Work',
+    defaultWidth: 1000,
+    defaultHeight: 700,
   },
   {
     id: 'requests',
