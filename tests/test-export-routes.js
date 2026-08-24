@@ -159,9 +159,26 @@ async function run() {
   }
 
   const exportPool = createExportPool();
+  // Mirrors lib/settings-store.js getAll() shape: category → key → { value, ...schema }.
+  // Hotfix R1: password-type and env-source keys must NOT appear in the export;
+  // config-source keys must survive verbatim.
   const settingsStore = {
     getAll() {
-      return { theme: 'dark', density: 'compact' };
+      return {
+        general: {
+          DASHBOARD_AUTH_TOKEN: { value: 'hunter2', type: 'password', default: '', source: 'env', category: 'general', label: 'Auth Token', hotReload: false },
+          REQUIRE_AUTH: { value: true, type: 'toggle', default: true, source: 'env', category: 'general', label: 'Require Authentication', hotReload: false },
+        },
+        database: {
+          POSTGRES_PASSWORD: { value: 'sk-live-secret-pg', type: 'password', default: 'postgres', source: 'env', category: 'database', label: 'Password', hotReload: false },
+        },
+        integrations: {
+          BING_WEBMASTER_API_KEY: { value: 'bing-key-123', type: 'password', default: '', source: 'env', category: 'integrations', label: 'Bing Webmaster API Key', hotReload: true },
+        },
+        appearance: {
+          theme: { value: 'dark', type: 'select', options: ['dark', 'light', 'system'], default: 'system', source: 'config', category: 'appearance', label: 'Theme', hotReload: true },
+        },
+      };
     },
   };
   const exportRouter = new Router();
@@ -175,7 +192,19 @@ async function run() {
   assert.deepStrictEqual(exportSuccess.payload.tasks, [{ id: 'task-1', title: 'Export routes' }]);
   assert.deepStrictEqual(exportSuccess.payload.workflows, [{ id: 'workflow-1', name: 'Default' }]);
   assert.deepStrictEqual(exportSuccess.payload.auditLog, [{ id: 'audit-1', action: 'created' }]);
-  assert.deepStrictEqual(exportSuccess.payload.settings, { theme: 'dark', density: 'compact' });
+  assert.deepStrictEqual(exportSuccess.payload.settings, {
+    appearance: {
+      theme: { value: 'dark', type: 'select', options: ['dark', 'light', 'system'], default: 'system', source: 'config', category: 'appearance', label: 'Theme', hotReload: true },
+    },
+  });
+  const exportedBundleJson = JSON.stringify(exportSuccess.payload);
+  assert.ok(!exportedBundleJson.includes('hunter2'), 'password-type DASHBOARD_AUTH_TOKEN value must not ship in export');
+  assert.ok(!exportedBundleJson.includes('sk-live-secret-pg'), 'password-type POSTGRES_PASSWORD value must not ship in export');
+  assert.ok(!exportedBundleJson.includes('bing-key-123'), 'password-type BING_WEBMASTER_API_KEY value must not ship in export');
+  assert.ok(!exportedBundleJson.includes('DASHBOARD_AUTH_TOKEN'), 'password-type keys must be structurally absent from export');
+  assert.ok(!exportedBundleJson.includes('POSTGRES_PASSWORD'), 'password-type keys must be structurally absent from export');
+  assert.ok(!exportedBundleJson.includes('BING_WEBMASTER_API_KEY'), 'password-type keys must be structurally absent from export');
+  assert.ok(!exportedBundleJson.includes('REQUIRE_AUTH'), 'non-password env-source keys must also stay out (config-source only)');
   assert.deepStrictEqual(exportPool.calls, [
     'SELECT * FROM projects ORDER BY created_at',
     'SELECT * FROM tasks ORDER BY created_at',
@@ -200,6 +229,18 @@ async function run() {
   const exportWithoutSettings = await dispatch(throwingSettingsRouter, 'GET', '/api/export', createContext());
   assert.strictEqual(exportWithoutSettings.status, 200);
   assert.deepStrictEqual(exportWithoutSettings.payload.settings, {});
+
+  // Flat key→value getAll() output (no schema provenance): secret-looking keys are
+  // dropped by name, everything else passes through.
+  const flatSettingsRouter = new Router();
+  registerExportRoutes(flatSettingsRouter, createExportPool(), {
+    getAll() {
+      return { theme: 'dark', density: 'compact', GATEWAY_TOKEN: 'tok_live_9', POSTGRES_PASSWORD: 'pw_flat' };
+    },
+  });
+  const exportFlatSettings = await dispatch(flatSettingsRouter, 'GET', '/api/export', createContext());
+  assert.strictEqual(exportFlatSettings.status, 200);
+  assert.deepStrictEqual(exportFlatSettings.payload.settings, { theme: 'dark', density: 'compact' });
 
   const missingExportDb = await dispatch(router, 'GET', '/api/export', createContext());
   assert.strictEqual(missingExportDb.status, 503);

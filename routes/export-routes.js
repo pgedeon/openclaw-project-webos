@@ -5,6 +5,46 @@
  * as a JSON bundle and re-importing it.
  */
 
+// Hotfix R1 (docs/briefs/snapshot-restore.md §5 R1 / policy §5.1): GET /api/export
+// must never serialize secrets. Settings section carries config-source keys ONLY;
+// every env-source key (incl. all password-type values) is structurally absent,
+// and password-type is dropped defensively even if a future schema marks it
+// config-sourced. Entries without schema metadata (flat key→value maps) fall back
+// to a secret-looking-name deny filter. Mirrors the lib/snapshot-redact.js
+// redactSettings() sketch; standalone until the snapshot build lands.
+const SECRET_SETTING_NAME = /pass(word|wd)|secret|token|api[_-]?key|credential|auth/i;
+
+function redactSettingsForExport(settings) {
+  const source = settings || {};
+  const looksGrouped = Object.values(source).some(
+    (v) => v && typeof v === 'object' && !Array.isArray(v)
+  );
+
+  const out = {};
+  if (!looksGrouped) {
+    // Flat map without provenance: keep only keys that don't look secret-bearing.
+    for (const [key, value] of Object.entries(source)) {
+      if (!SECRET_SETTING_NAME.test(key)) out[key] = value;
+    }
+    return out;
+  }
+
+  for (const [category, entries] of Object.entries(source)) {
+    if (!entries || typeof entries !== 'object' || Array.isArray(entries)) continue;
+    const kept = {};
+    for (const [key, entry] of Object.entries(entries)) {
+      if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+        if (entry.type === 'password') continue; // §5: never serialized, no placeholders
+        if (typeof entry.source === 'string' && entry.source !== 'config') continue;
+      }
+      if (SECRET_SETTING_NAME.test(key)) continue; // deny-filter fallback
+      kept[key] = entry;
+    }
+    if (Object.keys(kept).length > 0) out[category] = kept;
+  }
+  return out;
+}
+
 function registerExportRoutes(router, deps, settingsStore) {
   const getPool = () => deps?.pool || deps;
   const _ensurePool = (res, ctx) => { if (!getPool()) { ctx.sendJSON(res, 503, { error: 'Database not available (running in JSON snapshot mode)' }); return false; } return true; };
@@ -22,7 +62,7 @@ function registerExportRoutes(router, deps, settingsStore) {
       ]);
 
       let settings = {};
-      try { settings = settingsStore?.getAll?.() || {}; } catch {}
+      try { settings = redactSettingsForExport(settingsStore?.getAll?.() || {}); } catch {}
 
       const bundle = {
         version: 1,
