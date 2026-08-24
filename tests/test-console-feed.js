@@ -156,9 +156,8 @@ check('feed reports enabled=false and attach() returns false without config', as
     logger: { log() {}, warn() {}, error() {} },
   });
   assert.strictEqual(instance.config.enabled, false);
-  const attached = await Promise.resolve(instance.attach(
-    'agent:main:none', () => {},
-  ).catch(() => false));
+  const mockRes = { write() {}, on() {}, end() {} };
+  const attached = instance.attach('agent:main:none', mockRes);
   assert.strictEqual(attached, false);
 });
 
