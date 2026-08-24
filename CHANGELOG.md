@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Dashboard staging slot live on the LAN dev machine (DEPLOY-POLICY.md Amendment 10 inventory row `openclaw-dashboard`): http://192.168.0.81:8120/ — webroot `~/www/staging/openclaw-dashboard/`, launcher `~/openclaw-dashboard-staging-server.js` (loads webroot `.env`, then `task-server.js`), per-minute keepalive cron, `STORAGE_TYPE=json_snapshot` (health reports `storage_type: json_snapshot`), bearer-token auth verified (`401` unauthenticated on `/api/tasks`), `X-Robots-Tag: noindex, nofollow` on all responses. One-command redeploy: `scripts/dashboard-staging-deploy.sh` (rsync → env check → prod-deps install → restart → health verify).
+
 ### Changed
 - Codified current auth as single-operator bearer-token mode and exposed deferred full-auth policy metadata from `/api/auth/self`.
 
