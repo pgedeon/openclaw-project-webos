@@ -15,9 +15,10 @@ A database-first dispatcher that runs as a background process alongside `task-se
 1. **Poll cycle** (every 30s): Query `workflow_runs` for status=`queued` runs
 2. **Routing lookup:** Join with `workflow_agent_routing` to find the target agent
 3. **Concurrency check:** Compare active runs per `workflow_type` against `max_concurrent`
-4. **Atomic dispatch:** Mark run as `dispatched` + assign agent in a single SQL UPDATE
-5. **Stale recovery:** Detect dispatched runs that never got claimed (after `staleDispatchMs`)
-6. **Agent notification:** Use `openclaw system-event` to notify the target agent
+4. **Budget enforcement:** Evaluate each candidate against ACTIVE budgets covering its scope chain (see [Budget Enforcement](#budget-enforcement-slice-2))
+5. **Atomic dispatch:** Mark run as `dispatched` + assign agent in a single SQL UPDATE
+6. **Stale recovery:** Detect dispatched runs that never got claimed (after `staleDispatchMs`)
+7. **Agent notification:** Use `openclaw system-event` to notify the target agent
 
 ### Configuration
 
@@ -74,12 +75,48 @@ The dispatcher handles two types of stale runs:
 
 Stale runs that exceed `maxDispatchRetries` are marked as `failed` with an error message.
 
+A stale-dispatch retry is a fresh dispatch attempt: it passes through the same budget gate and never tunnels past a breached budget (the retries-exhausted timeout still fires — it ends a run, it does not start one).
+
+### Budget Enforcement (Slice 2)
+
+**Source:** `lib/budget-enforcement.js` (gate) hooked inside `gateway-workflow-dispatcher-v2.js`
+
+The dispatcher enforces ACTIVE budgets from migration 023 (`budgets` table, managed via `GET/POST/PATCH /api/budgets`) at dispatch time. Design brief: `docs/briefs/budget-ledger.md` §3.
+
+**Hook points**
+
+| Hook | Behavior on breach |
+|------|--------------------|
+| `dispatchQueuedRuns()` — between the `dispatchCandidates` SELECT and `markDispatched` | per-candidate verdict (below) |
+| `retryStaleDispatchedRuns()` — before `refreshDispatched` | pause/hard_stop skip the retry this tick |
+
+**Scope chain.** Each candidate is evaluated against every ACTIVE budget covering it, in specificity order: `agent` (routed agent id) → `department` (via `agent_profiles.department_id`) → `project` (= `workflow_type`) → `fleet`. When several covering budgets are breached at once, the **most restrictive action wins**: `hard_stop` > `pause_new_runs` > `warn`.
+
+**Actions on breach**
+
+| Verdict | Queued candidate | In-flight runs | Audit |
+|---------|------------------|----------------|-------|
+| `warn` | dispatches normally | untouched | one `warned` event per budget+period |
+| `pause_new_runs` | held in `queued`, no dispatch attempt marked | run to completion | one `paused` event per budget+period |
+| `hard_stop` | cancelled via the status-guarded cancel path (`queued → cancelled`) | bulk-cancelled by a status-guarded UPDATE limited to `status IN ('dispatched','claimed','running')`; completed runs untouched; `last_error = "Budget hard stop: <name> (<period_key>)"` | one `hard_stopped` event with `cancelled_run_ids` in `detail` |
+
+**Cost & staleness.** Active budgets + department memberships load once per cache TTL (= `pollIntervalMs`, 30 s default); spend derives from the migration-022 `workflow_runs` columns with one aggregate query per (scope-hit, period), cached for the same TTL — no N+1s. Spend crossing a cap is enforced at most one tick (≈30 s) later.
+
+**Un-pause is derived.** There is no stored pause flag: period rollover, a cap raise (`PATCH /api/budgets/:id`), or deactivation naturally resumes dispatch on the next tick because evaluation recomputes spend from the ledger each time.
+
+**Idempotency.** Every enforcement event goes through `INSERT … ON CONFLICT (budget_id, period_key, event_kind) DO NOTHING` (`UNIQUE` latch from migration 023), so repeated ticks never duplicate an event. When prior-period events exist, the first evaluation in a new period writes a lazy `recovered` rollover marker before new events, keeping the audit chain unbroken without a cron job.
+
+**Degradation.** Without PostgreSQL, with migration 023 unapplied, or on any evaluation error, the gate fails OPEN: enforcement OFF, dispatch behavior byte-identical to pre-slice-2. Zero active budgets is equally inert (only the cached budgets-list query is added).
+
+**Tick visibility.** `lastTickSummary.budgetEnforcement` (and `GET /api/workflow-runs/dispatcher/stats` → `last_tick_summary`) carries `{ held, stopped, warned }` counts for the last dispatch phase.
+
 ### SQL Queries
 
 The dispatcher uses raw SQL for performance and atomicity:
 
 - **`dispatchCandidates`**: CTE query joining runs with routing config, filtering by concurrency limits
 - **`markDispatched`**: Atomic UPDATE setting status + agent + timestamp
+- **`cancelQueuedForBudgetStop`**: Status-guarded queued→cancelled transition used by hard_stop enforcement
 - **`staleDispatched`**: Find dispatched runs older than threshold with no claim
 - **`refreshDispatched`**: Re-dispatch a stale run to its agent
 - **`markStaleClaimFailed`**: Mark a stale claimed run for re-dispatch

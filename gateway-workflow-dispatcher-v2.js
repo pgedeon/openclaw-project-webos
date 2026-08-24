@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const { execSync } = require('child_process');
+const { createBudgetEnforcement } = require('./lib/budget-enforcement');
 
 const DEFAULT_OPTIONS = Object.freeze({
   pollIntervalMs: 30_000,
@@ -235,6 +236,18 @@ const SQL = {
       AND ($2::text IS NULL OR claim_session_id = $2)
     RETURNING *
   `,
+  cancelQueuedForBudgetStop: `
+    UPDATE workflow_runs
+    SET status = 'cancelled',
+        finished_at = NOW(),
+        last_error = $2,
+        last_error_at = NOW(),
+        gateway_session_active = FALSE,
+        updated_at = NOW()
+    WHERE id = $1
+      AND status = 'queued'
+    RETURNING id
+  `,
   stats: `
     SELECT
       COUNT(*) FILTER (WHERE status = 'queued')::int AS queued_count,
@@ -467,6 +480,9 @@ class GatewayWorkflowDispatcherV2 {
     this.lastTickAt = null;
     this.lastTickError = null;
     this.lastTickSummary = null;
+    // Budget enforcement gate (slice 2) — created lazily on first candidate.
+    this.budgetGate = null;
+    this.lastBudgetEnforcement = { held: 0, stopped: 0, warned: 0 };
   }
 
   start() {
@@ -514,6 +530,7 @@ class GatewayWorkflowDispatcherV2 {
         retriedCount: retryResult.retried.length,
         releasedCount: released.length,
         timedOutCount: retryResult.timedOut.length + timedOutLongRunning.length,
+        budgetEnforcement: this.lastBudgetEnforcement,
         dispatched,
         retried: retryResult.retried,
         released,
@@ -565,11 +582,97 @@ class GatewayWorkflowDispatcherV2 {
     }
   }
 
+  /**
+   * Budget enforcement gate (slice 2, docs/briefs/budget-ledger.md §3).
+   * Lazily builds lib/budget-enforcement over this pool with a cache TTL of
+   * one poll interval, so evaluation staleness is bounded by one tick.
+   */
+  getBudgetGate() {
+    if (!this.budgetGate) {
+      if (!this.pool || typeof this.pool.query !== 'function') return null;
+      this.budgetGate = createBudgetEnforcement(this.pool, {
+        log: this.log,
+        ttlMs: this.options.pollIntervalMs
+      });
+    }
+    return this.budgetGate;
+  }
+
+  /**
+   * Evaluate a run against ACTIVE budgets covering its scope chain and record
+   * the idempotent budget_events rows for any breach. Returns the verdict, or
+   * null when enforcement is OFF (no pool / evaluation failed — fail open so
+   * dispatch behavior is unchanged; brief degradation matrix).
+   */
+  async enforceBudgets(runRef) {
+    const gate = this.getBudgetGate();
+    if (!gate) return null;
+    try {
+      const verdict = await gate.checkRun(runRef);
+      if (!verdict || !verdict.evaluated || verdict.action === 'ok') return verdict;
+      const runIds = runRef && runRef.runId ? [runRef.runId] : [];
+      if (verdict.action === 'hard_stop') {
+        await gate.hardStopInFlight(verdict.breached);
+      }
+      await gate.recordBreachEvents(verdict.breached, verdict.action, { run_ids: runIds });
+      return verdict;
+    } catch (error) {
+      this.log.error('[DispatcherV2] Budget enforcement error (failing open):', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Cancel one queued candidate under a hard_stop breach via the existing
+   * status-guarded cancel path (queued → cancelled only). The in-flight bulk
+   * cancel for the same breach already ran inside enforceBudgets().
+   */
+  async cancelQueuedCandidateForBudgetStop(candidate, verdict) {
+    const stopEntry = ((verdict && verdict.breached) || []).find((b) => b.decision === 'hard_stop');
+    const reason = stopEntry
+      ? `Budget hard stop: ${stopEntry.budget.name} (${stopEntry.key})`
+      : 'Budget hard stop';
+    try {
+      const result = await this.pool.query(SQL.cancelQueuedForBudgetStop, [candidate.id, reason]);
+      if (result.rows[0]) {
+        this.log.log('[DispatcherV2] Budget hard stop: cancelled queued run', candidate.id);
+      }
+    } catch (error) {
+      this.log.error('[DispatcherV2] Budget hard stop cancel failed for run', candidate.id, ':', error.message);
+    }
+  }
+
   async dispatchQueuedRuns(limit = this.options.batchSize) {
     const result = await this.pool.query(SQL.dispatchCandidates, [clampLimit(limit, this.options.batchSize)]);
     const dispatched = [];
+    const budgetStats = { held: 0, stopped: 0, warned: 0 };
 
     for (const candidate of result.rows) {
+      // Budget enforcement gate (slice 2): sits between dispatchCandidates
+      // SELECT and markDispatched (brief §3.1). null/'ok'/'warn' → dispatch;
+      // pause_new_runs holds the row queued; hard_stop cancels it.
+      const verdict = await this.enforceBudgets({
+        runId: candidate.id,
+        agentId: candidate.routed_agent_id || candidate.owner_agent_id || null,
+        workflowType: candidate.workflow_type
+      });
+
+      if (verdict && verdict.action === 'pause_new_runs') {
+        // Held, not failed — queue drains in order when the window resets,
+        // the cap is raised, or the budget is deactivated (derived state,
+        // brief §2.4). No dispatch attempt is marked.
+        budgetStats.held += 1;
+        continue;
+      }
+
+      if (verdict && verdict.action === 'hard_stop') {
+        await this.cancelQueuedCandidateForBudgetStop(candidate, verdict);
+        budgetStats.stopped += 1;
+        continue;
+      }
+
+      if (verdict && verdict.action === 'warn') budgetStats.warned += 1;
+
       const dispatchResult = await this.pool.query(SQL.markDispatched, [candidate.id, candidate.routed_agent_id]);
       if (dispatchResult.rows[0]) {
         const dispatchedRun = normalizeRunRow({
@@ -586,6 +689,7 @@ class GatewayWorkflowDispatcherV2 {
       }
     }
 
+    this.lastBudgetEnforcement = budgetStats;
     return dispatched;
   }
 
@@ -622,6 +726,19 @@ class GatewayWorkflowDispatcherV2 {
             timeout_minutes: normalized.timeoutMinutes
           }));
         }
+        continue;
+      }
+
+      // A stale-dispatch retry is a fresh dispatch attempt: it must not
+      // tunnel past a breached budget (brief §3.1). On hard_stop the same
+      // enforceBudgets call already bulk-cancelled in-flight rows in scope
+      // (status 'dispatched' included), so this row is cancelled too.
+      const budgetVerdict = await this.enforceBudgets({
+        runId: normalized.id,
+        agentId: normalized.targetAgentId || normalized.ownerAgentId || null,
+        workflowType: normalized.workflowType
+      });
+      if (budgetVerdict && (budgetVerdict.action === 'pause_new_runs' || budgetVerdict.action === 'hard_stop')) {
         continue;
       }
 
