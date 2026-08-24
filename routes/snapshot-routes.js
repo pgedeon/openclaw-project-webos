@@ -346,6 +346,47 @@ async function applyReplaceDeletes(pool, table, rows, pk) {
   return { deleted };
 }
 
+/**
+ * Create one full-state snapshot artifact. Shared by POST /api/snapshots and
+ * the snapshot.create action executor (routes/action-routes.js — MCP slice 2
+ * receipt-minted mutations). Returns {status, body} using the route's exact
+ * response shapes; never throws.
+ *
+ * §5 secrets policy: structural exclusion first, deny-regex second — BOTH
+ * before buildManifest so content_hash describes the shipped bytes.
+ */
+async function createSnapshotArtifact({ pool, settingsStore = null, snapshotsDir, name }) {
+  try {
+    if (!pool || typeof pool.query !== 'function') {
+      return { status: 503, body: { available: false, reason: 'no_database' } };
+    }
+    // Serialize all tiers in one pass (§3.1 step 2), deterministic order.
+    const tables = {};
+    for (const table of TABLE_ORDER) {
+      const result = await pool.query(`SELECT * FROM ${table}`);
+      tables[table] = result.rows || [];
+    }
+    const migrationsApplied = await readTargetMigrations(pool);
+
+    let settings = {};
+    try {
+      settings = redactDeep(redactSettings(settingsStore && settingsStore.getAll ? settingsStore.getAll() : {}));
+    } catch { /* settings unavailable → empty section, never fail the capture */ }
+    for (const table of Object.keys(tables)) {
+      tables[table] = redactDeep(tables[table]);
+    }
+
+    const manifest = buildManifest(tables, settings, migrationsApplied, name ? { name } : {});
+    const artifact = { manifest, tables, settings };
+
+    writeArtifactAtomic(snapshotsDir, manifest.snapshot_id, JSON.stringify(artifact, null, 2));
+
+    return { status: 201, body: { snapshot_id: manifest.snapshot_id, manifest } };
+  } catch (err) {
+    return { status: 500, body: { error: err.message } };
+  }
+}
+
 function registerSnapshotRoutes(router, options = {}) {
   const snapshotsDir = options.snapshotsDir
     || path.join(__dirname, '..', 'storage', 'snapshots');
@@ -368,50 +409,24 @@ function registerSnapshotRoutes(router, options = {}) {
 
   // ── POST /api/snapshots — create snapshot ────────────────────────
   router.add('POST', '/api/snapshots', async (req, res, ctx) => {
-    try {
-      const pool = getPool(ctx);
-      if (!pool) {
-        return ctx.sendJSON(res, 503, { available: false, reason: 'no_database' });
-      }
-
-      const parsed = await readJsonBody(req, restoreMaxBytes());
-      if (parsed.tooLarge) {
-        return ctx.sendJSON(res, 413, { error: 'payload_too_large' });
-      }
-      if (!parsed.ok) {
-        return ctx.sendJSON(res, 400, { error: 'invalid_json' });
-      }
-      const name = typeof parsed.body.name === 'string' && parsed.body.name.trim()
-        ? parsed.body.name.trim().slice(0, 120)
-        : undefined;
-
-      // Serialize all tiers in one pass (§3.1 step 2), deterministic order.
-      const tables = {};
-      for (const table of TABLE_ORDER) {
-        const result = await pool.query(`SELECT * FROM ${table}`);
-        tables[table] = result.rows || [];
-      }
-      const migrationsApplied = await readTargetMigrations(pool);
-
-      // §5 secrets policy: structural exclusion first, deny-regex second —
-      // BOTH before buildManifest so content_hash describes the shipped bytes.
-      let settings = {};
-      try {
-        settings = redactDeep(redactSettings(settingsStore && settingsStore.getAll ? settingsStore.getAll() : {}));
-      } catch { /* settings unavailable → empty section, never fail the capture */ }
-      for (const table of Object.keys(tables)) {
-        tables[table] = redactDeep(tables[table]);
-      }
-
-      const manifest = buildManifest(tables, settings, migrationsApplied, name ? { name } : {});
-      const artifact = { manifest, tables, settings };
-
-      writeArtifactAtomic(snapshotsDir, manifest.snapshot_id, JSON.stringify(artifact, null, 2));
-
-      return ctx.sendJSON(res, 201, { snapshot_id: manifest.snapshot_id, manifest });
-    } catch (err) {
-      return ctx.sendJSON(res, 500, { error: err.message });
+    const pool = getPool(ctx);
+    if (!pool) {
+      return ctx.sendJSON(res, 503, { available: false, reason: 'no_database' });
     }
+
+    const parsed = await readJsonBody(req, restoreMaxBytes());
+    if (parsed.tooLarge) {
+      return ctx.sendJSON(res, 413, { error: 'payload_too_large' });
+    }
+    if (!parsed.ok) {
+      return ctx.sendJSON(res, 400, { error: 'invalid_json' });
+    }
+    const name = typeof parsed.body.name === 'string' && parsed.body.name.trim()
+      ? parsed.body.name.trim().slice(0, 120)
+      : undefined;
+
+    const out = await createSnapshotArtifact({ pool, settingsStore, snapshotsDir, name });
+    return ctx.sendJSON(res, out.status, out.body);
   });
 
   // ── GET /api/snapshots — disk registry (works without PostgreSQL, AC7) ──
@@ -726,6 +741,7 @@ function registerSnapshotRoutes(router, options = {}) {
 
 module.exports = {
   registerSnapshotRoutes,
+  createSnapshotArtifact,
   TABLE_ORDER,
   REVERSE_TABLE_ORDER,
   PK_BY_TABLE,

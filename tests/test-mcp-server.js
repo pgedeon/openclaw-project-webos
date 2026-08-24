@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 /**
- * Focused tests for lib/mcp-server.js (slice 1 — protocol core + 10 read-only
- * tools, docs/briefs/mcp-exposure.md).
+ * Focused tests for lib/mcp-server.js (slice 2 — full 13-tool catalog; the
+ * mutating trio behind OPENCLAW_MCP_MUTATIONS=1, receipt-minted via
+ * POST /api/actions/execute, docs/briefs/mcp-exposure.md).
  * Run: node tests/test-mcp-server.js
  *
  * DB-free: all backend calls go through an injected fetch stub. Covers the
- * slice-1 ACs: registry shape (AC1), validation-before-fetch (AC2), dispatch
- * golden paths incl. Authorization header (AC3), structured business failures
- * (AC4), protocol conformance + malformed-line survival (AC5/AC9),
- * allSettled composition (AC8), stdio framing round-trip via the real entry
- * process, and no-secret-leakage (AC10).
+ * slice-1 ACs (registry shape AC1, validation-before-fetch AC2, dispatch
+ * golden paths incl. Authorization header AC3, structured business failures
+ * AC4, protocol conformance + malformed-line survival AC5/AC9, allSettled
+ * composition AC8, stdio framing round-trip via the real entry process,
+ * no-secret-leakage AC10) plus slice 2: flag-off hides mutations (list AND
+ * call — hidden-not-refused invariant), flag-on registers the trio (AC7),
+ * and every mutation call mints a receipt envelope through the actions
+ * pipeline with honest 503/unavailable mapping.
  */
 
 const assert = require('assert');
@@ -75,6 +79,10 @@ function makeServer(fetchImpl) {
   return createMcpServer({ env: { DASHBOARD_AUTH_TOKEN: TOKEN }, fetchImpl });
 }
 
+function makeMutatingServer(fetchImpl) {
+  return createMcpServer({ env: { DASHBOARD_AUTH_TOKEN: TOKEN, OPENCLAW_MCP_MUTATIONS: '1' }, fetchImpl });
+}
+
 async function callTool(server, name, args, id) {
   const res = await handleMessage(server, {
     jsonrpc: '2.0', id: id || 1, method: 'tools/call', params: { name, arguments: args },
@@ -88,14 +96,16 @@ function contentOf(frame) {
 
 // ── Registry shape (AC1 slice-1 profile) ─────────────────────────────────
 
-run('registry: exactly the 10 read-only tools with correct names', () => {
-  const expected = [
+run('registry: 13 tools — 10 read-only + 3 mutating with correct names', () => {
+  const expectedRead = [
     'list_tasks', 'get_task', 'get_costs_summary', 'get_cost_rollup',
     'list_budgets', 'get_budget_ledger', 'list_snapshots', 'get_fleet_status',
     'get_mission_control_summary', 'search_audit',
   ];
-  assert.strictEqual(TOOLS.length, 10);
-  assert.deepStrictEqual(TOOLS.map((t) => t.name).sort(), expected.slice().sort());
+  const expectedMutating = ['create_task', 'update_task', 'create_snapshot'];
+  assert.strictEqual(TOOLS.length, 13);
+  assert.deepStrictEqual(TOOLS.filter((t) => t.class === 'read').map((t) => t.name).sort(), expectedRead.slice().sort());
+  assert.deepStrictEqual(TOOLS.filter((t) => t.class === 'mutating').map((t) => t.name).sort(), expectedMutating.slice().sort());
 });
 
 run('registry: every tool has description + parseable JSON Schema inputSchema', () => {
@@ -107,9 +117,15 @@ run('registry: every tool has description + parseable JSON Schema inputSchema', 
   }
 });
 
-run('registry: no mutating tools registered in slice 1', () => {
-  const mutating = ['create_task', 'update_task', 'create_snapshot'];
-  assert.strictEqual(TOOLS.filter((t) => mutating.includes(t.name)).length, 0);
+run('registry: mutating trio tagged class=mutating with receipt-carrying descriptions', () => {
+  for (const name of ['create_task', 'update_task', 'create_snapshot']) {
+    const tool = TOOLS.find((t) => t.name === name);
+    assert.ok(tool, `${name} registered`);
+    assert.strictEqual(tool.class, 'mutating');
+    assert.ok(tool.description.includes('receipt'), `${name} description mentions receipts`);
+  }
+  assert.ok(TOOLS.find((t) => t.name === 'create_task').inputSchema.required.includes('project_id'));
+  assert.ok(TOOLS.find((t) => t.name === 'update_task').inputSchema.required.includes('patch'));
 });
 
 // ── Validation before fetch (AC2) ────────────────────────────────────────
@@ -409,22 +425,170 @@ run('invalid request frames → -32600', async () => {
   assert.strictEqual(blank, null, 'blank lines produce no output');
 });
 
-run('tools/list returns exactly the registered tools over the wire', async () => {
+run('tools/list flag-off: exactly the 10 read-only tools over the wire', async () => {
   const server = makeServer(makeFetch({}));
   const res = await handleMessage(server, { jsonrpc: '2.0', id: 3, method: 'tools/list' });
   assert.strictEqual(res.result.tools.length, 10);
   for (const tool of res.result.tools) {
     assert.ok(tool.name && tool.description && tool.inputSchema);
   }
+  const names = res.result.tools.map((t) => t.name);
+  for (const m of ['create_task', 'update_task', 'create_snapshot']) {
+    assert.ok(!names.includes(m), `${m} hidden from tools/list without the flag`);
+  }
 });
 
-run('unknown tools/call name → -32602 (hidden-not-refused surface)', async () => {
+run('tools/list flag-on: all 13 tools incl. the mutating trio', async () => {
+  const server = makeMutatingServer(makeFetch({}));
+  const res = await handleMessage(server, { jsonrpc: '2.0', id: 31, method: 'tools/list' });
+  assert.strictEqual(res.result.tools.length, 13);
+  const names = res.result.tools.map((t) => t.name);
+  for (const m of ['create_task', 'update_task', 'create_snapshot']) {
+    assert.ok(names.includes(m), `${m} listed with OPENCLAW_MCP_MUTATIONS=1`);
+    const tool = res.result.tools.find((t) => t.name === m);
+    assert.ok(tool.description && tool.inputSchema);
+  }
+});
+
+// ── Hidden-not-refused invariant (slice 2 core requirement) ─────────────
+
+run('flag-off: tools/call on a hidden mutation → -32601 method_not_found + ZERO fetches', async () => {
+  const fetchImpl = makeFetch({ '*': { body: {} } });
+  const server = makeServer(fetchImpl);
+  for (const name of ['create_task', 'update_task', 'create_snapshot']) {
+    const res = await handleMessage(server, {
+      jsonrpc: '2.0', id: 41, method: 'tools/call', params: { name, arguments: {} },
+    });
+    assert.strictEqual(res.error.code, -32601, `${name} answers method_not_found when hidden`);
+    assert.ok(res.error.message.includes(name));
+  }
+  assert.strictEqual(fetchImpl.calls.length, 0, 'hidden mutations never reach HTTP');
+});
+
+run('unknown tools/call name → -32602 (distinct from hidden mutations)', async () => {
   const server = makeServer(makeFetch({}));
   const res = await handleMessage(server, {
-    jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'create_task', arguments: { title: 'x', project_id: 'p' } },
+    jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'nonexistent_tool', arguments: {} },
   });
   assert.strictEqual(res.error.code, -32602);
-  assert.ok(res.error.message.includes('create_task'));
+  assert.ok(res.error.message.includes('nonexistent_tool'));
+});
+
+// ── Slice 2: validation before fetch for the mutating trio ─────────────
+
+run('validateInput: create_task requires title + project_id, optional strings enforced', () => {
+  assert.strictEqual(validateInput('create_task', {}).ok, false);
+  assert.strictEqual(validateInput('create_task', { title: 'x' }).ok, false);
+  assert.strictEqual(validateInput('create_task', { project_id: 'p' }).ok, false);
+  const ok = validateInput('create_task', { title: ' Fix login ', project_id: ' web ', due_date: '2026-09-01' });
+  assert.ok(ok.ok);
+  assert.strictEqual(ok.value.title, 'Fix login');
+  assert.strictEqual(ok.value.project_id, 'web');
+  assert.deepStrictEqual(ok.value.description, undefined);
+  assert.strictEqual(validateInput('create_task', { title: 'x', project_id: 'p', status: 7 }).ok, false);
+});
+
+run('validateInput: update_task requires task_id + non-empty patch object', () => {
+  assert.strictEqual(validateInput('update_task', {}).ok, false);
+  assert.strictEqual(validateInput('update_task', { task_id: 't1' }).ok, false);
+  assert.strictEqual(validateInput('update_task', { task_id: 't1', patch: 'status=done' }).ok, false);
+  assert.strictEqual(validateInput('update_task', { task_id: 't1', patch: [] }).ok, false);
+  assert.strictEqual(validateInput('update_task', { task_id: 't1', patch: {} }).ok, false, 'empty patch rejected');
+  const ok = validateInput('update_task', { task_id: 't1', patch: { status: 'done', owner_agent: 'coder' } });
+  assert.ok(ok.ok);
+  assert.deepStrictEqual(ok.value.patch, { status: 'done', owner_agent: 'coder' }, 'patch passes through verbatim');
+});
+
+run('validateInput: create_snapshot optional name ≤120 chars', () => {
+  assert.ok(validateInput('create_snapshot', {}).ok, 'no name → default minted at dispatch');
+  assert.strictEqual(validateInput('create_snapshot', { name: 'ok-name' }).value.name, 'ok-name');
+  assert.strictEqual(validateInput('create_snapshot', { name: '' }).ok, false);
+  assert.strictEqual(validateInput('create_snapshot', { name: 'x'.repeat(121) }).ok, false);
+});
+
+// ── Slice 2: receipt-minting dispatch golden paths (AC7 + OQ2=YES) ──────
+
+run('dispatch create_task → POST /api/actions/execute with task.create envelope', async () => {
+  const fetchImpl = makeFetch({ '/api/actions/execute': { body: { receipt: { action_id: 'a1', kind: 'task.create', outcome: 'executed' } } } });
+  const outcome = await dispatch(
+    'create_task',
+    { title: 'Ship slice 2', project_id: 'webos', description: 'mutating tools', owner_agent: 'coder' },
+    { ...DEPS, fetchImpl }
+  );
+  assert.strictEqual(outcome.isError, false);
+  assert.strictEqual(outcome.payload.receipt.kind, 'task.create');
+  assert.strictEqual(outcome.payload.receipt.outcome, 'executed');
+  assert.strictEqual(fetchImpl.calls.length, 1, 'exactly one pipeline call');
+  const call = fetchImpl.calls[0];
+  assert.ok(call.url.endsWith('/api/actions/execute'));
+  assert.strictEqual(call.options.method, 'POST');
+  assert.strictEqual(call.options.headers.Authorization, `Bearer ${TOKEN}`);
+  const envelope = JSON.parse(call.options.body);
+  assert.strictEqual(envelope.kind, 'task.create');
+  assert.strictEqual(envelope.targetId, 'webos', 'project_id rides as targetId');
+  assert.deepStrictEqual(envelope.params, { title: 'Ship slice 2', description: 'mutating tools', owner_agent: 'coder' });
+  assert.strictEqual(envelope.actor, 'openclaw');
+  assert.ok(typeof envelope.actionId === 'string' && envelope.actionId.length > 0);
+  assert.ok(!/\s/.test(envelope.actionId), 'actionId has no whitespace (latch-safe)');
+  assert.ok(envelope.actionId.length <= 200, 'actionId within registry length cap');
+});
+
+run('dispatch update_task → POST /api/actions/execute with verbatim patch', async () => {
+  const fetchImpl = makeFetch({ '/api/actions/execute': { body: { receipt: { action_id: 'a2', kind: 'task.update', outcome: 'executed' } } } });
+  const patch = { status: 'in_progress', owner_agent: 'qa-bot', notes: { nested: true } };
+  const outcome = await dispatch('update_task', { task_id: 't-42', patch }, { ...DEPS, fetchImpl });
+  assert.strictEqual(outcome.isError, false);
+  const envelope = JSON.parse(fetchImpl.calls[0].options.body);
+  assert.strictEqual(envelope.kind, 'task.update');
+  assert.strictEqual(envelope.targetId, 't-42');
+  assert.deepStrictEqual(envelope.params.patch, patch, 'validated patch object unchanged (AC7)');
+});
+
+run('dispatch create_snapshot → snapshot.create kind; default name minted client-side', async () => {
+  const fetchImpl = makeFetch({ '/api/actions/execute': { body: { receipt: { action_id: 'a3', kind: 'snapshot.create', outcome: 'executed' } } } });
+  const outcome = await dispatch('create_snapshot', {}, { ...DEPS, fetchImpl });
+  assert.strictEqual(outcome.isError, false);
+  const envelope = JSON.parse(fetchImpl.calls[0].options.body);
+  assert.strictEqual(envelope.kind, 'snapshot.create');
+  assert.match(envelope.targetId, /^snapshot-\d{8}-\d{4}$/, 'default name mirrors server convention');
+  assert.deepStrictEqual(envelope.params, {});
+
+  const named = makeFetch({ '/api/actions/execute': { body: { receipt: { action_id: 'a4' } } } });
+  await dispatch('create_snapshot', { name: 'pre-refactor' }, { ...DEPS, fetchImpl: named });
+  assert.strictEqual(JSON.parse(named.calls[0].options.body).targetId, 'pre-refactor');
+});
+
+run('mutation outcomes: 503 no_database → structured unavailable isError (honest write refusal)', async () => {
+  const fetchImpl = makeFetch({ '*': { status: 503, body: { available: false, reason: 'no_database' } } });
+  const outcome = await dispatch('create_task', { title: 'x', project_id: 'p' }, { ...DEPS, fetchImpl });
+  assert.strictEqual(outcome.isError, true);
+  assert.strictEqual(outcome.payload.error, 'unavailable');
+  assert.strictEqual(outcome.payload.reason, 'no_database');
+  assert.ok(outcome.payload.hint.includes('nothing executed'));
+});
+
+run('mutation outcomes: 404 execution_failed → not_found normal result carrying receipt', async () => {
+  const fetchImpl = makeFetch({ '*': { status: 404, body: { error: 'execution_failed', message: 'Task not found', receipt: { action_id: 'a5', outcome: 'failed' } } } });
+  const outcome = await dispatch('update_task', { task_id: 'ghost', patch: { status: 'done' } }, { ...DEPS, fetchImpl });
+  assert.strictEqual(outcome.isError, false, 'business-level miss is a normal result');
+  assert.strictEqual(outcome.payload.error, 'not_found');
+  assert.strictEqual(outcome.payload.receipt.action_id, 'a5', 'failed receipt kept alongside');
+});
+
+run('mutation outcomes: 403 rejected_governance → typed passthrough isError with receipt', async () => {
+  const body = { error: 'rejected_governance', reason: 'governance denied', receipt: { action_id: 'a6', outcome: 'rejected_governance' } };
+  const fetchImpl = makeFetch({ '*': { status: 403, body } });
+  const outcome = await dispatch('create_task', { title: 'x', project_id: 'p' }, { ...DEPS, fetchImpl });
+  assert.strictEqual(outcome.isError, true);
+  assert.strictEqual(outcome.payload.error, 'rejected_governance');
+  assert.ok(outcome.payload.receipt);
+});
+
+run('mutation outcomes: duplicate replay (200 duplicate:true) is a normal result', async () => {
+  const fetchImpl = makeFetch({ '/api/actions/execute': { body: { receipt: { action_id: 'a7', outcome: 'executed' }, duplicate: true } } });
+  const outcome = await dispatch('create_snapshot', { name: 'again' }, { ...DEPS, fetchImpl });
+  assert.strictEqual(outcome.isError, false);
+  assert.strictEqual(outcome.payload.duplicate, true);
 });
 
 // ── Handler crash containment (AC9) ──────────────────────────────────────
@@ -537,9 +701,20 @@ run('stdio framing: real mcp-server.js process survives malformed line + answers
   assert.strictEqual(lines.length, 4, 'four frames back (blank lines silent)');
   assert.strictEqual(lines[0].error.code, -32700);
   assert.strictEqual(lines[1].result.protocolVersion, PROTOCOL_VERSION);
-  assert.strictEqual(lines[2].result.tools.length, 10);
+  assert.strictEqual(lines[2].result.tools.length, 10, 'flag-off stdio profile is read-only');
   assert.deepStrictEqual(lines[3].result, {});
   assert.ok(!res.stdout.includes(TOKEN), 'no token on stdout');
+
+  // Flag-on spawn: the trio appears over real stdio too.
+  const resOn = spawnSync(process.execPath, [path.join(root, 'mcp-server.js')], {
+    input,
+    encoding: 'utf8',
+    timeout: 15000,
+    env: { ...process.env, DASHBOARD_AUTH_TOKEN: TOKEN, OPENCLAW_MCP_MUTATIONS: '1' },
+  });
+  assert.strictEqual(resOn.status, 0, `flag-on exit 0 (stderr: ${resOn.stderr})`);
+  const linesOn = resOn.stdout.trim().split('\n').map((l) => JSON.parse(l));
+  assert.strictEqual(linesOn[2].result.tools.length, 13, 'flag-on stdio profile lists the trio');
 });
 
 // All run() calls above register async assertions; the process stays alive

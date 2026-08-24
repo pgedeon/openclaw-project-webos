@@ -8,10 +8,10 @@
 
 ## Status
 
-**Slice 1 shipped** — protocol core + the 10 read-only tools below.
-Slice 2 (pending) adds the mutating trio (`create_task`, `update_task`,
-`create_snapshot`) behind `OPENCLAW_MCP_MUTATIONS=1`; until then no write
-tools exist at all.
+**Slice 2 shipped** — the full 13-tool catalog is live: the 10 read-only tools
+below plus the mutating trio (`create_task`, `update_task`, `create_snapshot`)
+behind `OPENCLAW_MCP_MUTATIONS=1`. Without the flag the server stays strictly
+read-only.
 
 ## Transport & process model
 
@@ -33,7 +33,7 @@ Same bearer token as everything else, single credential:
 |---|---|
 | `DASHBOARD_AUTH_TOKEN` | Operator's task-server bearer token. Attached as `Authorization: Bearer …` to every loopback call. Never minted, proxied, logged, or echoed into results/errors. |
 | `TASK_SERVER_URL` | Optional; default `http://127.0.0.1:3876`. |
-| `OPENCLAW_MCP_MUTATIONS` | Reserved for slice 2 (`1` enables the mutating trio). Inert today. |
+| `OPENCLAW_MCP_MUTATIONS` | Set to `1` to register the mutating trio. Off (default) = read-only profile. See [Mutating tools](#mutating-tools--the-receipts-audit-trail). |
 
 Prerequisite: **the task-server must be running locally.** If it is down,
 tools return structured `isError` results (`task_server_unreachable`) instead
@@ -46,6 +46,9 @@ Failure honesty contract:
 - Degradation bodies pass through verbatim, e.g. costs without PostgreSQL →
   `{available:false, reason:"no_database"}`.
 - Unreachable / `401` / `403` / `5xx` → `isError:true` structured results.
+- Mutations refused by storage (503) → `isError:true`
+  `{error:"unavailable", reason, hint:"…nothing executed"}` — an honest
+  write-refusal mapping, never a crash and never a half-executed write.
 
 ## Client registration
 
@@ -67,10 +70,82 @@ OpenClaw MCP client config (same shape for Claude Desktop's
 }
 ```
 
+Read-only profile above. To let this client execute the mutating trio, add
+`"OPENCLAW_MCP_MUTATIONS": "1"` to the `env` object — enablement is per
+client spawn, explicit, and local to the operator's machine.
+
 The token value is the operator's own (same one the dashboard uses). The MCP
 server never mints or proxies credentials.
 
-## Tool catalog (slice 1 — all read-only)
+## Mutating tools & the receipts audit trail
+
+The mutating set is deliberately tiny — three tools, each routed through the
+**same governed write path the dashboard UI uses** (`POST
+/api/actions/execute`, the one-click-actions pipeline), NOT raw REST
+endpoints. Every agent-side mutation therefore mints a row in the
+`action_receipts` table (plus an `audit_log` mirror where a task identity
+resolves): envelope validation → audit-first refusal without database
+storage → idempotency latch on a client-minted `actionId` → fail-closed
+governance pre-check → backing executor reusing the storage layer in-process
+→ receipt outcome + audit mirror finalized in one transaction.
+
+- **Actor**: receipts are stamped `actor: 'openclaw'` — a privileged system
+  actor, since the MCP process IS the operator's agent. Non-privileged
+  actors calling the same action kinds get typed `rejected_governance`
+  receipts instead of silent writes.
+- **Idempotency**: every call mints a fresh `mcp-<ts>-<random>` actionId, so
+  retries by the agent are legitimate repeats that each get their own
+  receipt; the latch exists to collapse concurrent double-fires.
+- **Action kinds**: `task.create` (target = project_id), `task.update`
+  (target = task_id, patch passes through verbatim), `snapshot.create`
+  (target = snapshot name). These kinds are registered in
+  `lib/action-registry.js` but referenced by no UI button — the flag below
+  is the only enablement gate.
+- **Flag semantics**: with `OPENCLAW_MCP_MUTATIONS` unset or ≠ `1`, the trio
+  is ABSENT from `tools/list` AND `tools/call` on them answers JSON-RPC
+  `-32601 method_not_found` — indistinguishable from any other absent
+  method. A read-only client never sees a write affordance to refuse
+  (hidden-not-refused invariant). With `=1` they register and execute.
+
+### `create_task`
+
+```jsonc
+{ "title": "string (required)", "project_id": "string (required)",
+  "description": "string (optional)", "owner_agent": "string (optional)",
+  "status": "string (optional)", "due_date": "ISO date (optional)" }
+// → { receipt: { kind:'task.create', outcome:'executed', detail:{result:{new_task_id,…}} } }
+```
+
+### `update_task`
+
+```jsonc
+{ "task_id": "string (required)",
+  "patch": { /* field:value updates, passed through verbatim */ } }
+// → { receipt: { kind:'task.update', outcome:'executed', … } }
+```
+
+Raw PATCH semantics apply (owner reassignment included); unknown task ids
+return `{error:"not_found", receipt}` as a normal result with the failed
+receipt attached.
+
+### `create_snapshot`
+
+```jsonc
+{ "name": "string (optional, ≤120 chars, default snapshot-YYYYMMDD-HHmm)" }
+// → { receipt: { kind:'snapshot.create', outcome:'executed', detail:{result:{snapshot_id}} } }
+```
+
+Additive-only (writes one artifact file after a full redacted read pass over
+all tier tables). Requires database storage like the dashboard's own create
+button; without it the tool answers structured `unavailable`. Restore is
+deliberately NOT tool-exposed — restore is HOLD_CONFIRM territory in the UI
+and has no business being one tool-call away from an autonomous agent.
+
+Receipt replays (`duplicate:true`) and governance denials surface verbatim
+as normal/isError results respectively, so the agent can always see what the
+pipeline decided and why.
+
+## Tool catalog (10 read-only + 3 mutating)
 
 All tools take a single `arguments` object; unknown or invalid arguments are
 rejected at the tool boundary BEFORE any HTTP call, with messages naming legal
@@ -186,7 +261,7 @@ as URL-encoded query params on `GET /api/audit`.
 ## Non-goals (v1)
 
 No resource subscriptions, no prompts primitives, no write tools beyond the
-three catalogued mutations (slice 2), NO restore/delete/cron-control tools,
+three catalogued mutations, NO restore/delete/cron-control tools,
 no HTTP-SSE transport. See brief §7.
 
 ## Testing
@@ -194,4 +269,8 @@ no HTTP-SSE transport. See brief §7.
 DB-free suite: `node tests/test-mcp-server.js` (also registered in
 `scripts/ci-db-free-tests.js`). Covers protocol conformance, framing survival,
 validation-before-fetch, per-tool dispatch golden paths, degradation/auth/
-unreachable mapping, allSettled composition, and a no-token-leakage grep.
+unreachable mapping, allSettled composition, a no-token-leakage grep, and the
+slice-2 mutation contract: flag-off hides the trio from list AND call with
+zero fetches, flag-on registers all 13 tools, receipt envelopes carry the
+right kind/target/params/actor, and 503 write-refusals map to honest
+structured errors.

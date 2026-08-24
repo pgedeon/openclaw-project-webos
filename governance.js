@@ -57,6 +57,25 @@ const GOVERNANCE_ACTION_RULES = {
     label: 'Resume run',
     roles: ['orchestrator', 'operator', 'pipeline'],
     capabilities: ['orchestration', 'management']
+  },
+  // MCP slice 2 kinds (docs/briefs/mcp-exposure.md §8 OQ2 = YES). The MCP
+  // server acts as the operator's agent (actor 'openclaw', privileged per
+  // normalizeActorContext); these rules exist so non-privileged actors get a
+  // typed rejected_governance receipt instead of an unknown-action denial.
+  create_task: {
+    label: 'Create task',
+    roles: ['orchestrator', 'operator', 'pipeline'],
+    capabilities: ['orchestration', 'management']
+  },
+  update_task: {
+    label: 'Update task',
+    roles: ['orchestrator', 'operator', 'pipeline'],
+    capabilities: ['orchestration', 'management']
+  },
+  create_snapshot: {
+    label: 'Create snapshot',
+    roles: ['orchestrator', 'operator', 'pipeline'],
+    capabilities: ['orchestration', 'management', 'auditing']
   }
 };
 

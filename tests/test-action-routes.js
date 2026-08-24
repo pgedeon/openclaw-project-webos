@@ -174,6 +174,7 @@ function testRegistryMapping() {
 
   assert.deepStrictEqual([...ACTION_KINDS], [
     'task.assign', 'run.dispatch', 'approval.decide', 'run.cancel', 'run.redispatch',
+    'task.create', 'task.update', 'snapshot.create',
   ]);
 
   const expected = {
@@ -182,6 +183,10 @@ function testRegistryMapping() {
     'approval.decide': { severity: 'MEDIUM-HIGH', confirmMode: 'PREVIEW_MODAL' },
     'run.cancel': { severity: 'HIGH', confirmMode: 'HOLD_CONFIRM' },
     'run.redispatch': { severity: 'MEDIUM', confirmMode: 'PREVIEW_MODAL' },
+    // MCP slice 2 kinds (docs/briefs/mcp-exposure.md §8 OQ2 = YES).
+    'task.create': { severity: 'LOW', confirmMode: 'NONE' },
+    'task.update': { severity: 'MEDIUM', confirmMode: 'PREVIEW_MODAL' },
+    'snapshot.create': { severity: 'LOW', confirmMode: 'NONE' },
   };
   for (const [kind, want] of Object.entries(expected)) {
     const entry = ACTION_REGISTRY[kind];

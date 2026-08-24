@@ -58,6 +58,30 @@ export const ACTION_CATALOG = Object.freeze({
     targetType: 'run',
     rollbackHint: 'Cancel again via run.cancel',
   }),
+  // MCP slice 2 kinds — receipt-minted mutations behind the MCP server's
+  // OPENCLAW_MCP_MUTATIONS=1 flag. No UI button references these today; the
+  // entries exist so client/server catalog parity stays exact.
+  'task.create': Object.freeze({
+    label: 'Create task',
+    severity: 'LOW',
+    confirmMode: 'NONE',
+    targetType: 'project',
+    rollbackHint: 'Archive task {new_task_id} if unwanted',
+  }),
+  'task.update': Object.freeze({
+    label: 'Update task',
+    severity: 'MEDIUM',
+    confirmMode: 'PREVIEW_MODAL',
+    targetType: 'task',
+    rollbackHint: 'Re-apply previous values to task {target_id}',
+  }),
+  'snapshot.create': Object.freeze({
+    label: 'Create snapshot',
+    severity: 'LOW',
+    confirmMode: 'NONE',
+    targetType: 'snapshot',
+    rollbackHint: 'Snapshots are additive-only; delete the artifact file to reclaim space',
+  }),
 });
 
 /** Hold-to-confirm threshold in ms (brief §3.2: ≥1.2 s). */

@@ -701,7 +701,7 @@ registerSpaceRoutes(router, settingsDeps);
 registerWorkflowRoutingRoutes(router, settingsDeps);
 registerCostRoutes(router);
 registerBudgetRoutes(router);
-registerActionRoutes(router);
+registerActionRoutes(router, { settingsStore });
 const server = http.createServer(async (req, res) => {
   // Staging-platform invariant (DEPLOY-POLICY.md): staging instances must never be indexed.
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');

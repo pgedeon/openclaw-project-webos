@@ -91,7 +91,7 @@ function normalizeReceiptRow(row) {
  * business logic in-process (WorkflowRunsAPI methods / storage helpers) —
  * the gate is additive; raw endpoints keep working unchanged (brief §3.6).
  */
-function createDefaultExecutors(store) {
+function createDefaultExecutors(store, extras = {}) {
   // Lazy require keeps this module importable without the (heavy) runs API
   // when tests inject their own executor map.
   const { WorkflowRunsAPI } = require('../workflow-runs-api');
@@ -159,14 +159,64 @@ function createDefaultExecutors(store) {
       const run = await api.overrideFailure(envelope.targetId, envelope.actor, '', 'queued');
       return { run_id: envelope.targetId, status: (run && run.status) || 'queued' };
     },
+
+    // ── MCP slice 2 kinds (docs/briefs/mcp-exposure.md §8 OQ2 = YES).
+    // Same storage methods the raw POST/PATCH /api/tasks endpoints call —
+    // the receipt pipeline is the only thing added around them.
+    async createTask({ envelope }) {
+      const data = { ...envelope.params, project_id: envelope.targetId };
+      const task = await store.createTask(data);
+      if (!task || !task.id) throw new Error('Task creation returned no id');
+      return { new_task_id: task.id, title: task.title || envelope.params.title };
+    },
+
+    async updateTask({ envelope }) {
+      const patch = (envelope.params && envelope.params.patch) || {};
+      const task = await store.updateTask(envelope.targetId, patch);
+      if (!task) throw new Error('Task not found');
+      return { task_id: envelope.targetId, updated_fields: Object.keys(patch) };
+    },
+
+    // Reuses the extracted snapshot serializer (routes/snapshot-routes.js)
+    // IN-PROCESS — never a duplicated capture pass, never an HTTP self-call.
+    async createSnapshot({ envelope }) {
+      const { createSnapshotArtifact } = require('./snapshot-routes');
+      const out = await createSnapshotArtifact({
+        pool: store.pool,
+        settingsStore: extras.settingsStore,
+        snapshotsDir: extras.snapshotsDir,
+        name: envelope.targetId,
+      });
+      if (out.status !== 201) {
+        const err = new Error(`snapshot capture failed (${out.status})`);
+        err.snapshotBody = out.body;
+        throw err;
+      }
+      return { snapshot_id: out.body.snapshot_id };
+    },
   };
 }
 
 /** Resolve task_id for the audit mirror (audit_log.task_id is NOT NULL FK). */
-async function resolveAuditTaskId(pool, envelope) {
+/**
+ * Resolve the audit_log.task_id for a receipt mirror row. Returns null when
+ * the kind has no task identity (run.cancel / approval.decide / etc.) or the
+ * lookup fails — finalize() then records an audit_skipped note instead of
+ * guessing. task.create resolves AFTER execution from the executor result
+ * (the task id does not exist at envelope time); task.update targets an
+ * existing task directly.
+ */
+async function resolveAuditTaskId(pool, envelope, detail = null) {
   try {
     if (envelope.kind === 'task.assign' || envelope.kind === 'run.dispatch') {
       return envelope.targetId;
+    }
+    if (envelope.kind === 'task.update') {
+      return envelope.targetId;
+    }
+    if (envelope.kind === 'task.create') {
+      const created = detail && detail.result && detail.result.new_task_id;
+      return typeof created === 'string' && created ? created : null;
     }
     if (envelope.kind === 'approval.decide') {
       const r = await pool.query(
@@ -249,6 +299,9 @@ function budgetRefusal(verdict) {
 
 function registerActionRoutes(router, options = {}) {
   const getStore = options.getStorage || getStorage;
+  // snapshot.create executor needs the same settings source + artifact
+  // directory POST /api/snapshots uses; task-server passes its settingsStore
+  // (snapshotsDir keeps the routes/snapshot-routes.js default when unset).
 
   // GET /api/actions/recent?limit=50 — tray feed. Read endpoints degrade with
   // the house contract (200 {available:false, reason}); execute degrades with
@@ -409,7 +462,7 @@ function registerActionRoutes(router, options = {}) {
     /** Finalize: receipt outcome UPDATE + audit mirror in ONE transaction. */
     const finalize = async (outcome, detail, hintOverride = null) => {
       const hint = hintOverride ?? rollbackHintFor(envelope.kind, detail || {});
-      const taskId = await resolveAuditTaskId(pool, envelope);
+      const taskId = await resolveAuditTaskId(pool, envelope, detail);
       const detailWithMeta = { ...(detail || {}) };
       if (!taskId) detailWithMeta.audit_skipped = 'no resolvable task_id (audit_log.task_id is NOT NULL)';
       const client = await pool.connect();
@@ -470,7 +523,10 @@ function registerActionRoutes(router, options = {}) {
     }
 
     // 7. Execute the kind's backing operation (reused business logic).
-    const executors = options.executors || createDefaultExecutors(store);
+    const executors = options.executors || createDefaultExecutors(store, {
+      settingsStore: options.settingsStore || null,
+      snapshotsDir: options.snapshotsDir,
+    });
     const executor = executors[entry.executor];
     if (typeof executor !== 'function') {
       // Registry/executor wiring bug — surface as unknown_kind, leave the

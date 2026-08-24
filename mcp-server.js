@@ -12,7 +12,11 @@
  *   DASHBOARD_AUTH_TOKEN   required for data reads — operator's bearer token
  *                          for the task-server (never minted or proxied here)
  *   TASK_SERVER_URL        optional, default http://127.0.0.1:3876
- *   OPENCLAW_MCP_MUTATIONS reserved for slice 2 (mutating trio); inert today
+ *   OPENCLAW_MCP_MUTATIONS set to 1 to register the mutating trio
+ *                          (create_task / update_task / create_snapshot).
+ *                          Without it the server is read-only: the trio is
+ *                          absent from tools/list and tools/call on them
+ *                          answers -32601 method_not_found.
  *
  * stdout carries protocol frames exclusively; logs go to stderr.
  */
