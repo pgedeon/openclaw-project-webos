@@ -38,6 +38,7 @@ The current auth mode is single-operator bearer token auth. Full login/session/R
 | `OPENCLAW_CONFIG_FILE` | No | `/root/.openclaw/openclaw.json` | Path to the OpenClaw configuration file | `aggregate-department-metrics.js` |
 | `OPENCLAW_BIN` | No | `openclaw` | Path or command to the OpenClaw CLI binary | Dispatcher, agent wake |
 | `OPENCLAW_FS_ROOT` | No | `/root/.openclaw` | Root directory served by the filesystem API | `filesystem-api-server.mjs` |
+| `OPENCLAW_HOME` | No | `$HOME` | Root of OpenClaw gateway data (`agents/*/sessions`) read by the cost/token backfill | `backfill-run-costs.js` |
 
 ### Gateway Bridge (optional, default off)
 

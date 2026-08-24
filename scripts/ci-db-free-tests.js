@@ -24,6 +24,7 @@ const TEST_TIMEOUT_MS = 45000;
 const INCLUDED = [
   'test-agent-routes.js',
   'test-auth-policy.js',
+  'test-backfill-run-costs.js',
   'test-bing-routes.js',
   'test-budget-enforcement.js',
   'test-budget-routes.js',

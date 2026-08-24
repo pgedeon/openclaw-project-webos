@@ -19,6 +19,7 @@ The `scripts/` directory contains operational scripts for the dashboard: health 
 | `sync-openclaw-projects.mjs` | Node.js (ESM) | Seed and synchronize OpenClaw project hierarchy and tasks |
 | `test-incremental-sync.js` | Node.js | Test `updated_since` pagination on task API |
 | `apply-workflow-migration.sh` | Bash | Apply the workflow runs migration (001) |
+| `backfill-run-costs.js` | Node.js | Backfill `workflow_runs` token/cost columns from OpenClaw session JSONL transcripts (dry run by default) |
 | `system-improvement-scan.sh` | Bash | Cron trigger for daily system improvement scan |
 | `system-improvement-engine.py` | Python 3 | Analyze system state and create approval-gated improvement runs |
 
@@ -283,6 +284,43 @@ bash scripts/apply-workflow-migration.sh
 **Environment Variables:** Standard `POSTGRES_*` variables.
 
 **Dependencies:** `psql`
+
+---
+
+### `backfill-run-costs.js`
+
+One-shot backfill of the migration-022 token/cost columns (`input_tokens`, `output_tokens`, `cached_tokens`, `model_id`, `cost_estimate`, `currency`, `reported_at`) on `workflow_runs` from historical OpenClaw gateway session data.
+
+**Usage:**
+
+```bash
+node scripts/backfill-run-costs.js            # dry run (default)
+node scripts/backfill-run-costs.js --apply    # write to PostgreSQL
+node scripts/backfill-run-costs.js --limit 5 --verbose
+node scripts/backfill-run-costs.js --run-id <uuid>
+```
+
+**Data source:** session JSONL transcripts under `<OPENCLAW_HOME|HOME>/.openclaw/agents/<agentId>/sessions/<sessionId>.jsonl` — every assistant message line carries an exact per-message `usage` object (`input`, `output`, `cacheRead`, `cacheWrite`, and a gateway-reported `cost`). Chosen over the `openclaw status` CLI (context-size snapshot only, no input/output split), the state SQLite DB (no token tables), and `sessions.json` (single context snapshot) because it is the only source with exact cumulative token numbers.
+
+**Join key:** `workflow_runs.gateway_session_id` (= `claim_session_id` when set) holds an OpenClaw session key (`agent:<agentId>:<channel>:<id>`), resolved through that agent's `sessions.json` to the current `sessionId` plus its `usageFamilySessionIds` (rotated transcripts). Values written by other components — `spawned-<runId8>-pid<n>` from `workflow-run-monitor.js`, test fixtures — are reported as unmatched.
+
+**Windowing:** a session key can outlive many runs (shared sessions like `agent:main:main`), so usage is summed only from assistant messages timestamped inside the run window `[started_at, finished_at]` (inclusive; open upper bound when `finished_at` is NULL). Runs without `started_at` are skipped rather than attributed a whole shared session.
+
+**Cost policy:** `cost_estimate` is written only from positive gateway-reported per-message cost totals. When no price source exists (the case on this deployment: all recorded costs are 0 and no model catalog carries pricing), `cost_estimate` stays NULL — prices are never invented. `currency` is stamped `USD`; `model_id` gets the dominant `provider/model` among in-window usage messages.
+
+**Idempotency:** only runs whose token/cost columns are ALL NULL are selected, writes go through the slice-1 `storage/asana.js` helper (`updateWorkflowRunUsage`, sets `reported_at = NOW()`), and each row is re-checked before update — re-runs never overwrite non-NULL values.
+
+**Behavior:**
+1. Loads unreported runs with a gateway session binding (PostgreSQL via the shared storage pool).
+2. Resolves each session key to transcript files and aggregates in-window usage.
+3. Dry run prints what would be written; `--apply` performs batched sequential updates.
+4. Prints a summary: considered / matched / unmatched-by-reason / skipped counts.
+
+**Graceful degradation:** exits 0 with an honest summary when PostgreSQL is unreachable, migration 022 has not been applied, or no gateway transcripts survive (transcript retention means sessions older than ~July 2026 may be pruned).
+
+**Environment Variables:** standard `POSTGRES_*` variables; `OPENCLAW_HOME` (default `$HOME`) for the gateway data root.
+
+**Dependencies:** `pg` (via `storage/asana.js`)
 
 ---
 
