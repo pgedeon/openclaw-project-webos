@@ -200,7 +200,20 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 ## Phase 3 — Polish & Reach
 
 - [ ] **PWA install**: manifest + service worker hardening. Desktop app feel.
-- [ ] **Theme engine**: user themes, dark/light already exists — add accent packs.
+- [x] **Theme engine**: user themes, dark/light already exists — add accent packs.
+      Shipped 2026-08-25 (feat 0fd43a7): 5 built-in packs (default blue, teal, violet,
+      amber, rose) as CSS custom-property overrides layered ON TOP of the base theme
+      (src/styles/win11-accents.css — light `[data-accent]` blocks + higher-specificity
+      `[data-theme="dark"][data-accent]` compounds, so every pack is valid in both
+      modes); pure helper src/shell/accent-packs.mjs (ACCENT_PACKS/resolveAccent/
+      readStoredAccent/storeAccent, zero-throw invalid→default); persistence via
+      localStorage `openclaw.accent` applied before first paint (module-eval apply in
+      shell-main.mjs + pre-paint inline script in index.html); taskbar tray palette
+      icon opens a swatch popover (win11-taskbar__accent-picker). Tests:
+      tests/test-accent-packs.js 20 checks registered in ci-db-free-tests.js (55/55);
+      docs-drift-check green; staging-verified live at http://192.168.0.81:8120/
+      (health 200 json_snapshot; teal click → #60cdff→#45d1d6 dark / #038387 light;
+      persists across reload; stored garbage value falls back silently to default).
 - [ ] **Perf**: virtualized lists for large boards, lazy view loading.
 - [ ] **Docs site**: GitHub Pages from `docs/`, screenshots refreshed.
       CUT per advisory: multi-user presence (single-operator reality, high complexity).
