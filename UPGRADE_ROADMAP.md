@@ -313,22 +313,86 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       `lib/nl-parse.js` now maps create-class verbs ("spawn/create/add/new …
       task/agent for …") to a real task.create envelope with verbatim title
       extraction — no-title utterances still degrade honestly to search.
-- [ ] **[candidate] Budget management window (slice 4)** — create/edit budgets
+- [x] **[candidate] Budget management window (slice 4)** — create/edit budgets
       UI over the shipped budgets API; completes the cost-governance loop
       (budgets currently exist but are unmanageable from the dashboard).
-      §6 fast-follow go/no-go already scheduled this. IN FLIGHT 2026-08-25:
-      concurrent build lane has `src/shell/native-views/budgets-view.mjs` +
-      tests in the working tree (36th windowed app); do not start a competing
-      implementation.
+      §6 fast-follow go/no-go already scheduled this. Shipped 2026-08-25
+      (b6ff36a): `budgets` app — 36th windowed app, Operations category
+      (`src/shell/native-views/budgets-view.mjs`) with create/edit/deactivate +
+      per-budget ledger drawer over the shipped API; tests/test-budgets-view.js
+      18 checks (suite 59/59); deployed to staging :8120 with post-verify.
+      Candidate CLOSED — budget-ledger brief defines four slices, all shipped;
+      no slice 5 exists (roadmap review #4).
 - [ ] **[candidate] Task ↔ session conversation binding** — added per market
       scan 2026-08-25b steal #2 (Paperclip made chat-style tasks their default
       UX): task detail gains a Conversation tab embedding the bound gateway
       session transcript through the ALREADY-SHIPPED session-reader routes and
       replay-view components. Read-only first; no new write path; rides the
       existing task↔session binding instead of inventing a chat store.
-- [ ] **[candidate] Remote-access recipe via tailnet HTTPS** — added per market
+- [x] **[candidate] Remote-access recipe via tailnet HTTPS** — added per market
       scan 2026-08-25b steal #1 (Paperclip v2026.824.0 managed-runtime previews):
       document + optionally script a `tailscale serve` exposure of the dashboard
       (staging slot first) for signed HTTPS phone/remote access — kills the
       loopback landmine for operators away from the LAN with ZERO new network
       binds. Docs/runbook-first; code only if serve proves insufficient.
+      Documentation half SHIPPED 2026-08-25 (10a3bdc recipe + 444255a changelog,
+      docs/remote-access.md, linked from README): verified-pattern-pending-
+      rollout — recon confirms tailscale is NOT yet installed on the dev
+      machine. Rollout (install + serve exposure) awaits OWNER order; see
+      Post-2.0 Steady State watch-list below.
+
+## Post-2.0 Steady State
+
+> Added by roadmap review #4 (docs/briefs/roadmap-review-2026-08-25b.md,
+> 2026-08-25): the operating mode for the period after the roadmap board
+> emptied and debt D1/D3/D4 cleared. This section documents MODE and a
+> WATCH-LIST only — no new committed feature promises.
+
+### Operating mode (decided 2026-08-25, pending owner cron switch)
+
+The hourly cron's sprint job is done (127 commits in ~2.5 days; 23/23 items;
+2.0.0 released). Recommended steady state: **twice-daily runs** (~08:30 and
+~17:30 Europe/Berlin) working a pull-based queue, in order:
+
+1. Sync + gates — pull main; CI/drift green or the red is the run's whole job.
+2. DAG telemetry readout — `npm run dag:telemetry`, verdict logged in run
+   notes until the 2026-09-14 decision.
+3. Community PR review — same-day turnaround for external PRs (anupamme
+   cadence).
+4. Dependency watch — ONE designated run per week: `npm outdated` + prod-deps
+   audit review (first queued outcome: ws ≥8.20.2 non-breaking bump).
+5. Scoped work items — only what a review brief or the owner queued.
+   **An empty queue is a valid outcome; inventing work is not.**
+
+Restore hourly/higher cadence ONLY on trigger: an approved new-chapter brief,
+a DAG **GO** verdict (~2026-09-14), or an external PR backlog >2. Working
+rules #1–#10 above carry over verbatim.
+
+Autonomous-vs-owner split at decision time (review #4 §3): security
+tightening run (ws bump → puppeteer-core@25 → audit gate to high) and the D5
+benchmark harness proceed AUTONOMOUSLY; task↔session conversation binding is
+the top remaining FEATURE but needs the owner chapter pick before a planner
+brief; NL v2 LLM parsing needs an owner cost/posture call; tailnet rollout
+needs an owner order; workflow normalization follow-ups are blocked on the
+DAG decision; budget slice 5 does not exist (all four brief slices shipped).
+
+### Watch-list (dated, not promised)
+
+- **DAG GO/NO-GO ~2026-09-14** — mechanical per telemetry counter
+  (`scripts/dag-telemetry-counter.js`): GO = ≥8 render-days AND ≥3 asks in
+  the 2026-08-25→2026-09-14 window; NO-GO = <4 days AND 0 asks; else middle.
+  On GO: visual-editor Stage 2 becomes buildable (normalization data blocker
+  already cleared by migration 025). Window opened today at 0 rows.
+- **Tailnet rollout pending owner** — docs shipped (docs/remote-access.md);
+  tailscale NOT installed on dev machine; install + `tailscale serve`
+  exposure is an owner hardware/network call.
+- **D5 benchmarks deferred-by-design** — stays deferred until measured
+  honestly outside sprint pressure; fix shape per review #3 (scripted
+  Playwright timing harness, manual per release, never CI-blocking).
+- **Staging deploy-script observation** — restart robustness fixed 2026-08-25
+  (5301ce5 detached successor + health gate) after instability; healthy since,
+  but observation window ~1 day. Keep on watch one week.
+- **CHANGELOG `[Unreleased]` lane-collision repair** — duplicated sections
+  deduplicated 2026-08-25 (review #4 R1); if duplication reappears under
+  reduced cadence, adopt the D2 `Assisted-by:` trailer convention before
+  anything else.
