@@ -234,13 +234,26 @@ Individual steps within a workflow run.
 | `workflow_run_id` | `UUID` | FK → `workflow_runs(id)` ON DELETE CASCADE, NOT NULL | |
 | `step_name` | `TEXT` | NOT NULL | |
 | `step_order` | `INTEGER` | NOT NULL | |
-| `status` | `TEXT` | NOT NULL, default `'pending'` | `pending`, `in_progress`, `completed`, `failed`, `skipped` |
+| `status` | `TEXT` | NOT NULL, default `'pending'` | *(025)* Step-native: `pending`, `in_progress`, `completed`, `failed`, `skipped`; plus dispatcher-vocabulary mirrored by agents onto their current step: `queued`, `dispatched`, `claimed`, `running`, `waiting_for_approval`, `blocked`, `retrying`, `cancelled`, `timed_out`. Writers must go through `updateStep`, which validates against the same list |
 | `started_at` | `TIMESTAMPTZ` | nullable | |
 | `finished_at` | `TIMESTAMPTZ` | nullable | |
 | `output` | `JSONB` | NOT NULL, default `'{}'` | |
 | `error_message` | `TEXT` | nullable | |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, default `NOW()` | |
 | `updated_at` | `TIMESTAMPTZ` | NOT NULL, default `NOW()` | |
+
+**Constraint** *(025)*:
+
+```sql
+valid_workflow_step_status CHECK (status IN (
+  'pending', 'in_progress', 'completed', 'failed', 'skipped',
+  'queued', 'dispatched', 'claimed', 'running',
+  'waiting_for_approval', 'blocked', 'retrying',
+  'cancelled', 'timed_out'
+))
+```
+
+Chosen vocabulary = step-native lifecycle (001) ∪ dispatcher v2 run statuses (021). Reality check: gateway sessions mirror run-level states (`timed_out` observed live 2026-08-25) onto their current step; the original five-value CHECK either rejected those writes or had never applied on drifted deployments (`CREATE TABLE IF NOT EXISTS` skips existing tables). Unknown status strings are rejected at the API layer (`WORKFLOW_STEP_STATUSES` in workflow-runs-api.js), not silently mapped.
 
 **Indexes:** `workflow_run_id`, `status`, `step_order`
 
@@ -255,7 +268,7 @@ Reusable workflow definitions.
 | `display_name` | `TEXT` | NOT NULL | Human-readable name |
 | `description` | `TEXT` | NOT NULL, default `''` | |
 | `default_owner_agent` | `TEXT` | NOT NULL | Default agent for runs |
-| `steps` | `JSONB` | NOT NULL, default `'[]'` | Ordered step definitions |
+| `steps` | `JSONB` | NOT NULL, default `'[]'` | Ordered step definitions; canonical entry shape `{name, display_name, required}` *(025 lifts bare strings on write + backfill)* |
 | `required_approvals` | `JSONB` | NOT NULL, default `'[]'` | Steps needing approval |
 | `success_criteria` | `JSONB` | NOT NULL, default `'{}'` | Completion criteria |
 | `category` | `TEXT` | NOT NULL, default `'general'` | `content`, `publishing`, `maintenance`, `incident`, `development`, `quality` |
@@ -656,6 +669,7 @@ Multi-workspace support with per-space configuration.
 | 022 | `022_add_run_token_cost_tracking.sql` | 2026-08-23 | Add per-run token/cost tracking to `workflow_runs`: input_tokens, output_tokens, cached_tokens, model_id, cost_estimate, currency, reported_at |
 | 023 | `023_add_budget_ledger.sql` | 2026-08-24 | Add `budgets` rules + `budget_events` append-only audit trail (budget ledger slice 1) |
 | 024 | `024_add_action_receipts.sql` | 2026-08-24 | Add `action_receipts` idempotency latch + persisted operator-action receipts (one-click actions slice 1) |
+| 025 | `025_add_workflow_normalization.sql` | 2026-08-25 | Debt D1 normalization: widen `workflow_steps` status CHECK to step-native ∪ dispatcher-vocabulary (14 values); lift string-only `workflow_templates.steps` into `{name, display_name, required}` objects (idempotent, order-preserving) |
 
 ---
 
