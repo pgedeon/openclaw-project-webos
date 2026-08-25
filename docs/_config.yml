@@ -1,0 +1,8 @@
+# Minimal Jekyll config for the docs site (built by actions/jekyll-build-pages).
+# cayman is bundled with the github-pages gem — zero repo dependencies.
+theme: jekyll-theme-cayman
+markdown: kramdown
+plugins:
+  # Rewrites relative [x](foo.md) links between docs to their built .html URLs.
+  - jekyll-relative-links
+permalink: pretty

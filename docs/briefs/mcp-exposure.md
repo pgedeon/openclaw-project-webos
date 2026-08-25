@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Design Brief — MCP Server Exposure (Dashboard as Tool Provider)
 
 **Status:** Draft for build review · **Roadmap:** Phase 2 (UPGRADE_ROADMAP.md "MCP server exposure" — Phase 2 opener per roadmap review #2, which named it the single most defensible roadmap item and protected it from slippage)

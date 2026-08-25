@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Gateway Bridge v1 — Live Validation
 
 **Date:** 2026-08-24 · **Scope:** end-to-end run of shipped bridge (6184097) against live gateway

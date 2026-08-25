@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # MCP Server Reference — Dashboard as Tool Provider
 
 > The dashboard ships an MCP (Model Context Protocol) server so OpenClaw agents

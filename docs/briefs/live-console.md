@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Design Brief — Live Agent Console (Terminal Stream)
 
 **Status:** Draft for build review · **Roadmap:** Phase 1 run 5 (roadmap-review-2026-08-24.md §4) — unblocked by run 3 (gateway streaming spike, findings final) and run 4 (gateway bridge v1, in flight)

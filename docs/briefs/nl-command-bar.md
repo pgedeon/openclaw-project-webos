@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Design Brief — Natural-Language Command Bar (NL mode for Ctrl+K)
 
 **Status:** Draft for build review · **Roadmap:** Phase 2 (UPGRADE_ROADMAP.md "Natural-language command bar": type "spawn agent for X, report when done" → creates task + dispatches workflow; extends the existing Ctrl+K palette; MANDATORY confirmation gate before side-effectful actions; no free-form config writes)

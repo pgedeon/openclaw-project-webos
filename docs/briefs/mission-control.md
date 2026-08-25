@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Design Brief — Mission Control View
 
 **Status:** Approved for build planning · **Roadmap:** UPGRADE_ROADMAP.md Phase 1, item 1

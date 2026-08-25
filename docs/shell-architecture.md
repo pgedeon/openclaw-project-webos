@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Shell Architecture Reference
 
 The OpenClaw WebOS desktop shell is a Win11-inspired single-page application built from modular ES modules. This document covers the internal architecture of the shell layer — the window manager, taskbar, start menu, sync system, and view infrastructure.
@@ -31,6 +35,20 @@ The OpenClaw WebOS desktop shell is a Win11-inspired single-page application bui
 5. Initializes `WidgetRegistry` and `WidgetPanel`
 6. Calls `setShellContext()` to share instances across modules
 7. Performs first data sync and renders the welcome widget
+
+### Lazy View Loading
+
+View modules are **not** statically imported by the shell. `app-registry.mjs`
+stores each app's module as a `viewModule` string path (metadata stays
+static/synchronous); `window-manager.mjs` resolves it with a dynamic
+`import(entry.app.viewModule)` the first time that window mounts. Result:
+the boot graph is ~20 local ES modules regardless of how many views are
+registered, and a view's code is only fetched when its window opens.
+
+Large-list rendering inside views uses the shared virtualization math in
+`src/shell/list-window.mjs`: a fixed-row rail window for session replay,
+and capped-render + "load more" for tasks/board where row heights vary
+(see Performance Notes in docs/development.md).
 
 ---
 

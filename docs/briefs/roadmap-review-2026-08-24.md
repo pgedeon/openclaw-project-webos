@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Roadmap Review — 2026-08-24
 
 **Status:** Planning audit only. No feature code touched.

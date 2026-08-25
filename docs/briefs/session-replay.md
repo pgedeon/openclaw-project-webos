@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Design Brief — Session Replay Inspector (Time-Travel Stepper)
 
 **Status:** Draft for build review · **Roadmap:** Phase 1, ordered above one-click actions (roadmap-review-2026-08-24.md intra-phase swap)

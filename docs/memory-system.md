@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Memory System
 
 The persistent agent memory system allows agents and operators to store, retrieve, and manage information across sessions.

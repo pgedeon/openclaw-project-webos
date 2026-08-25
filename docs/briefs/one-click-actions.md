@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Design Brief — One-Click Agent Actions (Catalog, Gating Design, Receipts)
 
 **Status:** Draft for build review · **Roadmap:** Phase 1 (UPGRADE_ROADMAP.md "One-click agent actions" — last unchecked Phase 1 interaction feature; review 2026-08-24b §3 order 5/6: brief now, build after)

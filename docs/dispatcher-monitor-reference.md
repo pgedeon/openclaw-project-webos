@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Workflow Dispatcher & Monitor Reference
 
 The OpenClaw WebOS includes a two-layer workflow execution system: a **dispatcher** that queues and assigns workflow runs to agents, and a **monitor** that watches for stale, orphaned, or timed-out runs.

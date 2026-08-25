@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Storage Layer Reference
 
 The OpenClaw WebOS uses a PostgreSQL-backed storage layer that provides CRUD operations for projects, tasks, workflows, dependencies, and all related entities.

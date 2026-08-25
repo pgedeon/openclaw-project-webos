@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Design Brief — Budget Ledger + Auto-Pause Guardrail
 
 **Status:** Implemented — slices 1–3 shipped 2026-08-24 (0a1ed9b model+API, 420758b dispatcher enforcement, d276068 surfacing: SSE breach frames, MC budget bars + budget_breach flag, notification-center entries); slice 4 (management window) deferred per §6 fast-follow · **Roadmap:** Phase 1 (pulled forward from Phase 2 per market-scan-2026-08-24.md — Paperclip, 79k★, made per-agent budgets with hard-stop enforcement table stakes; scan scores Impact 9 / Effort 3)

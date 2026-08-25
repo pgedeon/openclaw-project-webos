@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Views Reference — All Desktop Windows
 
 The OpenClaw Project WebOS exposes **35 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.

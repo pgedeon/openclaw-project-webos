@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Gateway Streaming Spike — Feasibility + Recipes
 
 **Date:** 2026-08-24 · **Author:** qa-auditor (spike r2) · **Status:** findings final, no source changes

@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Auth Reference
 
 ## Current Mode

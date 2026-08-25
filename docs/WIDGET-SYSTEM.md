@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # OpenClaw Desktop Widget System
 
 **Created:** 2026-03-20

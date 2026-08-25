@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Project Dashboard API Reference
 
 Comprehensive documentation for the REST API provided by `task-server.js`.

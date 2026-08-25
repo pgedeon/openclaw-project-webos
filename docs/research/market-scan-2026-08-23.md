@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Market Scan — 2026-08-23
 
 Competitive landscape for OpenClaw Project WebOS. Input to `UPGRADE_ROADMAP.md`.

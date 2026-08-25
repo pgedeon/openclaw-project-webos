@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Roadmap Review 2026-08-24b — Endgame Sequencing
 
 **Status:** Planning audit only. No feature code touched.

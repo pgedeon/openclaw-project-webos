@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Project Dashboard User Guide
 
 A complete walkthrough of the OpenClaw Project Dashboard interface, workflows, and best practices.

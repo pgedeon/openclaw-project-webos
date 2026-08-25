@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Market Scan — 2026-08-24 (post-1.1.0 delta refresh)
 
 Second competitive pass, 24h after `market-scan-2026-08-23.md`. Focus: what moved in

@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Live Agent Console — Validation Against Live Gateway (2026-08-24)
 
 Verdict: **validated** (validated-with-notes). Console feed v1 works end-to-end against

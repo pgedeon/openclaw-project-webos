@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Install — OpenClaw Workspace
 
 Install the dashboard inside an existing OpenClaw workspace.

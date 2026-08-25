@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Admin Guide
 
 ## Overview

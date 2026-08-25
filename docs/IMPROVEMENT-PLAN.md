@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # OpenClaw WebOS Improvement Plan — Progress Tracker
 
 **Updated:** 2026-04-28

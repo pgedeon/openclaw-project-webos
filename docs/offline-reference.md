@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Offline & IndexedDB Sync Reference
 
 ## Overview

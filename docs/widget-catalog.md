@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Widget Catalog
 
 Complete reference for all 19 desktop widgets in the OpenClaw Project WebOS.

@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Supplementary API Reference
 
 > This document covers all server-side APIs **not** included in the main

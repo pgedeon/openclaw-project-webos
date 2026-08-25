@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Design Brief — Workflow Visual Editor, Stage 1 (Read-Only Graph Render)
 
 **Status:** Draft for build review · **Roadmap:** Phase 2 (UPGRADE_ROADMAP.md "Workflow visual editor — staged", demoted per advisory): Stage 1 = read-only graph render of existing workflows; drag-drop editing ONLY if Stage 1 earns use. Hardest item under the no-frameworks rule — this brief's job is to make Stage 1 cheap, honest, and measurable so the earn-use decision is data-driven, not vibes.

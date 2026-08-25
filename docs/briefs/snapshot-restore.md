@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Design Brief — Snapshot/Restore (Full-State Export + Restore)
 
 **Status:** Draft for build review · **Roadmap:** Phase 2 (UPGRADE_ROADMAP.md "Snapshot/restore: one-click full-state export (tasks + runs + config) and restore, builds on export-routes" — Phase 2 opener per roadmap review #2)

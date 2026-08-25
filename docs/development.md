@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Development Guide
 
 ## Setup
@@ -140,6 +144,38 @@ GitHub Actions workflow `.github/workflows/ci.yml` runs on every push/PR to `mai
 - **e2e** job: DB-free Playwright smoke suite against a json_snapshot server (separate job so e2e failures do not block the verify gates).
 
 The audit level starts at `critical` because the current prod tree carries 5 known-open HIGH advisories (ws 8.20.0 direct dep; extract-zip 2.0.1 via puppeteer-core 24.x). Once ws >= 8.20.2 and puppeteer[-core] >= 25 land, tighten to `--audit-level=high` (path documented in the workflow comment).
+
+## Performance Notes
+
+Static facts only — no synthetic benchmarks. Measured 2026-08-25 by walking
+the static `import` graph of `src/shell/shell-main.mjs` (dynamic `import()`
+calls excluded).
+
+### Boot module count
+
+- **20** local ES modules load statically at shell boot (`shell-main.mjs`
+  closure: window-manager, taskbar, start-menu, view-adapter, api-client,
+  widget panel/registry/host, etc.).
+- **35** views are registered in `app-registry.mjs` as `viewModule` string
+  paths and are fetched via dynamic `import()` **on first window mount**
+  (`window-manager.mjs`) — never at boot. `src/shell/native-views/` holds
+  41 `.mjs` files total (the 35 registered views plus shared helpers/panels).
+- The perf pass (2026-08-25) verified this lazy loading was already in place;
+  no eager→lazy conversion was required, so the boot module count is
+  unchanged by the pass.
+
+### List virtualization
+
+Shared window math lives in `src/shell/list-window.mjs` (pure, DOM-free,
+covered by `tests/test-list-window.js`):
+
+- **Fixed-row rail** (`visibleWindow`) — session-replay-view event rail;
+  constant 26px rows, only the visible window + overscan exists in the DOM.
+- **Capped render + "load more"** (`cappedWindow` / `growCap`) — used where
+  row heights are variable:
+  - `tasks-view.mjs`: first 100 filtered rows, +100 per click.
+  - `board-view.mjs`: first 50 cards per column, +50 per click; a column
+    that receives a dragged/dropped task auto-reveals it.
 
 ## Debugging
 

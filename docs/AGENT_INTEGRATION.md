@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Agent Integration Guide — Workflow Dispatcher v2
 
 ## Overview
