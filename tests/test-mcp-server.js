@@ -196,11 +196,18 @@ run('validateInput: unknown parameters rejected naming allowed keys', () => {
   assert.ok(bad.error.includes('banana'));
 });
 
-run('validation rejection issues ZERO fetches (zero-call assertion)', async () => {
+run('validation rejection issues ZERO business fetches (telemetry-aware zero-call assertion)', async () => {
   const fetchImpl = makeFetch({ '*': { body: {} } });
   const server = makeServer(fetchImpl);
   const frame = await callTool(server, 'get_cost_rollup', { group_by: 'banana' });
-  assert.strictEqual(fetchImpl.calls.length, 0, 'no HTTP call on validation failure');
+  // The fire-and-forget adoption telemetry POST is expected here (the attempt
+  // reached the tool boundary and errored); what must stay at zero is any
+  // BUSINESS upstream call.
+  const businessCalls = fetchImpl.calls.filter((c) => !c.url.includes('/api/mcp/telemetry'));
+  assert.strictEqual(businessCalls.length, 0, 'no business HTTP call on validation failure');
+  const telemetryCall = fetchImpl.calls.find((c) => c.url.includes('/api/mcp/telemetry'));
+  assert.ok(telemetryCall, 'validation rejection still emits an error-outcome telemetry event');
+  assert.strictEqual(JSON.parse(telemetryCall.options.body).outcome, 'error');
   assert.strictEqual(frame.isError, true);
   const payload = contentOf(frame);
   assert.strictEqual(payload.error, 'invalid_params');
@@ -676,6 +683,60 @@ run('token never appears in any tool result or error string', async () => {
   for (const out of outputs) {
     assert.ok(!out.includes(TOKEN), `token leaked: ${out.slice(0, 200)}`);
   }
+});
+
+// ── Adoption telemetry emission (fire-and-forget contract) ──────────────
+
+run('telemetry: successful tools/call fires exactly one POST /api/mcp/telemetry with ok outcome', async () => {
+  const fetchImpl = makeFetch({
+    '/api/budgets': { body: [] },
+    '/api/mcp/telemetry': { body: { stored: true, action: 'mcp-tool-call' } },
+  });
+  const frame = await callTool(makeServer(fetchImpl), 'list_budgets', {});
+  assert.strictEqual(frame.isError, undefined, 'tool result unaffected by telemetry');
+  const calls = fetchImpl.calls.filter((c) => c.url.includes('/api/mcp/telemetry'));
+  assert.strictEqual(calls.length, 1, 'exactly one telemetry POST per executed call');
+  const call = calls[0];
+  assert.strictEqual(call.options.method, 'POST');
+  assert.strictEqual(call.options.headers.Authorization, `Bearer ${TOKEN}`);
+  const event = JSON.parse(call.options.body);
+  assert.strictEqual(event.tool, 'list_budgets');
+  assert.strictEqual(event.outcome, 'ok');
+  assert.ok(Number.isInteger(event.durationMs) && event.durationMs >= 0, 'durationMs is a non-negative integer');
+});
+
+run('telemetry: isError tool result emits error outcome; upstream failure still answers the client', async () => {
+  const fetchImpl = makeFetch({
+    '/api/budgets': { throw: 'connection reset' },
+    '/api/mcp/telemetry': { body: { stored: true } },
+  });
+  const frame = await callTool(makeServer(fetchImpl), 'list_budgets', {});
+  assert.strictEqual(frame.isError, true, 'client still gets its structured isError result');
+  const event = JSON.parse(fetchImpl.calls.find((c) => c.url.includes('/api/mcp/telemetry')).options.body);
+  assert.strictEqual(event.tool, 'list_budgets');
+  assert.strictEqual(event.outcome, 'error');
+});
+
+run('telemetry: telemetry endpoint failure is swallowed — tool result byte-identical', async () => {
+  const good = makeFetch({ '/api/budgets': { body: [{ id: 'b1' }] } });
+  const frameWithoutTelemetry = await callTool(makeServer(makeFetch({ '/api/budgets': { body: [{ id: 'b1' }] } })), 'list_budgets', {});
+  // Telemetry POST itself throws (unreachable) — must not alter the result.
+  const fetchImpl = makeFetch({
+    '/api/budgets': { body: [{ id: 'b1' }] },
+    '/api/mcp/telemetry': { throw: 'ECONNREFUSED telemetry sink down' },
+  });
+  const frame = await callTool(makeServer(fetchImpl), 'list_budgets', {});
+  assert.strictEqual(frame.content[0].text, frameWithoutTelemetry.content[0].text,
+    'result identical whether or not the telemetry sink is up');
+  assert.ok(!JSON.stringify(frame).includes(TOKEN));
+});
+
+run('telemetry: protocol-level rejects emit NOTHING (unknown tool -32602, hidden mutation -32601)', async () => {
+  const fetchImpl = makeFetch({ '*': { body: {} } });
+  const server = makeServer(fetchImpl);
+  await handleMessage(server, { jsonrpc: '2.0', id: 61, method: 'tools/call', params: { name: 'nonexistent_tool', arguments: {} } });
+  await handleMessage(server, { jsonrpc: '2.0', id: 62, method: 'tools/call', params: { name: 'create_task', arguments: {} } });
+  assert.strictEqual(fetchImpl.calls.length, 0, 'probes are not tool usage — no telemetry rows');
 });
 
 // ── Stdio framing round-trip through the real entry process ─────────────
