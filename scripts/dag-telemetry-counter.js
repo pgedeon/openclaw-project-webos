@@ -99,7 +99,10 @@ function utcDateKey(date) {
  */
 function evaluateBranch(renderDays, asks) {
   if (renderDays >= RENDER_DAYS_GO && asks >= ASKS_GO) return 'go';
-  if (renderDays < RENDER_DAYS_NO_GO && asks === 0) return 'no_go';
+  // Brief: NO-GO requires <4 distinct render-days WITH any render. renderDays === 0
+  // means the window hasn't started producing signal — that's 'pending', not a verdict.
+  if (renderDays > 0 && renderDays < RENDER_DAYS_NO_GO && asks === 0) return 'no_go';
+  if (renderDays === 0 && asks === 0) return 'pending';
   return 'middle';
 }
 

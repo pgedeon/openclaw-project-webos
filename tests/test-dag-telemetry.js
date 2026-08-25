@@ -67,11 +67,11 @@ function opensOnDistinctDays(n) {
 
 // ── Branch rule boundaries ──────────────────────────────────────────────────
 
-check('empty rows → zeros, no_go branch, full window remaining at start', () => {
+check('empty rows → zeros, pending branch (window not started), full window remaining at start', () => {
   const r = evaluateDagTelemetry([], START);
   assert.deepStrictEqual(
     { renderDays: r.renderDays, opens: r.opens, helpfulUp: r.helpfulUp, helpfulDown: r.helpfulDown, templates: r.templates, branch: r.branch, daysRemaining: r.daysRemaining },
-    { renderDays: 0, opens: 0, helpfulUp: 0, helpfulDown: 0, templates: [], branch: 'no_go', daysRemaining: WINDOW_DAYS }
+    { renderDays: 0, opens: 0, helpfulUp: 0, helpfulDown: 0, templates: [], branch: 'pending', daysRemaining: WINDOW_DAYS }
   );
 });
 
@@ -79,7 +79,7 @@ check('null/undefined/non-array rows treated as empty', () => {
   for (const bad of [null, undefined, 'nope', 42, {}]) {
     const r = evaluateDagTelemetry(bad, START);
     assert.strictEqual(r.opens, 0);
-    assert.strictEqual(r.branch, 'no_go');
+    assert.strictEqual(r.branch, 'pending');
   }
 });
 
@@ -248,13 +248,14 @@ check('invalid nowMs falls back deterministically to window start (21)', () => {
 
 // ── Unit-level exports ──────────────────────────────────────────────────────
 
-check('evaluateBranch unit: only the three documented branches ever returned', () => {
+check('evaluateBranch unit: only the four documented branches ever returned', () => {
   for (let d = 0; d <= 10; d++) {
     for (let a = 0; a <= 5; a++) {
       const b = evaluateBranch(d, a);
-      assert.ok(['go', 'no_go', 'middle'].includes(b), `branch ${b} for ${d}/${a}`);
+      assert.ok(['go', 'no_go', 'middle', 'pending'].includes(b), `branch ${b} for ${d}/${a}`);
       if (d >= 8 && a >= 3) assert.strictEqual(b, 'go');
-      else if (d < 4 && a === 0) assert.strictEqual(b, 'no_go');
+      else if (d > 0 && d < 4 && a === 0) assert.strictEqual(b, 'no_go');
+      else if (d === 0 && a === 0) assert.strictEqual(b, 'pending');
       else assert.strictEqual(b, 'middle');
     }
   }
