@@ -45,6 +45,7 @@ const INCLUDED = [
   'test-health-routes.js',
   'test-health-status-gateway-snapshot.js',
   'test-history-routes.js',
+  'test-list-window.js',
   'test-memory-browser-view.js',
   'test-memory-routes.js',
   'test-mcp-server.js',

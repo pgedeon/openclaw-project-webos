@@ -1,7 +1,3 @@
----
-layout: default
----
-
 # Development Guide
 
 ## Setup

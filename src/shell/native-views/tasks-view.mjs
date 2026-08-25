@@ -1,8 +1,19 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
+// Capped-render virtualization (roadmap perf pass): task rows have VARIABLE
+// height (the chip row wraps on narrow windows), so the session-replay
+// fixed-row rail pattern does not apply — see the pattern split in
+// ../list-window.mjs. We render the first LIST_INITIAL_CAP filtered rows and
+// expose a "load more" control for the remainder.
+import { cappedWindow, growCap } from '../list-window.mjs';
+
 import { executeAction } from '../action-client.mjs';
 
 const FALLBACK_DEFAULT_MODEL = 'openrouter1/stepfun/step-3.5-flash:free';
+
+// Capped-render sizing: initial window and per-"load more" increment.
+const LIST_INITIAL_CAP = 100;
+const LIST_CAP_STEP = 100;
 
 const STATUS_OPTIONS = [
   { value: 'backlog', label: 'Backlog' },
@@ -157,6 +168,10 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
   let currentAgent = null;
   let isRefreshing = false;
   let syncUnsubscribe = null;
+  // Capped-render state: how many filtered rows are currently rendered.
+  // Reset to LIST_INITIAL_CAP whenever the filter set changes (project,
+  // filter tab, search, category, sort), preserved across selection toggles.
+  let listShownCount = LIST_INITIAL_CAP;
 
   // === Style injection ===
   const styleEl = document.createElement('style');
@@ -436,6 +451,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
 
   async function loadTasks() {
     isLoading = true;
+    listShownCount = LIST_INITIAL_CAP; // fresh data → fresh cap
     renderList();
     try {
       const params = buildScopedTaskParams();
@@ -602,7 +618,16 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       return;
     }
 
-    container.innerHTML = filtered.map(t => renderTaskRow(t)).join('');
+    // Capped render: only the first listShownCount rows reach the DOM
+    // (variable-height rows → capped-render + load-more, not fixed-row rail).
+    const { end, hidden } = cappedWindow({ total: filtered.length, shown: listShownCount });
+    container.innerHTML = filtered.slice(0, end).map(t => renderTaskRow(t)).join('') + (
+      hidden > 0
+        ? `<div style="padding:10px;text-align:center;">
+             <button id="tvLoadMore" class="tv-action-btn" style="padding:5px 14px;">Load ${Math.min(LIST_CAP_STEP, hidden)} more… (${hidden} hidden)</button>
+           </div>`
+        : ''
+    );
 
     // Attach event handlers via delegation
     attachListHandlers(container);
@@ -677,6 +702,18 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       row.addEventListener('mouseleave', hide);
       cleanupFns.push(() => { row.removeEventListener('mouseenter', show); row.removeEventListener('mouseleave', hide); });
     });
+
+    // "Load more" — grow the cap by one step and re-render
+    const loadMore = container.querySelector('#tvLoadMore');
+    if (loadMore) {
+      const handler = () => {
+        const filtered = getFilteredTasks();
+        listShownCount = growCap({ shown: listShownCount, total: filtered.length, step: LIST_CAP_STEP });
+        renderList();
+      };
+      loadMore.addEventListener('click', handler);
+      cleanupFns.push(() => loadMore.removeEventListener('click', handler));
+    }
 
     // Row click -> select
     container.querySelectorAll('.tv-task-row').forEach(row => {
@@ -1147,6 +1184,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
   wireEvent('#tvProjectSelect', 'change', (e) => {
     currentProjectId = e.target.value || null;
     selectedTaskId = null;
+    listShownCount = LIST_INITIAL_CAP;
     loadTasks();
     renderDetail();
   });
@@ -1156,6 +1194,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       currentFilter = btn.dataset.filter;
       root.querySelectorAll('.tv-filter').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      listShownCount = LIST_INITIAL_CAP;
       renderList();
     };
     btn.addEventListener('click', handler);
@@ -1165,15 +1204,16 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
   let searchTimer = null;
   wireEvent('#tvSearch', 'input', (e) => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => { searchQuery = e.target.value.trim(); renderList(); }, 200);
+    searchTimer = setTimeout(() => { searchQuery = e.target.value.trim(); listShownCount = LIST_INITIAL_CAP; renderList(); }, 200);
   });
 
   wireEvent('#tvCategoryFilter', 'change', (e) => {
     categoryFilter = e.target.value;
+    listShownCount = LIST_INITIAL_CAP;
     renderList();
   });
 
-  wireEvent('#tvSort', 'change', (e) => { sortValue = e.target.value; renderList(); });
+  wireEvent('#tvSort', 'change', (e) => { sortValue = e.target.value; listShownCount = LIST_INITIAL_CAP; renderList(); });
 
   wireEvent('#tvNewBtn', 'click', () => toggleComposer(true));
   wireEvent('#tvToggleComposer', 'click', () => toggleComposer(false));

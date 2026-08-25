@@ -101,6 +101,8 @@ Lightweight text editor window for viewing and editing files from the Explorer o
 
 ## Documentation Index
 
+> **Read online:** all documentation below is published as a website at **https://pgedeon.github.io/openclaw-project-webos/** (GitHub Pages, deployed automatically from `docs/` on every push to main).
+
 ### Getting Started
 
 | Document | Description |

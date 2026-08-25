@@ -12,7 +12,14 @@
 
 import { ensureNativeRoot, escapeHtml, normalizeCollection } from './helpers.mjs';
 
-// ── Status config ────────────────────────────────────────────────────
+// Capped-render virtualization (roadmap perf pass): kanban cards have
+// VARIABLE height (word-break titles, wrapping label rows) and the column is
+// a drag-and-drop drop zone, so the session-replay fixed-row rail pattern
+// does not apply — see the pattern split in ../list-window.mjs. Each column
+// renders its first COLUMN_INITIAL_CAP cards and exposes "load more".
+import { cappedWindow, growCap } from '../list-window.mjs';
+
+// ── Status config ────────────────────────────────────────────────────────
 const STATUS_META = {
   backlog:     { color: '#6b7280', bg: 'rgba(107,114,128,0.12)', icon: '☐' },
   ready:       { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  icon: '◐' },
@@ -24,6 +31,10 @@ const STATUS_META = {
 };
 
 const PRI_COLORS = { critical: '#dc2626', high: '#ea580c', medium: '#d97706', low: '#16a34a' };
+
+// Capped-render sizing per column: initial window, per-"load more" increment.
+const COLUMN_INITIAL_CAP = 50;
+const COLUMN_CAP_STEP = 50;
 
 // ── CSS (injected once) ──────────────────────────────────────────────
 const CSS_ID = 'kb-styles';
@@ -141,6 +152,11 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
   let includeChildren = false;
   let searchQuery = '';
   let draggedTask = null;
+  // Capped-render state per status column (status → shown count). Reset on
+  // board reload / search change; grown by each column's "load more" button;
+  // force-revealed for a column that receives a dragged task so the moved
+  // card is never hidden below its own cap.
+  const colShown = new Map();
 
   // ── HTML shell ─────────────────────────────────────────────────────
   mountNode.innerHTML = `
@@ -213,6 +229,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
       const r = await fetch(`/api/views/board?${params}`, { headers: { 'Authorization': `Bearer ${globalThis.__DASHBOARD_AUTH_TOKEN__ || ''}` } });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       boardData = await r.json();
+      colShown.clear(); // fresh data → fresh caps
       draw();
     } catch (e) {
       showToast(`Failed to load board: ${e.message}`, true);
@@ -270,10 +287,25 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
       if (tasks.length === 0) {
         colBody.innerHTML = '<div class="kb-col-empty">Drop here</div>';
       } else {
-        tasks.forEach(task => {
+        // Capped render: first N cards only (variable card heights + DnD
+        // drop zone → capped-render + load-more, not fixed-row rail).
+        const shown = colShown.get(status) ?? COLUMN_INITIAL_CAP;
+        const { end, hidden } = cappedWindow({ total: tasks.length, shown });
+        tasks.slice(0, end).forEach(task => {
           const card = createCard(task, status);
           colBody.appendChild(card);
         });
+        if (hidden > 0) {
+          const more = document.createElement('button');
+          more.className = 'kb-ctl kb-col-more';
+          more.style.cssText = 'margin:2px 0;cursor:pointer;font-size:.75rem';
+          more.textContent = `Load ${Math.min(COLUMN_CAP_STEP, hidden)} more… (${hidden} hidden)`;
+          more.addEventListener('click', () => {
+            colShown.set(status, growCap({ shown, total: tasks.length, step: COLUMN_CAP_STEP }));
+            draw();
+          });
+          colBody.appendChild(more);
+        }
       }
 
       // Drag events on column body
@@ -375,6 +407,9 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
     if (!boardData.columns[newStatus]) boardData.columns[newStatus] = [];
     draggedTask.status = newStatus;
     boardData.columns[newStatus].push(draggedTask);
+    // Reveal the moved card: raise the target column's cap past its full
+    // length so the dropped card is never hidden below a "load more" cut.
+    colShown.set(newStatus, boardData.columns[newStatus].length);
 
     draw();
 
@@ -433,6 +468,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
         const task = await r.json();
         boardData.columns[status] = boardData.columns[status] || [];
         boardData.columns[status].unshift(task);
+        colShown.set(status, boardData.columns[status].length); // new card must be visible
         draw();
         showToast('Task created', false);
       } catch (e) {
@@ -534,6 +570,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
         if (!boardData.columns[newStatus]) boardData.columns[newStatus] = [];
         task.status = newStatus;
         boardData.columns[newStatus].push(task);
+        colShown.set(newStatus, boardData.columns[newStatus].length); // moved card must be visible
         closeDetail();
         draw();
       },
@@ -553,6 +590,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
         task.status = oldStatus;
         if (!boardData.columns[oldStatus]) boardData.columns[oldStatus] = [];
         boardData.columns[oldStatus].push(task);
+        colShown.set(oldStatus, boardData.columns[oldStatus].length); // rolled-back card must be visible
         draw();
       },
       onSuccess: () => showToast(`Moved to ${newStatus.replace(/_/g, ' ')}`, false),
@@ -593,6 +631,7 @@ export async function renderBoardView({ mountNode, api, adapter, stateStore, par
 
   inpQ.addEventListener('input', () => {
     searchQuery = inpQ.value;
+    colShown.clear(); // filter set changed → fresh caps
     draw();
   });
 

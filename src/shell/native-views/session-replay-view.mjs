@@ -21,6 +21,10 @@
  */
 
 import { ensureNativeRoot, escapeHtml } from './helpers.mjs';
+// Shared virtualization math (fixed-row rail window). Imported for local use
+ // and re-exported below so the existing test/import surface is unchanged.
+import { visibleWindow as _visibleWindow } from '../list-window.mjs';
+const visibleWindow = _visibleWindow;
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -135,22 +139,13 @@ export function computeStateAsOf(events, i) {
 }
 
 /**
- * Visible row window for the virtualized rail. Fixed row heights make the
- * math closed-form; `end` is exclusive. Falls back to rendering everything
- * when the geometry is degenerate (rowHeight ≤ 0) — correctness over speed.
+ * Visible row window for the virtualized rail: extracted to
+ * ../list-window.mjs so the capped-render views share the same window
+ * math; re-exported here for the existing test/import surface.
  *
  * @returns {{start: number, end: number}}
  */
-export function visibleWindow({ total, viewport, scrollTop, rowHeight, overscan = RAIL_OVERSCAN }) {
-  const n = Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0;
-  if (n === 0) return { start: 0, end: 0 };
-  if (!Number.isFinite(rowHeight) || rowHeight <= 0) return { start: 0, end: n };
-  const top = Number.isFinite(scrollTop) ? Math.max(0, scrollTop) : 0;
-  const vp = Number.isFinite(viewport) ? Math.max(0, viewport) : 0;
-  const start = Math.max(0, Math.floor(top / rowHeight) - overscan);
-  const count = Math.ceil(vp / rowHeight) + 2 * overscan;
-  return { start, end: Math.min(n, start + count) };
-}
+export { visibleWindow };
 
 /**
  * Badge tone for a tool event: green on exitCode 0, red on any other finite
@@ -524,6 +519,7 @@ export async function renderSessionReplayView({ mountNode, api, params = {} }) {
       viewport: railEl.clientHeight,
       scrollTop: railEl.scrollTop,
       rowHeight: ROW_HEIGHT,
+      overscan: RAIL_OVERSCAN,
     });
     const frag = document.createDocumentFragment();
     for (let i = start; i < end; i++) frag.appendChild(buildRow(events[i], i));
