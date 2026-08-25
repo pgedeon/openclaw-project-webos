@@ -12,9 +12,10 @@ A complete walkthrough of the OpenClaw Project Dashboard interface, workflows, a
 6. [One-Click Actions & Confirmations](#one-click-actions--confirmations)
 7. [Ask Bar (NL Commands)](#ask-bar-nl-commands)
 8. [Keyboard Shortcuts](#keyboard-shortcuts)
-9. [Agent Integration](#agent-integration)
-10. [Import / Export](#import--export)
-11. [Accessibility](#accessibility)
+9. [Appearance: Themes & Accent Packs](#appearance-themes--accent-packs)
+10. [Agent Integration](#agent-integration)
+11. [Import / Export](#import--export)
+12. [Accessibility](#accessibility)
 
 ---
 
@@ -329,6 +330,33 @@ The heartbeat automatically refreshes the agent’s task list every 30 seconds
 
 - Click “Import” and select a previously exported `.json` or `.csv` file.
 - The import merges tasks; existing tasks are matched by `id` if present, otherwise new tasks are created.
+
+---
+
+## Appearance: Themes & Accent Packs
+
+The desktop shell ships a dark and a light base theme plus five built-in accent packs layered on top.
+
+### Base theme (dark / light)
+
+- Toggle with the moon/sun button in the taskbar tray, or press the theme toggle in the Start menu area.
+- First load follows your system preference; an explicit toggle persists to localStorage (`openclaw.win11.theme.v1`).
+
+### Accent packs
+
+Accents recolor buttons, highlights, selection rings, and active states on top of either base theme:
+
+| Pack | Light accent | Dark accent |
+|------|--------------|-------------|
+| Blue (default) | `#0067c0` | `#60cdff` |
+| Teal | `#038387` | `#45d1d6` |
+| Violet | `#8661c5` | `#c3a6ff` |
+| Amber | `#ca5010` | `#f7a95d` |
+| Rose | `#c4314b` | `#ff8fa8` |
+
+- Open the palette icon in the taskbar tray and pick a swatch. The choice persists across reloads (`openclaw.accent`) and applies before first paint — no flash of the wrong color.
+- Switching base themes keeps your accent; switching accents keeps your base theme.
+- An invalid or corrupted stored value falls back silently to the default blue pack.
 
 ---
 

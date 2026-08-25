@@ -8,12 +8,27 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/styles/win11-theme.css">
+    <link rel="stylesheet" href="/src/styles/win11-accents.css">
     <link rel="stylesheet" href="/src/styles/win11-shell.css">
     <link rel="stylesheet" href="/src/styles/win11-windows.css">
     <link rel="stylesheet" href="/src/styles/win11-taskbar.css">
     <link rel="stylesheet" href="/src/styles/win11-widget-card.css">
     <link rel="stylesheet" href="/src/styles/win11-widget-panel.css">
     <link rel="stylesheet" href="/src/styles/win11-start.css">
+    <script>
+        // Accent pre-paint: forward the persisted accent id to <html> before
+        // first paint (mirror of src/shell/accent-packs.mjs readStoredAccent
+        // + applyAccent, inlined because classic scripts run before module
+        // imports). Unknown ids are inert by design — win11-accents.css only
+        // defines override blocks for known packs, so an invalid stored value
+        // silently falls back to the base theme colors.
+        try {
+            var __accent = localStorage.getItem('openclaw.accent');
+            if (__accent && /^[a-z][a-z0-9-]{0,31}$/.test(__accent)) {
+                document.documentElement.setAttribute('data-accent', __accent);
+            }
+        } catch (e) { /* storage unavailable — base theme stays */ }
+    </script>
 </head>
 <body>
     <div id="desktop"></div>

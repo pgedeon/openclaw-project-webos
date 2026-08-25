@@ -370,9 +370,18 @@ Browser
 
 Themes are stored in localStorage (`openclaw.win11.theme.v1`). The shell detects the system preference on first load and defaults to `dark`. The taskbar provides a toggle button (moon/sun icon) that persists the choice.
 
-CSS classes applied to the root element:
-- `.theme-dark` — Dark theme (default)
-- `.theme-light` — Light theme
+Attribute applied to the root element:
+- `data-theme="dark"` — Dark theme (default)
+- `data-theme="light"` — Light theme
+
+### Accent packs (Phase 3)
+
+Accent packs are CSS custom-property overrides layered ON TOP of the base theme, so every accent is valid in both dark and light mode (`accent × dark` and `accent × light`).
+
+- Definitions: `src/styles/win11-accents.css` overrides only `--win11-accent`, `--win11-accent-hover`, `--win11-accent-light`, and `--win11-on-accent` via `[data-accent="…"]` blocks; dark-mode variants use the higher-specificity compound selector `[data-theme="dark"][data-accent="…"]`.
+- Catalog + persistence helpers: `src/shell/accent-packs.mjs` exports `ACCENT_PACKS` (default blue, teal, violet, amber, rose), `resolveAccent(storedValue)` (zero-throw: any invalid value resolves to the default pack), plus injectable-storage `readStoredAccent()` / `storeAccent()`.
+- Application: `shell-main.mjs` applies the persisted accent at module evaluation (before any shell render); `index.html` additionally forwards the raw stored id to `<html data-accent>` in a tiny pre-paint inline script. Unknown ids are inert by design — no matching CSS block means base theme variables remain, which is what makes invalid stored preferences fall back silently.
+- UI: the taskbar tray palette icon opens a swatch popover (`win11-taskbar__accent-picker`); selection persists to localStorage key `openclaw.accent`.
 
 ---
 
@@ -381,6 +390,7 @@ CSS classes applied to the root element:
 | Key | Module | Purpose |
 |-----|--------|---------|
 | `openclaw.win11.theme.v1` | shell-main | Theme preference |
+| `openclaw.accent` | accent-packs.mjs | Accent pack preference |
 | `openclaw.win11.windows.v1` | WindowManager | Window positions/sizes |
 | `openclaw.dashboard.widgets.visible` | WidgetPanel | Widget visibility state |
 | `projectDashboardState` | StateManager | Legacy dashboard state (fallback) |

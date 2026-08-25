@@ -1,0 +1,78 @@
+/* ============================================
+   Win11 Accent Packs — layered ON TOP of the base theme
+   ============================================ */
+
+/*
+ * Accent packs override ONLY the four --win11-accent* custom properties.
+ * They are valid in BOTH base themes:
+ *   - Light mode: [data-accent="…"] (same specificity as the dark base
+ *     block, but this file loads after win11-theme.css so it wins there).
+ *   - Dark mode:  [data-theme="dark"][data-accent="…"] compound selectors
+ *     (higher specificity) always win over both single-attribute blocks.
+ *
+ * The "default" pack is the Win11 blue already defined by win11-theme.css —
+ * it ships no override block; applying it clears [data-accent] entirely
+ * (see src/shell/accent-packs.mjs). Unknown data-accent values are inert
+ * by design (no matching block → base variables remain), which is what
+ * makes invalid stored preferences fall back silently.
+ */
+
+/* ---- Light-mode accent overrides ---- */
+
+[data-accent="teal"] {
+  --win11-accent: #038387;
+  --win11-accent-hover: #12969a;
+  --win11-accent-light: rgba(3, 131, 135, 0.08);
+  --win11-on-accent: #ffffff;
+}
+
+[data-accent="violet"] {
+  --win11-accent: #8661c5;
+  --win11-accent-hover: #9472cf;
+  --win11-accent-light: rgba(134, 97, 197, 0.08);
+  --win11-on-accent: #ffffff;
+}
+
+[data-accent="amber"] {
+  --win11-accent: #ca5010;
+  --win11-accent-hover: #d55f20;
+  --win11-accent-light: rgba(202, 80, 16, 0.08);
+  --win11-on-accent: #ffffff;
+}
+
+[data-accent="rose"] {
+  --win11-accent: #c4314b;
+  --win11-accent-hover: #d0435c;
+  --win11-accent-light: rgba(196, 49, 75, 0.08);
+  --win11-on-accent: #ffffff;
+}
+
+/* ---- Dark-mode accent overrides (compound = higher specificity) ---- */
+
+[data-theme="dark"][data-accent="teal"] {
+  --win11-accent: #45d1d6;
+  --win11-accent-hover: #67dade;
+  --win11-accent-light: rgba(69, 209, 214, 0.12);
+  --win11-on-accent: #05282a;
+}
+
+[data-theme="dark"][data-accent="violet"] {
+  --win11-accent: #c3a6ff;
+  --win11-accent-hover: #d0b8ff;
+  --win11-accent-light: rgba(195, 166, 255, 0.12);
+  --win11-on-accent: #241540;
+}
+
+[data-theme="dark"][data-accent="amber"] {
+  --win11-accent: #f7a95d;
+  --win11-accent-hover: #f9ba7c;
+  --win11-accent-light: rgba(247, 169, 93, 0.12);
+  --win11-on-accent: #35200a;
+}
+
+[data-theme="dark"][data-accent="rose"] {
+  --win11-accent: #ff8fa8;
+  --win11-accent-hover: #ffa6ba;
+  --win11-accent-light: rgba(255, 143, 168, 0.12);
+  --win11-on-accent: #3d0a14;
+}

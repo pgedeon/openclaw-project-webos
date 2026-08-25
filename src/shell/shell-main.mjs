@@ -19,9 +19,14 @@ import { createRealtimeSync } from './realtime-sync.mjs';
 import { setOnlineStatus } from './mutation-manager.mjs';
 import { WidgetRegistry } from './widgets/widget-registry.mjs';
 import { WidgetPanel } from './widgets/widget-panel.mjs';
+import { applyAccent, readStoredAccent, storeAccent, resolveAccent } from './accent-packs.mjs';
 
 const DEFAULT_THEME_STORAGE_KEY = 'openclaw.win11.theme.v1';
 const DEFAULT_WINDOW_STORAGE_KEY = 'openclaw.win11.windows.v1';
+
+// Apply the persisted accent before any shell render (zero-throw; invalid or
+// missing values resolve to the default pack, which clears [data-accent]).
+applyAccent(readStoredAccent());
 const SHELL_INSTANCE_KEY = '__OPENCLAW_WIN11_SHELL__';
 
 const quickLaunchApps = ['tasks', 'agents', 'skills-tools', 'operations', 'workflows'];
@@ -215,6 +220,8 @@ export function bootstrapShell({
     console.warn('Unable to read shell theme preference:', error);
   }
 
+  const currentAccent = readStoredAccent();
+
   const applyTheme = (theme) => {
     currentTheme = theme;
     document.documentElement.dataset.theme = theme;
@@ -295,6 +302,7 @@ export function bootstrapShell({
     apps,
     pinnedAppIds,
     initialTheme: currentTheme,
+    initialAccent: currentAccent,
     sync, // Pass sync to taskbar
     onStartToggle: () => startMenu?.toggle(),
     onWidgetsToggle: () => toggleWidgetsPanel(),
@@ -311,6 +319,11 @@ export function bootstrapShell({
       startMenu?.close();
     },
     onThemeToggle: (theme) => applyTheme(theme),
+    onAccentChange: (accentId) => {
+      const resolved = applyAccent(accentId);
+      storeAccent(resolved);
+      taskbar.setAccent(resolved);
+    },
   });
 
   // Notification center toggle

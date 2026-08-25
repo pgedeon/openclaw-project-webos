@@ -1,4 +1,5 @@
 import APP_REGISTRY, { PINNED_APP_IDS, getAppById } from './app-registry.mjs';
+import { ACCENT_PACKS } from './accent-packs.mjs';
 
 const startIcon = `
   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -38,6 +39,16 @@ const sunIcon = `
   </svg>
 `;
 
+const paletteIcon = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 3a9 9 0 1 0 0 18h1.2a2.3 2.3 0 0 0 1.6-3.9 2.3 2.3 0 0 1 1.6-3.9H19A2.9 2.9 0 0 0 21.9 10 9.4 9.4 0 0 0 12 3Z"></path>
+    <circle cx="7.6" cy="10.2" r="1.15" fill="currentColor" stroke="none"></circle>
+    <circle cx="12" cy="7.4" r="1.15" fill="currentColor" stroke="none"></circle>
+    <circle cx="16.4" cy="10.2" r="1.15" fill="currentColor" stroke="none"></circle>
+    <circle cx="8.9" cy="14.8" r="1.15" fill="currentColor" stroke="none"></circle>
+  </svg>
+`;
+
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: 'numeric',
   minute: '2-digit',
@@ -61,7 +72,9 @@ export class Taskbar extends EventTarget {
     onWidgetsToggle = () => {},
     onAppActivate = () => {},
     onThemeToggle = () => {},
+    onAccentChange = () => {},
     initialTheme = 'light',
+    initialAccent = 'default',
   } = {}) {
     super();
 
@@ -77,7 +90,9 @@ export class Taskbar extends EventTarget {
     this.onWidgetsToggle = onWidgetsToggle;
     this.onAppActivate = onAppActivate;
     this.onThemeToggle = onThemeToggle;
+    this.onAccentChange = onAccentChange;
     this.theme = initialTheme;
+    this.accent = initialAccent;
     this.widgetsOpen = false;
     this.snapshot = { activeAppId: null, windows: [] };
     this.clockInterval = null;
@@ -217,6 +232,10 @@ export class Taskbar extends EventTarget {
             <span class="win11-taskbar__glyph" data-role="theme-icon"></span>
             <span class="win11-taskbar__tooltip" data-role="theme-tooltip"></span>
           </button>
+          <button type="button" class="win11-taskbar__button win11-taskbar__tray-button" data-action="accent" aria-label="Accent color" aria-haspopup="true" aria-expanded="false">
+            <span class="win11-taskbar__glyph">${paletteIcon}</span>
+            <span class="win11-taskbar__tooltip">Accent color</span>
+          </button>
           <button type="button" class="win11-taskbar__button win11-taskbar__tray-button" data-action="notifications" aria-label="Notifications">
             <span class="win11-taskbar__glyph">${bellIcon}</span>
             <span class="win11-taskbar__tooltip">Notifications</span>
@@ -226,6 +245,17 @@ export class Taskbar extends EventTarget {
             <span class="win11-taskbar__tooltip">Recent actions</span>
           </button>
           <button type="button" class="win11-taskbar__clock" data-role="clock" aria-label="System clock"></button>
+            <div data-role="accent-picker" class="win11-taskbar__accent-picker" hidden>
+              <div class="win11-taskbar__accent-title">Accent color</div>
+              <div class="win11-taskbar__swatch-row">
+                ${ACCENT_PACKS.map((pack) => `
+                  <button type="button" class="win11-taskbar__swatch" data-accent-id="${pack.id}" aria-label="${escapeHtml(pack.label)} accent" title="${escapeHtml(pack.label)}">
+                    <span class="win11-taskbar__swatch-dot" data-role="swatch-dot"></span>
+                    <span class="win11-taskbar__swatch-check" aria-hidden="true">✓</span>
+                  </button>
+                `).join('')}
+              </div>
+            </div>
         </div>
       </nav>
       <style>
@@ -244,6 +274,8 @@ export class Taskbar extends EventTarget {
     this.themeButton = this.root.querySelector('[data-action="theme"]');
     this.themeIcon = this.root.querySelector('[data-role="theme-icon"]');
     this.themeTooltip = this.root.querySelector('[data-role="theme-tooltip"]');
+    this.accentButton = this.root.querySelector('[data-action="accent"]');
+    this.accentPicker = this.root.querySelector('[data-role="accent-picker"]');
     this.clockElement = this.root.querySelector('[data-role="clock"]');
 
     this.root.addEventListener('click', (event) => {
@@ -263,6 +295,19 @@ export class Taskbar extends EventTarget {
       if (themeButton) {
         const nextTheme = this.theme === 'dark' ? 'light' : 'dark';
         this.onThemeToggle(nextTheme);
+        return;
+      }
+
+      const accentButton = event.target.closest('[data-action="accent"]');
+      if (accentButton) {
+        this.toggleAccentPicker();
+        return;
+      }
+
+      const swatch = event.target.closest('[data-accent-id]');
+      if (swatch) {
+        this.closeAccentPicker();
+        this.onAccentChange(swatch.dataset.accentId);
         return;
       }
 
@@ -291,10 +336,24 @@ export class Taskbar extends EventTarget {
     });
 
     this.setTheme(this.theme);
+    this.setAccent(this.accent);
     this.setWindowState(this.snapshot);
     this.setWidgetsOpen(this.widgetsOpen);
     this.updateClock();
     this.renderNotificationBadges();
+
+    // Close the accent picker on outside clicks / Escape.
+    this.onDocumentClick = (event) => {
+      if (!this.accentPicker || this.accentPicker.hidden) return;
+      if (event.target.closest('[data-role="accent-picker"]')) return;
+      if (event.target.closest('[data-action="accent"]')) return;
+      this.closeAccentPicker();
+    };
+    this.onRootKeydown = (event) => {
+      if (event.key === 'Escape') this.closeAccentPicker();
+    };
+    document.addEventListener('click', this.onDocumentClick);
+    this.root.addEventListener('keydown', this.onRootKeydown);
   }
 
   startClock() {
@@ -312,6 +371,8 @@ export class Taskbar extends EventTarget {
 
   destroy() {
     this.stopClock();
+    document.removeEventListener('click', this.onDocumentClick);
+    this.root.removeEventListener('keydown', this.onRootKeydown);
     if (this.syncUnsubscribe) {
       this.syncUnsubscribe();
       this.syncUnsubscribe = null;
@@ -358,6 +419,41 @@ export class Taskbar extends EventTarget {
     this.themeIcon.innerHTML = isDark ? sunIcon : moonIcon;
     this.themeTooltip.textContent = isDark ? 'Light mode' : 'Dark mode';
     this.themeButton?.setAttribute('aria-label', this.themeTooltip.textContent);
+    this.refreshSwatchColors();
+  }
+
+  setAccent(accentId) {
+    this.accent = accentId;
+    if (this.accentPicker) {
+      this.accentPicker.querySelectorAll('[data-accent-id]').forEach((swatch) => {
+        swatch.classList.toggle('is-active', swatch.dataset.accentId === accentId);
+      });
+    }
+    this.refreshSwatchColors();
+  }
+
+  refreshSwatchColors() {
+    if (!this.accentPicker) return;
+    const isDark = this.theme === 'dark';
+    this.accentPicker.querySelectorAll('[data-accent-id]').forEach((swatch) => {
+      const pack = ACCENT_PACKS.find((p) => p.id === swatch.dataset.accentId);
+      const dot = swatch.querySelector('[data-role="swatch-dot"]');
+      if (pack && dot) {
+        dot.style.background = isDark ? pack.darkColor : pack.color;
+      }
+    });
+  }
+
+  toggleAccentPicker() {
+    if (!this.accentPicker) return;
+    this.accentPicker.hidden = !this.accentPicker.hidden;
+    this.accentButton?.setAttribute('aria-expanded', this.accentPicker.hidden ? 'false' : 'true');
+  }
+
+  closeAccentPicker() {
+    if (!this.accentPicker || this.accentPicker.hidden) return;
+    this.accentPicker.hidden = true;
+    this.accentButton?.setAttribute('aria-expanded', 'false');
   }
 
   setStartMenuOpen(isOpen) {
