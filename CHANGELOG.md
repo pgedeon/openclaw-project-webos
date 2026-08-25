@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-25
+
+**The 10x upgrade is complete.** Version 2.0.0 marks the dashboard's graduation into a security-hardened, live-streaming, cost-governed, MCP-exposed agent operations platform. All four server surfaces (task-server, cron-manager, memory-api, filesystem-api) completed full security remediation of the SECURITY-AUDIT-2026-08 findings; OpenClaw gateway events now stream live into the UI through the WebSocket bridge with a validated event pipeline and a live agent console; spend is governed end-to-end by budget enforcement wired into the workflow dispatcher; and the platform's capabilities are exposed externally as an MCP server (13 tools) alongside receipted one-click actions, session replay, cost/token analytics, snapshot/restore with checkpoint resume, PWA installability, a theme engine, workflow graph Stage 1, Memory Browser 2.0, an NL command bar, and a live docs site at https://pgedeon.github.io/openclaw-project-webos/.
+
 ### Fixed
 - Workflow graph telemetry endpoint (`POST /api/workflow-graph/events`) validates the payload BEFORE the pool check — invalid bodies now get their named 400 (`invalid_body`/`invalid_event`/`invalid_template`/`invalid_helpful`) even in json_snapshot/no-DB mode instead of a silent `{stored:false,reason:no_database}` that masked client bugs; valid payloads still degrade gracefully after validation (regression-pinned in tests/test-workflow-graph.js, ci-db-free-tests 55/55).
 
@@ -86,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed cron route handling of OpenClaw CLI dependency errors returned as `{ error }` payloads.
 - Fixed workflow routing admin handlers so validation and missing-database responses are consistently reported as handled by the router.
 - Fixed standalone filesystem API server (SECURITY-AUDIT-2026-08.md F5): bearer-token auth on every route, Host-header loopback allowlist, task-server-only Origin allowlist, JSON-only mutating requests, and outright write refusal for `crontab/`, `.ssh/`, and `agents/*/sessions/` trees (reads stay allowed for the explorer).
+
 
 ## [1.1.0] - 2026-08-23
 

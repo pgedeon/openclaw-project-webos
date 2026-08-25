@@ -1,6 +1,6 @@
 # OpenClaw Project WebOS
 
-`1.0.0-rc.2`
+`2.0.0`
 
 A Windows 11-style desktop environment for managing OpenClaw agent workflows — served entirely in the browser with vanilla JS, no frameworks, no build step. Each feature is a windowed application launched from the taskbar or start menu.
 
@@ -335,7 +335,7 @@ DASHBOARD_API_BASE=http://localhost:3887 node scripts/dashboard-validation.js
 
 ## Release
 
-Tagged as `v1.0.0-rc.2` on [github.com/pgedeon/openclaw-project-webos](https://github.com/pgedeon/openclaw-project-webos).
+Tagged as `v2.0.0` on [github.com/pgedeon/openclaw-project-webos](https://github.com/pgedeon/openclaw-project-webos).
 
 - Release notes: [RELEASE.md](RELEASE.md)
 - Change history: [CHANGELOG.md](CHANGELOG.md)
