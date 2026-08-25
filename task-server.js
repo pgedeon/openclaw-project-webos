@@ -664,6 +664,20 @@ try {
   console.error('⚠️  Gateway client not available:', err.message);
 }
 
+// Budget channel alerts (budget-ledger slice 5): publish the shared client so
+// the dispatcher's notifier can page over the EXISTING authenticated gateway
+// WebSocket (sendDelivery → `send` RPC). Null when the client is unavailable —
+// the notifier then degrades silently (log-once) and enforcement/SSE are
+// unaffected. Cleared on stop so a stale socket is never reused.
+try { global.__openclawDashboardGatewayClient = gatewayClient || null; } catch (_) {}
+const __origGatewayClientStop = gatewayClient && typeof gatewayClient.stop === 'function' ? gatewayClient.stop.bind(gatewayClient) : null;
+if (__origGatewayClientStop) {
+  gatewayClient.stop = (...args) => {
+    global.__openclawDashboardGatewayClient = null;
+    return __origGatewayClientStop(...args);
+  };
+}
+
 // Gateway bridge v1: server-side subscriber feeding /api/events/stream. Opt-in
 // via GATEWAY_BRIDGE_URL env or openclaw.json; disabled cleanly when unset;
 // the gateway shared secret never leaves this process.

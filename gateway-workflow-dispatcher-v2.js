@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const { execFileSync } = require('child_process');
 const { createBudgetEnforcement, buildBudgetBreachFrame } = require('./lib/budget-enforcement');
+const { createBudgetChannelNotifier } = require('./lib/budget-channel-notifier');
 
 const DEFAULT_OPTIONS = Object.freeze({
   pollIntervalMs: 30_000,
@@ -483,6 +484,44 @@ class GatewayWorkflowDispatcherV2 {
     // Budget enforcement gate (slice 2) — created lazily on first candidate.
     this.budgetGate = null;
     this.lastBudgetEnforcement = { held: 0, stopped: 0, warned: 0 };
+    // Budget channel alerts (slice 5) — lazy notifier + client resolver.
+    this.budgetChannelNotifier = null;
+    if (this.options.budgetAlertGatewayClient !== undefined) {
+      const injected = this.options.budgetAlertGatewayClient;
+      this.budgetAlertGetClient = typeof injected === 'function' ? injected : () => injected;
+    }
+  }
+
+  /**
+   * Resolve the gateway client for budget channel alerts. Injected
+   * options.budgetAlertGatewayClient (instance or () => client) wins (tests);
+   * otherwise the task-server's shared GatewayClient is required lazily so the
+   * dispatcher can be constructed before the client exists. Null ⇒ notifier
+   * degrades silently (log-once); enforcement and SSE are unaffected.
+   */
+  getBudgetAlertGatewayClient() {
+    if (!this.budgetAlertGetClient) {
+      try {
+        // task-server.js sets this global right after its shared GatewayClient
+        // starts (the same client chat-routes use) — no require cycle.
+        const shared = global.__openclawDashboardGatewayClient || null;
+        if (shared) this.budgetAlertGetClient = () => shared;
+      } catch (_) {
+        this.budgetAlertGetClient = null;
+      }
+    }
+    return this.budgetAlertGetClient ? this.budgetAlertGetClient() : null;
+  }
+
+  /** Lazy singleton beside getBudgetBroadcaster(). */
+  getBudgetChannelNotifier() {
+    if (!this.budgetChannelNotifier) {
+      this.budgetChannelNotifier = createBudgetChannelNotifier({
+        getClient: () => this.getBudgetAlertGatewayClient(),
+        log: this.log,
+      });
+    }
+    return this.budgetChannelNotifier;
   }
 
   start() {
@@ -669,6 +708,7 @@ class GatewayWorkflowDispatcherV2 {
   emitBudgetBreachFrames(collected) {
     const broadcaster = this.getBudgetBroadcaster();
     if (!broadcaster) return;
+    const notifier = this.getBudgetChannelNotifier(); // never null; deliverFrame never throws
     const seen = new Set();
     for (const item of collected || []) {
       const frame = buildBudgetBreachFrame(item || {});
@@ -679,6 +719,11 @@ class GatewayWorkflowDispatcherV2 {
         broadcaster('budget:breach', frame);
       } catch (error) {
         this.log.error('[DispatcherV2] Budget breach SSE emit failed:', error.message);
+      }
+      try {
+        notifier.deliverFrame(frame); // async, self-contained: failures log-once inside
+      } catch (error) {
+        this.log.error('[DispatcherV2] Budget channel alert dispatch failed:', error.message);
       }
     }
   }

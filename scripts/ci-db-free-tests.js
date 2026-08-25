@@ -30,6 +30,7 @@ const INCLUDED = [
   'test-backfill-run-costs.js',
   'test-bing-routes.js',
   'test-budget-enforcement.js',
+  'test-budget-notifier.js',
   'test-budget-routes.js',
   'test-budgets-view.js',
   'test-catalog-api.js',

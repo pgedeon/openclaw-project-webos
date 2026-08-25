@@ -44,6 +44,20 @@ The current auth mode is single-operator bearer token auth. Full login/session/R
 | `OPENCLAW_FS_ROOT` | No | `/root/.openclaw` | Root directory served by the filesystem API | `filesystem-api-server.mjs` |
 | `OPENCLAW_HOME` | No | `$HOME` | Root of OpenClaw gateway data (`agents/*/sessions`) read by the cost/token backfill | `backfill-run-costs.js` |
 
+### Budget Breach Channel Alerts (optional, default off)
+
+The budget breach channel notifier (`lib/budget-channel-notifier.js`, budget-ledger slice 5) pages the operator on a chat channel when a budget breach event latches (UNIQUE `(budget_id, period_key, event_kind)` — exactly one message per budget+period+kind). It reuses the task-server's existing authenticated gateway WebSocket via `GatewayClient.sendDelivery` → gateway `send` RPC: no new network surface, no LLM turn, verbatim alert text. Failures degrade silently with log-once suppression (10-minute window); enforcement and SSE surfacing are never affected. Default OFF = zero behavior change.
+
+| Variable | Required | Default | Description | Component |
+|----------|----------|---------|-------------|-----------|
+| `BUDGET_ALERT_CHANNEL` | No | `off` | Alert channel: `zulip`, `whatsapp`, or `off`. Any other value (including unset) disables channel alerts entirely | `lib/budget-channel-notifier.js` |
+| `BUDGET_ALERT_TARGET` | No | — | Recipient on the configured channel, per gateway send semantics (WhatsApp E.164 phone number; Zulip target per `openclaw directory`). Unset target ⇒ alerts disabled | `lib/budget-channel-notifier.js` |
+| `BUDGET_ALERT_EVENT_KINDS` | No | `paused,hard_stopped` | Comma-separated latched event kinds that page. `warned` is accepted but inert while the SSE fan-out gate stays non-warn | `lib/budget-channel-notifier.js` |
+| `BUDGET_ALERT_MUTED_BUDGETS` | No | — | Comma-separated budget ids or names excluded from paging | `lib/budget-channel-notifier.js` |
+| `BUDGET_ALERT_DASHBOARD_URL_BASE` | No | — | Staging URL base for the `Dashboard:` link line (budgets deep-link); empty/unset ⇒ line omitted entirely. Keep loopback/LAN-only until this ships past staging | `lib/budget-channel-notifier.js` |
+
+Secrets: none new — the notifier sends over the shared gateway client already authenticated by `OPENCLAW_GATEWAY_TOKEN` / `OPENCLAW_GATEWAY_PASSWORD`.
+
 ### Gateway Bridge (optional, default off)
 
 The gateway bridge (`lib/gateway-bridge.js`) opens one server-side WebSocket to the OpenClaw
