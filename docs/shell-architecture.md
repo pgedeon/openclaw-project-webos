@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Shell Architecture Reference
 
 The OpenClaw WebOS desktop shell is a Win11-inspired single-page application built from modular ES modules. This document covers the internal architecture of the shell layer — the window manager, taskbar, start menu, sync system, and view infrastructure.

@@ -183,11 +183,14 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       Workflows trigger panel (Graph toggle; latest-run status colors, node detail
       cards, 32-step cap) + earn-use telemetry POST /api/workflow-graph/events
       (one open event per view-session + 👍/👎 feedback chip → audit_log rows).
-      Checkbox stays UNTICKED on purpose — GO/NO-GO is the brief §6 21-day metric,
-      not vibes: GO = ≥8 distinct render-days AND ≥3 explicit asks for editing;
-      NO-GO (<4 days AND zero asks) closes drag-drop and keeps the read-only view
-      (run-mode status coloring retains standalone monitoring value). Clock starts
-      at staging deploy.
+      Box ticked for Stage 1 shipping; the GO/NO-GO decision itself remains OPEN
+      (review #3 correction — earlier text claimed the box would stay unticked,
+      but it was ticked when Stage 1 landed): GO = ≥8 distinct render-days AND
+      ≥3 explicit asks for editing; NO-GO (<4 days AND zero asks) closes
+      drag-drop and keeps the read-only view (run-mode status coloring retains
+      standalone monitoring value). Clock starts at staging deploy; decision
+      ~2026-09-14 — see docs/briefs/roadmap-review-2026-08-25.md §5 for the
+      telemetry-counter recommendation.
 - [x] **Snapshot/restore**: one-click full-state export (tasks + runs + config) and
       restore. Builds on export-routes. Shipped through slice 3 2026-08-24: pure libs
       (0efa391), five endpoints (slice 2), settings-view panel + staging verification
@@ -277,3 +280,23 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
    visibly, not just in a log file.
 10. Hygiene: never commit screenshots/binary dumps casually; `npm ci` not `npm install`
     in scripts; never force-push or rebase published history.
+
+## Post-2.0 Candidates (2.1 planning)
+
+> Added by roadmap review #3 (docs/briefs/roadmap-review-2026-08-25.md,
+> 2026-08-25): top-3 of five scored candidates. `[candidate]` items are
+> proposals, not commitments — CEO picks before any build starts.
+
+- [ ] **[candidate] Workflow data normalization migration** — repair the
+      `timed_out` CHECK-constraint violation (migration 021) and lift 14/29
+      string-only template steps to object steps. Highest leverage debt (review
+      #3 D1): unblocks visual-editor Stage 2, fixes live constraint violations,
+      makes run-status monitoring and MCP run tooling honest. Pure backend.
+- [ ] **[candidate] NL command bar closes flagship gap** — add `task.create`
+      to the action registry (kind + governance rule + executor over existing
+      store.createTask) so "spawn agent for X" executes instead of refusing
+      with task_create_unavailable. Reuses gating/receipt machinery unchanged.
+- [ ] **[candidate] Budget management window (slice 4)** — create/edit budgets
+      UI over the shipped budgets API; completes the cost-governance loop
+      (budgets currently exist but are unmanageable from the dashboard).
+      §6 fast-follow go/no-go already scheduled this.

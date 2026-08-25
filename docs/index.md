@@ -47,6 +47,7 @@ Complete documentation for the OpenClaw Project Dashboard ("WebOS"). Source live
 - [Design Brief — One-Click Agent Actions (Catalog, Gating Design, Receipts)](briefs/one-click-actions.md)
 - [Roadmap Review — 2026-08-24](briefs/roadmap-review-2026-08-24.md)
 - [Roadmap Review 2026-08-24b — Endgame Sequencing](briefs/roadmap-review-2026-08-24b.md)
+- [Roadmap Review 2026-08-25 — Post-2.0 Assessment](briefs/roadmap-review-2026-08-25.md)
 - [Design Brief — Session Replay Inspector (Time-Travel Stepper)](briefs/session-replay.md)
 - [Design Brief — Snapshot/Restore (Full-State Export + Restore)](briefs/snapshot-restore.md)
 - [Design Brief — Workflow Visual Editor, Stage 1 (Read-Only Graph Render)](briefs/workflow-visual-editor-stage1.md)
