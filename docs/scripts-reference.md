@@ -25,6 +25,7 @@ The `scripts/` directory contains operational scripts for the dashboard: health 
 | `apply-workflow-migration.sh` | Bash | Apply the workflow runs migration (001) |
 | `backfill-run-costs.js` | Node.js | Backfill `workflow_runs` token/cost columns from OpenClaw session JSONL transcripts (dry run by default) |
 | `dag-telemetry-counter.js` | Node.js | DAG GO/NO-GO telemetry counter: workflow-graph audit events → decision inputs + branch verdict |
+| `mcp-adoption-counter.js` | Node.js | MCP tool-call adoption counter: `mcp-tool-call` audit rows → per-tool call counts, ok/error split, days-with-activity, never-called tools |
 | `system-improvement-scan.sh` | Bash | Cron trigger for daily system improvement scan |
 | `system-improvement-engine.py` | Python 3 | Analyze system state and create approval-gated improvement runs |
 
@@ -357,6 +358,27 @@ npm run dag:telemetry
 **Environment Variables:** standard `POSTGRES_*` variables (same as `dashboard-validation.js`; connection timeout 5 s so DB-less contexts fail fast).
 
 **Dependencies:** `pg` (already required by the dashboard; no new dependencies). Pure evaluation lives in `evaluateDagTelemetry(rows, nowMs)` — covered DB-free by `tests/test-dag-telemetry.js`.
+
+---
+
+### `mcp-adoption-counter.js`
+
+Operational counter for MCP tool-call adoption (improvement-loop queue: answers "did anything actually call our tools?" with data): reads the `mcp-tool-call` audit_log rows written by `POST /api/mcp/telemetry` (routes/mcp-telemetry-routes.js, fed by fire-and-forget emission in lib/mcp-server.js) since the MCP slice-1 ship date **2026-08-25** and prints total calls, the ok/error split, days-with-activity, first/last call timestamps, a per-tool breakdown, and which registered tools have NEVER been called this window.
+
+**Usage:**
+
+```bash
+node scripts/mcp-adoption-counter.js
+npm run mcp:telemetry
+```
+
+**Output:** totals + ok/error split (unattributed-outcome rows reported separately), tools-used vs registered count, distinct UTC days with activity, first/last call ISO timestamps, per-tool table sorted by call count, and the never-called list. Distinct client sessions are honestly reported as not derivable — the stdio transport carries no session identity. An empty window prints "adoption has not started" rather than an empty table.
+
+**Graceful degradation:** identical contract to `dag-telemetry-counter.js` — any database-layer failure (unreachable PostgreSQL, missing database, missing `audit_log` table, auth failure) prints an honest unavailable message and exits 0. Unavailable is never reported as zero.
+
+**Environment Variables:** standard `POSTGRES_*` variables (same as `dashboard-validation.js`; connection timeout 5 s so DB-less contexts fail fast).
+
+**Dependencies:** `pg` (already required by the dashboard; no new dependencies). Pure aggregation lives in `evaluateMcpAdoption(rows)` — covered DB-free by `tests/test-mcp-telemetry.js`.
 
 ---
 

@@ -164,6 +164,8 @@ layout: default
   - [DELETE /api/workflow-routing/:type](#delete-apiworkflow-routingtype)
 - [Workflow Graph API](#workflow-graph-api)
   - [POST /api/workflow-graph/events](#post-apiworkflow-graphevents)
+- [MCP Telemetry API](#mcp-telemetry-api)
+  - [POST /api/mcp/telemetry](#post-apimcptelemetry)
 - [Workflow Templates API](#workflow-templates-api)
   - [GET /api/workflow-templates](#get-apiworkflow-templates)
   - [GET /api/workflow-templates/:name](#get-apiworkflow-templatesname)
@@ -2553,6 +2555,58 @@ fires these fire-and-forget): without a database pool or when `audit_log` is
 missing, the endpoint answers `200 {"stored": false, "reason":
 "no_database" | "audit_log_missing"}` instead of erroring; unexpected write
 failures return `500 {"error": "query_failed"}`.
+
+---
+
+## MCP Telemetry API
+
+Adoption telemetry for the dashboard MCP server (improvement-loop queue:
+"did anything actually call our tools?"). One endpoint, instrumentation
+only: appends an `audit_log` row per MCP tool call reported by
+lib/mcp-server.js, which fires these POSTs fire-and-forget after each
+executed `tools/call`. Counts feed `npm run mcp:telemetry`
+(scripts/mcp-adoption-counter.js). It never touches task/workflow state.
+
+### `POST /api/mcp/telemetry`
+
+Record one MCP tool-call event.
+
+**Body**:
+
+```json
+{
+  "tool": "list_tasks",
+  "outcome": "ok",
+  "durationMs": 42
+}
+```
+
+- `tool` (required): a tool name from the live registry (all 13, mutating
+  trio included — the flag governs visibility at the MCP layer, not name
+  validity).
+- `outcome` (required): `ok` or `error` (validation rejections and upstream
+  failures count as `error`).
+- `durationMs` (required): non-negative integer, capped at one hour.
+
+Validation failures return `400` with a named error:
+`invalid_body` / `invalid_tool` / `invalid_outcome` / `invalid_duration`.
+Validation runs BEFORE the pool check, so bad payloads get named errors even
+in json_snapshot/no-DB mode.
+
+**Response** `200` on success:
+
+```json
+{ "stored": true, "action": "mcp-tool-call" }
+```
+
+Audit action written: `mcp-tool-call` (actor `openclaw`, `task_id` NULL,
+`new_value` JSONB `{tool, outcome, durationMs}`).
+
+**Degradation** (the MCP client's emission is fire-and-forget and must never
+bother anyone): without a database pool or when `audit_log` is missing, the
+endpoint answers `200 {"stored": false, "reason": "no_database" |
+"audit_log_missing"}` instead of erroring; unexpected write failures return
+`500 {"error": "query_failed"}`.
 
 ---
 

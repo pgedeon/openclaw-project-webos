@@ -149,6 +149,40 @@ Receipt replays (`duplicate:true`) and governance denials surface verbatim
 as normal/isError results respectively, so the agent can always see what the
 pipeline decided and why.
 
+## Adoption telemetry (did anything actually call our tools?)
+
+Every **executed** `tools/call` — after the call completes — fires a
+fire-and-forget `POST /api/mcp/telemetry` to the task-server (same base URL
+and bearer credential as the tool calls themselves). The emission is never
+awaited on the response path and never alters the tool result: a down
+telemetry sink is byte-for-byte invisible to the MCP client. The only place
+emission is waited on is a bounded shutdown drain in `runStdio` so process
+exit cannot kill an in-flight POST.
+
+- **What counts**: every call that reaches a registered, visible tool —
+  including validation rejections and upstream failures (both emit
+  `outcome: "error"`). Protocol-level rejects are deliberately NOT emitted:
+  an unknown-tool `-32602` or a hidden-mutation `-32601` probe is not tool
+  usage, and emitting it would let a misbehaving client write junk rows.
+- **Sink**: `POST /api/mcp/telemetry` (routes/mcp-telemetry-routes.js)
+  appends one `audit_log` row per event — action `mcp-tool-call`, actor
+  `openclaw`, `task_id` NULL, `new_value` JSONB
+  `{tool, outcome, durationMs}`. Bearer-auth like every API route; tool
+  names validate against the live registry. Degradation mirrors the
+  workflow-graph events contract: no database pool or missing `audit_log`
+  table answers `200 {"stored": false, "reason": "no_database" |
+  "audit_log_missing"}` instead of erroring — staging/json_snapshot mode
+  stays silent by design.
+- **Counter**: `npm run mcp:telemetry` (`scripts/mcp-adoption-counter.js`)
+  reads the `mcp-tool-call` audit rows since the slice-1 ship date
+  **2026-08-25** and prints total calls, the ok/error split, days-with-
+  activity, first/last call timestamps, a per-tool breakdown, and the list
+  of registered tools NEVER called this window. Distinct client sessions are
+  honestly reported as not derivable (stdio carries no session identity).
+  Same graceful no-DB contract as `dag:telemetry`: database unavailability
+  prints an honest unavailable message and exits 0 — unavailable is never
+  reported as zero.
+
 ## Tool catalog (10 read-only + 3 mutating)
 
 All tools take a single `arguments` object; unknown or invalid arguments are
@@ -270,11 +304,17 @@ no HTTP-SSE transport. See brief §7.
 
 ## Testing
 
-DB-free suite: `node tests/test-mcp-server.js` (also registered in
+DB-free suite: `node tests/test-mcp-server.js` plus
+`node tests/test-mcp-telemetry.js` (both registered in
 `scripts/ci-db-free-tests.js`). Covers protocol conformance, framing survival,
 validation-before-fetch, per-tool dispatch golden paths, degradation/auth/
-unreachable mapping, allSettled composition, a no-token-leakage grep, and the
+unreachable mapping, allSettled composition, a no-token-leakage grep, the
 slice-2 mutation contract: flag-off hides the trio from list AND call with
 zero fetches, flag-on registers all 13 tools, receipt envelopes carry the
 right kind/target/params/actor, and 503 write-refusals map to honest
-structured errors.
+structured errors — plus the adoption-telemetry contract: exactly one POST
+per executed call with the right outcome/durationMs, error-outcome emission
+on validation rejections and upstream failures, byte-identical results when
+the telemetry sink is down, zero emission on protocol-level rejects, and the
+route/aggregation pure helpers (validation matrix, degradation ladder, audit
+row shape, UTC day bucketing, malformed-row tolerance).

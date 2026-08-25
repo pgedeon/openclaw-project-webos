@@ -69,6 +69,7 @@ const { registerSnapshotRoutes } = require('./routes/snapshot-routes');
 const { registerSpaceRoutes } = require('./routes/space-routes');
 const { registerWorkflowRoutingRoutes } = require('./routes/workflow-routing-routes');
 const { registerWorkflowGraphRoutes } = require('./routes/workflow-graph-routes');
+const { registerMcpTelemetryRoutes } = require('./routes/mcp-telemetry-routes');
 const { registerCostRoutes } = require('./routes/cost-routes');
 const { registerBudgetRoutes } = require('./routes/budget-routes');
 const { registerActionRoutes } = require('./routes/action-routes');
@@ -706,6 +707,9 @@ registerSpaceRoutes(router, settingsDeps);
 registerWorkflowRoutingRoutes(router, settingsDeps);
 // Workflow graph telemetry (visual editor Stage 1 earn-use events, brief §6).
 registerWorkflowGraphRoutes(router, settingsDeps);
+// MCP tool-call adoption telemetry (improvement-loop queue; fire-and-forget
+// POSTs from lib/mcp-server.js land here → audit_log 'mcp-tool-call' rows).
+registerMcpTelemetryRoutes(router, settingsDeps);
 registerCostRoutes(router);
 registerBudgetRoutes(router);
 registerActionRoutes(router, { settingsStore });
