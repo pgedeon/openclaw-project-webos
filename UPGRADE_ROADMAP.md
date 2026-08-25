@@ -195,6 +195,10 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       restore. Builds on export-routes. Shipped through slice 3 2026-08-24: pure libs
       (0efa391), five endpoints (slice 2), settings-view panel + staging verification
       (f8c1af7) — live at http://192.168.0.81:8120/ (Settings → Snapshots & Restore).
+      Debt D3 hardened 2026-08-25 (ea7b21f): deny-regex widened from `\b…\b` to
+      lookaround boundaries — underscore-attached secret names (`db_password`,
+      `access_token`, `SECRET_KEY`) now redact in JSONB cells too; staging :8120
+      re-deployed + health-gated (served lib bytes md5-identical).
 
 ## Phase 3 — Polish & Reach
 
