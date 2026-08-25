@@ -99,12 +99,59 @@ else
   say "4/6 skipped (--skip-deps)"
 fi
 
-say "5/6 restart staging server"
-# Bracket trick so pkill never matches its own remote shell cmdline.
-ssh "$DEV_HOST" "pkill -f 'openclaw-dashboard-staging-serve[r]' 2>/dev/null || true; sleep 1
-  nohup node $LAUNCHER >> $LOGFILE 2>&1 &
-  sleep 3
-  ss -tlnp 2>/dev/null | grep :$STAGING_PORT || { tail -5 $LOGFILE >&2; exit 1; }"
+say "5/6 restart staging server (SIGTERM+wait, detached successor, health gate)"
+# Robust restart, all inside ONE ssh session (no gap for the per-minute keepalive
+# cron to race into):
+#   1. SIGTERM the old instance by PID and WAIT until it is gone (escalate to
+#      SIGKILL after 10s) — never a blind sleep. Candidate PIDs from pgrep -f are
+#      filtered to comm=node so the remote shell's own cmdline (which necessarily
+#      contains the unbracketed launcher path in the nohup line below) can never
+#      match-and-self-kill the session.
+#   2. Start the successor fully detached from this SSH session (setsid + nohup +
+#      stdin </dev/null, own appended log) so sshd teardown cannot take it down.
+#   3. Gate on the health endpoint BEFORE the session closes: if the successor
+#      never turns healthy the deploy FAILS HERE with the log tail printed, instead
+#      of leaving staging dark while the script reports success.
+# Re-runs stay safe: the stop step is pid-targeted and waits for actual exit.
+ssh "$DEV_HOST" "set -e
+  PAT='openclaw-dashboard-staging-serve[r]'
+  OLD=''
+  for p in \$(pgrep -f \"\$PAT\" || true); do
+    if [[ \"\$(ps -o comm= -p \$p 2>/dev/null)\" == node ]]; then
+      OLD=\"\$OLD \$p\"
+    fi
+  done
+  if [[ -n \$OLD ]]; then
+    echo \"stopping old instance(s):\$OLD\"
+    kill \$OLD 2>/dev/null || true
+    for i in \$(seq 1 20); do
+      ALIVE=0
+      for p in \$OLD; do
+        if kill -0 \$p 2>/dev/null; then ALIVE=1; fi
+      done
+      if [[ \$ALIVE == 0 ]]; then break; fi
+      sleep 0.5
+    done
+    ALIVE=0
+    for p in \$OLD; do
+      if kill -0 \$p 2>/dev/null; then ALIVE=1; fi
+    done
+    if [[ \$ALIVE == 1 ]]; then
+      echo 'old instance ignored SIGTERM — escalating to SIGKILL' >&2
+      kill -KILL \$OLD 2>/dev/null || true
+      sleep 1
+    fi
+  fi
+  nohup setsid node $LAUNCHER >> $LOGFILE 2>&1 < /dev/null &
+  for i in \$(seq 1 30); do
+    BODY=\$(curl -sf http://127.0.0.1:$STAGING_PORT/api/health 2>/dev/null || true)
+    case \"\$BODY\" in *json_snapshot*) echo \"successor healthy (iteration \$i)\"; exit 0;; esac
+    sleep 1
+  done
+  echo 'FATAL: successor never became healthy — last 20 log lines:' >&2
+  tail -20 $LOGFILE >&2
+  exit 1
+"
 
 say "6/6 health verification from $(hostname)"
 HEALTH_OK=0
