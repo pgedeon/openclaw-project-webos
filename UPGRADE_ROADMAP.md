@@ -167,10 +167,19 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       http://192.168.0.81:8120/ (json_snapshot mode): flag-on initialize → 13 tools →
       create_task → structured 503-mapped isError {error:'unavailable',reason:'no_database'}
       with the loop surviving; flag-off → 10 tools, trio hidden, call → -32601.
-- [ ] **Natural-language command bar**: type "spawn agent for X, report when done"
+- [x] **Natural-language command bar**: type "spawn agent for X, report when done"
       → creates task + dispatches workflow. Extends existing Ctrl+K palette. MANDATORY
       confirmation gate before side-effectful actions (spawn/dispatch/approve); no
       free-form config writes.
+      Shipped 2026-08-25 (7f5fd5f) per docs/briefs/nl-command-bar.md: Ctrl+K Ask mode
+      (Tab toggle) over a deterministic client-side grammar — five gated intents through
+      the UNCHANGED executeAction() registry tiers (NONE/PREVIEW_MODAL/HOLD_CONFIRM),
+      mandatory interpretation card before anything executes, inline GET-only query
+      answers, named refusals for batch/temporal/config-writes. Flagship utterance
+      honestly scoped v1: task creation is not yet a catalog kind, so "spawn agent for
+      X" refuses with task_create_unavailable + Tasks deep link until task.create joins
+      the registry (brief Q1). Staging-verified live at http://192.168.0.81:8120/
+      (health 200 json_snapshot; grammar + palette modules served).
 - [ ] **Workflow visual editor — staged** (demoted per advisory): Stage 1 = read-only
       graph render of existing workflows. Drag-drop editing only if Stage 1 earns use.
       Hardest item under the no-frameworks rule.
