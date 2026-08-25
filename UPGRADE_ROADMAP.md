@@ -74,9 +74,7 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       strings, never real session keys). Aggregation itself verified end-to-end
       against a live session. Migration 022 was found unapplied on this machine
       and applied before the run.
-- [ ] **`npm audit` as CI gate** (promoted from prose inside the security-pass box,
-      review 2026-08-24): advisory leftover from the closed security pass; add to
-      `.github/workflows/ci.yml`. Small, one run.
+- [x] **`npm audit` as CI gate**: shipped 2026-08-24 (d6a0a22) — prod-deps audit at critical level in the `verify` job; tightening path documented in workflow comment.
 
 ## Phase 1 — Live OpenClaw Integration (the "stand out" core)
 
@@ -180,9 +178,7 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       X" refuses with task_create_unavailable + Tasks deep link until task.create joins
       the registry (brief Q1). Staging-verified live at http://192.168.0.81:8120/
       (health 200 json_snapshot; grammar + palette modules served).
-- [ ] **Workflow visual editor — staged** (demoted per advisory): Stage 1 = read-only
-      graph render of existing workflows. Drag-drop editing only if Stage 1 earns use.
-      Hardest item under the no-frameworks rule.
+- [x] **Workflow visual editor — staged**: Stage 1 shipped 2026-08-25 (7769c7a) — read-only SVG chain graph w/ earn-use telemetry (opens + 👍/👎 to audit_log). Brief found NO DAG in data: all 29 templates are linear chains, so vertical chain render is the honest form. Drag-drop GO/NO-GO decision ~2026-09-14 after the 21-day telemetry window.
       Stage 1 SHIPPED 2026-08-25 (7769c7a): read-only SVG chain graph in the
       Workflows trigger panel (Graph toggle; latest-run status colors, node detail
       cards, 32-step cap) + earn-use telemetry POST /api/workflow-graph/events
@@ -258,7 +254,7 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       http://192.168.0.81:8120/ (health 200 json_snapshot; /src/shell/list-window.mjs
       and the touched view modules serve 200 on demand; served tasks-view
       carries LIST_INITIAL_CAP).
-- [ ] **Docs site**: GitHub Pages from `docs/`, screenshots refreshed.
+- [x] **Docs site**: LIVE https://pgedeon.github.io/openclaw-project-webos/ — Actions-based Pages deploy from main /docs (Jekyll), generated index (scripts/build-docs-index.mjs, 41 docs grouped), 8 top-level screenshots regenerated against staging :8120. Shipped 2026-08-25 (6ae7bb6+5b99efd).
       CUT per advisory: multi-user presence (single-operator reality, high complexity).
 
 ## Working Rules for the Hourly Cron
