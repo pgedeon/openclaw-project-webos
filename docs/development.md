@@ -132,9 +132,33 @@ node tests/test-saved-views-api.js
 # Python security tests
 pytest tests/test_secrets.py
 
+# DB-free unit/integration suite (CI verify job)
+node scripts/ci-db-free-tests.js
+
 # E2E with Playwright
 npx playwright test
 ```
+
+### E2E locally against a DB-free server (CI e2e job equivalent)
+
+```bash
+STORAGE_TYPE=json_snapshot HOST=127.0.0.1 PORT=13890 DASHBOARD_AUTH_TOKEN=dev-e2e-token \
+  node task-server.js > task-server-e2e.log 2>&1 &
+E2E_BASE_URL=http://127.0.0.1:13890 E2E_AUTH_TOKEN=dev-e2e-token npx playwright test --project=chromium
+```
+
+Coverage philosophy for API-level flows: test what the mode honestly allows
+against the live server, and drive full write-path semantics over a real HTTP
+harness when storage is required. The one-click actions suite
+(`test.describe('One-click actions API')` in `tests/e2e.spec.ts`) shows both
+layers: degradation-boundary tests pin the live json_snapshot behavior (400
+unknown-kind validation ordering, 503 `{available:false}` audit-first execute
+refusal, 200 read-contract `/api/actions/recent`), while the latch pipeline
+(happy-path executed receipt, idempotent replay with exactly-one executor
+invocation, 409 stale_retry) runs against `tests/fixtures/actions-harness.js` —
+the real Router + registerActionRoutes over an ephemeral http.Server with an
+in-memory receipt pool, since json_snapshot ships `pool=null` and cannot back
+the PostgreSQL latch.
 
 ## CI
 
