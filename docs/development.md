@@ -116,6 +116,22 @@ PostgreSQL storage layer with parameterized queries. All mutations write to an a
 2. Test against local database
 3. Document in CHANGELOG.md
 
+### Documentation Site
+
+The docs site (GitHub Pages, cayman theme) is generated from `docs/*.md` by
+`scripts/build-docs-index.mjs`. Each run writes `docs/index.md` (landing-page
+link index), stamps missing Jekyll front matter onto new markdown files, and
+emits `docs/search-index.json` — the corpus consumed by the client-side search
+page `docs/search.html` (vanilla JS, no dependencies). After adding or changing
+any doc under `docs/`, re-run:
+
+```bash
+node scripts/build-docs-index.mjs          # regenerate index.md + search-index.json
+node scripts/build-docs-index.mjs --check  # drift check — exit 1 if either output is stale
+```
+
+Both generated files are committed, so the Pages workflow stays pure-Jekyll.
+
 ## Testing
 
 ```bash

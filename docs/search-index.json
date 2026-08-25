@@ -1,0 +1,284 @@
+[
+  {
+    "title": "Agent Integration Guide — Workflow Dispatcher v2",
+    "url": "/openclaw-project-webos/AGENT_INTEGRATION/",
+    "section": "Architecture & Internals",
+    "excerpt": "Agent Integration Guide — Workflow Dispatcher v2 Overview The v2 dispatcher is a database-first workflow queue. No file I/O — the PostgreSQL database IS the queue. Agents discover work via the dashboa"
+  },
+  {
+    "title": "Gateway Workflow Dispatcher v2 — Design Document",
+    "url": "/openclaw-project-webos/DISPATCHER_V2_DESIGN/",
+    "section": "Architecture & Internals",
+    "excerpt": "Gateway Workflow Dispatcher v2 — Design Document Problem Statement The current dispatcher has five fundamental flaws: 1. File-based handoff — /tmp/dashboard-workflow-pickup.json is a race condition ri"
+  },
+  {
+    "title": "OpenClaw WebOS Improvement Plan — Progress Tracker",
+    "url": "/openclaw-project-webos/IMPROVEMENT-PLAN/",
+    "section": "Other",
+    "excerpt": "OpenClaw WebOS Improvement Plan — Progress Tracker Updated: 2026-04-28 Source analysis: docs/SPACE AGENT ANALYSIS.md This plan was refined by Codex against the actual WebOS codebase. Each item has a c"
+  },
+  {
+    "title": "Space Agent Analysis & Feature Proposals for OpenClaw WebOS",
+    "url": "/openclaw-project-webos/SPACE_AGENT_ANALYSIS/",
+    "section": "Other",
+    "excerpt": "Space Agent Analysis & Feature Proposals for OpenClaw WebOS Source analyzed: github.com/agent0ai/space-agent v0.36+ Date: 2026-04-28 Purpose: Identify what Space Agent does exceptionally well, extract"
+  },
+  {
+    "title": "OpenClaw Desktop Widget System",
+    "url": "/openclaw-project-webos/WIDGET-SYSTEM/",
+    "section": "Architecture & Internals",
+    "excerpt": "OpenClaw Desktop Widget System Created: 2026-03-20 Status: Design & Documentation Depends on: Shell framework (Phase 1-2), app-registry, window-manager, api-client, realtime-sync, view-state --- Overv"
+  },
+  {
+    "title": "Admin Guide",
+    "url": "/openclaw-project-webos/admin-guide/",
+    "section": "User Documentation",
+    "excerpt": "Admin Guide Overview The OpenClaw Project Dashboard is an operations-first task management system with a Win11-style desktop shell UI. It integrates with the OpenClaw agent runtime for bidirectional a"
+  },
+  {
+    "title": "Supplementary API Reference",
+    "url": "/openclaw-project-webos/api-reference-complete/",
+    "section": "API Reference",
+    "excerpt": "Supplementary API Reference This document covers all server-side APIs not included in the main api.md. Refer to that file for task, project, agent, cron, audit, and saved-views endpoints on the primar"
+  },
+  {
+    "title": "Project Dashboard API Reference",
+    "url": "/openclaw-project-webos/api/",
+    "section": "API Reference",
+    "excerpt": "Project Dashboard API Reference Comprehensive documentation for the REST API provided by task-server.js . Base URL: http://localhost:3876 (adjust PORT as needed) Authentication: Bearer token when DASH"
+  },
+  {
+    "title": "Auth Reference",
+    "url": "/openclaw-project-webos/auth-reference/",
+    "section": "API Reference",
+    "excerpt": "Auth Reference Current Mode OpenClaw WebOS currently uses single-operator bearer token auth. - Set DASHBOARD AUTH TOKEN to require Authorization: Bearer <token on API requests. - /api/health remains p"
+  },
+  {
+    "title": "Design Brief — Budget Breach Alerts via Channels (WhatsApp/Zulip)",
+    "url": "/openclaw-project-webos/briefs/budget-channel-alerts/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — Budget Breach Alerts via Channels (WhatsApp/Zulip) Status: Draft for review — improvement-loop candidate, surfaced by Review #3 ops rec (\"surface breaches where the operator actually is"
+  },
+  {
+    "title": "Design Brief — Budget Ledger + Auto-Pause Guardrail",
+    "url": "/openclaw-project-webos/briefs/budget-ledger/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — Budget Ledger + Auto-Pause Guardrail Status: Implemented — slices 1–3 shipped 2026-08-24 (0a1ed9b model+API, 420758b dispatcher enforcement, d276068 surfacing: SSE breach frames, MC bud"
+  },
+  {
+    "title": "Design Brief — Live Agent Console (Terminal Stream)",
+    "url": "/openclaw-project-webos/briefs/live-console/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — Live Agent Console (Terminal Stream) Status: Draft for build review · Roadmap: Phase 1 run 5 (roadmap-review-2026-08-24.md §4) — unblocked by run 3 (gateway streaming spike, findings fi"
+  },
+  {
+    "title": "Design Brief — MCP Server Exposure (Dashboard as Tool Provider)",
+    "url": "/openclaw-project-webos/briefs/mcp-exposure/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — MCP Server Exposure (Dashboard as Tool Provider) Status: Draft for build review · Roadmap: Phase 2 (UPGRADE ROADMAP.md \"MCP server exposure\" — Phase 2 opener per roadmap review #2, whic"
+  },
+  {
+    "title": "Design Brief — Mission Control View",
+    "url": "/openclaw-project-webos/briefs/mission-control/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — Mission Control View Status: Approved for build planning · Roadmap: UPGRADE ROADMAP.md Phase 1, item 1 Evidence base: market-scan-2026-08-23.md (top steal #1: run-anomaly flags), migrat"
+  },
+  {
+    "title": "Design Brief — Natural-Language Command Bar (NL mode for Ctrl+K)",
+    "url": "/openclaw-project-webos/briefs/nl-command-bar/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — Natural-Language Command Bar (NL mode for Ctrl+K) Status: Draft for build review · Roadmap: Phase 2 (UPGRADE ROADMAP.md \"Natural-language command bar\": type \"spawn agent for X, report w"
+  },
+  {
+    "title": "Design Brief — One-Click Agent Actions (Catalog, Gating Design, Receipts)",
+    "url": "/openclaw-project-webos/briefs/one-click-actions/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — One-Click Agent Actions (Catalog, Gating Design, Receipts) Status: Draft for build review · Roadmap: Phase 1 (UPGRADE ROADMAP.md \"One-click agent actions\" — last unchecked Phase 1 inter"
+  },
+  {
+    "title": "Roadmap Review — 2026-08-24",
+    "url": "/openclaw-project-webos/briefs/roadmap-review-2026-08-24/",
+    "section": "Design Briefs",
+    "excerpt": "Roadmap Review — 2026-08-24 Status: Planning audit only. No feature code touched. Scope: UPGRADE ROADMAP.md health check after Phase 0 shipped in one day (2026-08-23, v1.1.0 released, CI + e2e green, "
+  },
+  {
+    "title": "Roadmap Review 2026-08-24b — Endgame Sequencing",
+    "url": "/openclaw-project-webos/briefs/roadmap-review-2026-08-24b/",
+    "section": "Design Briefs",
+    "excerpt": "Roadmap Review 2026-08-24b — Endgame Sequencing Status: Planning audit only. No feature code touched. Scope: Second strategy rotation on UPGRADE ROADMAP.md. Review #1 ( roadmap-review-2026-08-24.md ) "
+  },
+  {
+    "title": "Roadmap Review 2026-08-25 — Post-2.0 Assessment",
+    "url": "/openclaw-project-webos/briefs/roadmap-review-2026-08-25/",
+    "section": "Design Briefs",
+    "excerpt": "Roadmap Review 2026-08-25 — Post-2.0 Assessment Status: Planning audit only. No feature code touched. Scope: Review #3. The roadmap board is EMPTY — all 23 boxes ticked, 2.0.0 released and tagged (482"
+  },
+  {
+    "title": "Roadmap Review 2026-08-25b — Steady-State Assessment & Next Chapter",
+    "url": "/openclaw-project-webos/briefs/roadmap-review-2026-08-25b/",
+    "section": "Design Briefs",
+    "excerpt": "Roadmap Review 2026-08-25b — Steady-State Assessment & Next Chapter Status: Planning audit only. No feature code touched. Scope: Review #4. First assessment of the POST-RELEASE operating mode. All 23 "
+  },
+  {
+    "title": "Design Brief — Session Replay Inspector (Time-Travel Stepper)",
+    "url": "/openclaw-project-webos/briefs/session-replay/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — Session Replay Inspector (Time-Travel Stepper) Status: Draft for build review · Roadmap: Phase 1, ordered above one-click actions (roadmap-review-2026-08-24.md intra-phase swap) Evidenc"
+  },
+  {
+    "title": "Design Brief — Snapshot/Restore (Full-State Export + Restore)",
+    "url": "/openclaw-project-webos/briefs/snapshot-restore/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — Snapshot/Restore (Full-State Export + Restore) Status: Draft for build review · Roadmap: Phase 2 (UPGRADE ROADMAP.md \"Snapshot/restore: one-click full-state export (tasks + runs + confi"
+  },
+  {
+    "title": "Design Brief — Task ↔ Session Conversation Binding",
+    "url": "/openclaw-project-webos/briefs/task-session-binding/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — Task ↔ Session Conversation Binding Status: Draft for build review · Roadmap: rank 2.1 candidate, roadmap-review-2026-08-25b.md §3 (\"Strongest remaining FEATURE … rides ALREADY-SHIPPED "
+  },
+  {
+    "title": "Design Brief — Workflow Visual Editor, Stage 1 (Read-Only Graph Render)",
+    "url": "/openclaw-project-webos/briefs/workflow-visual-editor-stage1/",
+    "section": "Design Briefs",
+    "excerpt": "Design Brief — Workflow Visual Editor, Stage 1 (Read-Only Graph Render) Status: Draft for build review · Roadmap: Phase 2 (UPGRADE ROADMAP.md \"Workflow visual editor — staged\", demoted per advisory): "
+  },
+  {
+    "title": "Configuration Reference",
+    "url": "/openclaw-project-webos/configuration-reference/",
+    "section": "Getting Started",
+    "excerpt": "Configuration Reference Overview The OpenClaw Dashboard is configured via environment variables. A template is provided at .env.example . --- Environment Variables Server Variable Required Default Des"
+  },
+  {
+    "title": "Development Guide",
+    "url": "/openclaw-project-webos/development/",
+    "section": "Getting Started",
+    "excerpt": "Development Guide Setup Architecture The dashboard is a single-page application with a Win11 desktop shell. SPA Entry Point index.html — loads CSS and the shell module: Shell System ( src/shell/ ) - s"
+  },
+  {
+    "title": "Workflow Dispatcher & Monitor Reference",
+    "url": "/openclaw-project-webos/dispatcher-monitor-reference/",
+    "section": "Architecture & Internals",
+    "excerpt": "Workflow Dispatcher & Monitor Reference The OpenClaw WebOS includes a two-layer workflow execution system: a dispatcher that queues and assigns workflow runs to agents, and a monitor that watches for "
+  },
+  {
+    "title": "OpenClaw Desktop File Explorer + Notepad Implementation Brief",
+    "url": "/openclaw-project-webos/file-explorer-notepad-implementation/",
+    "section": "Architecture & Internals",
+    "excerpt": "OpenClaw Desktop File Explorer + Notepad Implementation Brief Objective Add two new native apps to the standalone OpenClaw desktop shell in ~/.openclaw/workspace/dashboard : - Explorer : browse and se"
+  },
+  {
+    "title": "Install — OpenClaw Workspace",
+    "url": "/openclaw-project-webos/install-openclaw/",
+    "section": "Getting Started",
+    "excerpt": "Install — OpenClaw Workspace Install the dashboard inside an existing OpenClaw workspace. Prerequisites - Node.js 18+ - PostgreSQL 14+ - OpenClaw installed at ~/.openclaw/ Install Database Setup Confi"
+  },
+  {
+    "title": "Install — Standalone",
+    "url": "/openclaw-project-webos/install-standalone/",
+    "section": "Getting Started",
+    "excerpt": "Install — Standalone Install the dashboard as a standalone service, independent of OpenClaw. Prerequisites - Node.js 18+ - PostgreSQL 14+ Install Database Setup Configure Edit .env : Without OpenClaw,"
+  },
+  {
+    "title": "MCP Server Reference — Dashboard as Tool Provider",
+    "url": "/openclaw-project-webos/mcp-server/",
+    "section": "API Reference",
+    "excerpt": "MCP Server Reference — Dashboard as Tool Provider The dashboard ships an MCP (Model Context Protocol) server so OpenClaw agents — or any external MCP client such as Claude Desktop — can query project "
+  },
+  {
+    "title": "Memory System",
+    "url": "/openclaw-project-webos/memory-system/",
+    "section": "Architecture & Internals",
+    "excerpt": "Memory System The persistent agent memory system allows agents and operators to store, retrieve, and manage information across sessions. Architecture Memory Files Path Purpose ------ --------- MEMORY."
+  },
+  {
+    "title": "Offline & IndexedDB Sync Reference",
+    "url": "/openclaw-project-webos/offline-reference/",
+    "section": "Architecture & Internals",
+    "excerpt": "Offline & IndexedDB Sync Reference Overview The OpenClaw Dashboard includes a client-side offline layer built on IndexedDB. It enables the dashboard to function without network connectivity, queuing m"
+  },
+  {
+    "title": "Remote Access",
+    "url": "/openclaw-project-webos/remote-access/",
+    "section": "Other",
+    "excerpt": "Remote Access Reaching the Project Dashboard from outside its LAN — current topology, the Tailscale recipe, and the hard limits that stay by design. Status Verified-pattern-pending-rollout. Recon on 2"
+  },
+  {
+    "title": "Gateway Bridge v1 — Live Validation",
+    "url": "/openclaw-project-webos/research/bridge-validation-2026-08-24/",
+    "section": "Research & Spikes",
+    "excerpt": "Gateway Bridge v1 — Live Validation Date: 2026-08-24 · Scope: end-to-end run of shipped bridge (6184097) against live gateway Stack: isolated task-server.js :13883, STORAGE TYPE=json snapshot , GATEWA"
+  },
+  {
+    "title": "Live Agent Console — Validation Against Live Gateway (2026-08-24)",
+    "url": "/openclaw-project-webos/research/console-validation-2026-08-24/",
+    "section": "Research & Spikes",
+    "excerpt": "Live Agent Console — Validation Against Live Gateway (2026-08-24) Verdict: validated (validated-with-notes). Console feed v1 works end-to-end against the production OpenClaw gateway with zero code cha"
+  },
+  {
+    "title": "Gateway Streaming Spike — Feasibility + Recipes",
+    "url": "/openclaw-project-webos/research/gateway-streaming-spike-2026-08-24/",
+    "section": "Research & Spikes",
+    "excerpt": "Gateway Streaming Spike — Feasibility + Recipes Date: 2026-08-24 · Author: qa-auditor (spike r2) · Status: findings final, no source changes Read-only recon of the OpenClaw gateway WebSocket surface t"
+  },
+  {
+    "title": "Market Scan — 2026-08-23",
+    "url": "/openclaw-project-webos/research/market-scan-2026-08-23/",
+    "section": "Research & Spikes",
+    "excerpt": "Market Scan — 2026-08-23 Competitive landscape for OpenClaw Project WebOS. Input to UPGRADE ROADMAP.md . Method: live fetches of project READMEs/docs (GitHub, project sites) on 2026-08-23; established"
+  },
+  {
+    "title": "Market Scan — 2026-08-24 (post-1.1.0 delta refresh)",
+    "url": "/openclaw-project-webos/research/market-scan-2026-08-24/",
+    "section": "Research & Spikes",
+    "excerpt": "Market Scan — 2026-08-24 (post-1.1.0 delta refresh) Second competitive pass, 24h after market-scan-2026-08-23.md . Focus: what moved in the market since ~Aug 20 vs what we shipped (v1.1.0 full securit"
+  },
+  {
+    "title": "Market Scan — 2026-08-25b (post-2.0 competitive refresh)",
+    "url": "/openclaw-project-webos/research/market-scan-2026-08-25b/",
+    "section": "Research & Spikes",
+    "excerpt": "Market Scan — 2026-08-25b (post-2.0 competitive refresh) Third competitive pass, one day after market-scan-2026-08-24.md and the v2.0.0 release. Since scan #2 we shipped: live gateway streaming (valid"
+  },
+  {
+    "title": "Database Schema Reference",
+    "url": "/openclaw-project-webos/schema-reference/",
+    "section": "Architecture & Internals",
+    "excerpt": "Database Schema Reference Overview The OpenClaw Dashboard uses PostgreSQL 13+ with the uuid-ossp extension. The schema is defined in schema/openclaw-dashboard.sql and extended through 21 migration fil"
+  },
+  {
+    "title": "Scripts Reference",
+    "url": "/openclaw-project-webos/scripts-reference/",
+    "section": "Architecture & Internals",
+    "excerpt": "Scripts Reference Overview The scripts/ directory contains operational scripts for the dashboard: health monitoring, server lifecycle, data normalization, testing, project synchronization, and system "
+  },
+  {
+    "title": "Shell Architecture Reference",
+    "url": "/openclaw-project-webos/shell-architecture/",
+    "section": "Architecture & Internals",
+    "excerpt": "Shell Architecture Reference The OpenClaw WebOS desktop shell is a Win11-inspired single-page application built from modular ES modules. This document covers the internal architecture of the shell lay"
+  },
+  {
+    "title": "Storage Layer Reference",
+    "url": "/openclaw-project-webos/storage-reference/",
+    "section": "Architecture & Internals",
+    "excerpt": "Storage Layer Reference The OpenClaw WebOS uses a PostgreSQL-backed storage layer that provides CRUD operations for projects, tasks, workflows, dependencies, and all related entities. Source: storage/"
+  },
+  {
+    "title": "Project Dashboard User Guide",
+    "url": "/openclaw-project-webos/user-guide/",
+    "section": "User Documentation",
+    "excerpt": "Project Dashboard User Guide A complete walkthrough of the OpenClaw Project Dashboard interface, workflows, and best practices. Table of Contents 1. Overview 2. Views 3. Task Operations 4. Filtering &"
+  },
+  {
+    "title": "Views Reference — All Desktop Windows",
+    "url": "/openclaw-project-webos/views-reference/",
+    "section": "User Documentation",
+    "excerpt": "Views Reference — All Desktop Windows The OpenClaw Project WebOS exposes 35 windowed applications through the desktop shell. Each view is a self-contained module loaded on demand when the user opens i"
+  },
+  {
+    "title": "Widget Catalog",
+    "url": "/openclaw-project-webos/widget-catalog/",
+    "section": "User Documentation",
+    "excerpt": "Widget Catalog Complete reference for all 19 desktop widgets in the OpenClaw Project WebOS. Generated from source in src/shell/widgets/widgets/ . Shared utilities live in src/shell/widgets/widgets/wid"
+  }
+]
