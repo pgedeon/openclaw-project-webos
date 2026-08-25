@@ -158,9 +158,15 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 ## Phase 2 — Killer Features (things no other dashboard has)
 
 - [x] **Cost & token analytics UI**: per-agent/task/department rollups over the Phase 0 schema. Fleet-level landed as side effect of Mission Control + costs summary; per-agent rollup endpoint (`GET /api/costs/rollup?group_by=`) + sparkline widget shipped 2026-08-24 (32a0a3d). Budget ledger component pulled forward to Phase 1 (market scan 2026-08-24) — shipped separately (023 + slices 1-2).
-- [ ] **MCP server exposure** (added per market scan 2026-08-23): wrap existing REST
+- [x] **MCP server exposure** (added per market scan 2026-08-23): wrap existing REST
       routes as MCP tools so OpenClaw agents can read tasks/runs/metrics directly in
       their tool loop; read-only tool set first, write actions behind approval gates.
+      Shipped through slice 2 2026-08-25: stdio core + 10 read-only tools (ebe3169),
+      mutating trio behind OPENCLAW_MCP_MUTATIONS=1 with receipt-minted mutations via
+      the actions pipeline (ee17ea0, OQ2 = YES). Staging validation live against
+      http://192.168.0.81:8120/ (json_snapshot mode): flag-on initialize → 13 tools →
+      create_task → structured 503-mapped isError {error:'unavailable',reason:'no_database'}
+      with the loop surviving; flag-off → 10 tools, trio hidden, call → -32601.
 - [ ] **Natural-language command bar**: type "spawn agent for X, report when done"
       → creates task + dispatches workflow. Extends existing Ctrl+K palette. MANDATORY
       confirmation gate before side-effectful actions (spawn/dispatch/approve); no
