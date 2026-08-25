@@ -82,17 +82,20 @@ function registerWorkflowGraphRoutes(router, deps) {
 
   // POST /api/workflow-graph/events — earn-use telemetry append (brief §6).
   router.add('POST', '/api/workflow-graph/events', async (req, res, ctx) => {
-    const pool = resolvePool(ctx);
-    if (!pool) {
-      // Graceful degradation: staging/json_snapshot mode keeps the UI silent.
-      sendJSON(res, 200, { stored: false, reason: 'no_database' });
-      return true;
-    }
-
+    // Validate BEFORE the pool check: validation is DB-independent, so bad
+    // payloads get their named 400 even in json_snapshot/no-DB mode (pinned by
+    // test — degradation must not mask client bugs).
     const body = await parseBody(req);
     const verdict = validateGraphEvent(body);
     if (!verdict.ok) {
       sendJSON(res, 400, { error: verdict.error });
+      return true;
+    }
+
+    const pool = resolvePool(ctx);
+    if (!pool) {
+      // Graceful degradation: staging/json_snapshot mode keeps the UI silent.
+      sendJSON(res, 200, { stored: false, reason: 'no_database' });
       return true;
     }
 

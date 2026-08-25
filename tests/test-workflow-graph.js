@@ -401,6 +401,28 @@ function makeStubPool(queryImpl) {
     assert.strictEqual(pool.callCount, 0); // validation precedes any write
   });
 
+  await check('validation precedes degradation: invalid body → named 400 even with NO pool', async () => {
+    const router = new Router();
+    routesMod.registerWorkflowGraphRoutes(router, {});
+    for (const badBody of [
+      { event: 'open', template: 'Bad Template!' },
+      { event: 'feedback', template: 'abc' },
+      { event: 'nope', template: 'abc' }
+    ]) {
+      const res = mockRes();
+      await router.handle(mockReq(badBody), res, '/api/workflow-graph/events', 'POST', {});
+      assert.strictEqual(res.statusCode, 400, JSON.stringify(badBody));
+      assert.match(res.body.error, /^invalid_/);
+    }
+    // Valid body without a pool still degrades gracefully AFTER validation.
+    const ok = mockRes();
+    await router.handle(
+      mockReq({ event: 'open', template: 'topic-discovery' }),
+      ok, '/api/workflow-graph/events', 'POST', {}
+    );
+    assert.deepStrictEqual(ok.body, { stored: false, reason: 'no_database' });
+  });
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })().catch((err) => {
