@@ -372,6 +372,25 @@ export function createNlResolver(api) {
       return { status: 'resolved', target: hits[0], params: {} };
     }
 
+    if (kind === 'task.create') {
+      // Creation resolves the PROJECT the task lands in (registry targetType
+      // 'project'), not an existing row. Default project mirrors the storage
+      // layer's own createTask fallback; the title comes from the grammar —
+      // never invented here.
+      if (!slots.title) return { status: 'unmatched', reason: 'missing_slot' };
+      let projRes;
+      try {
+        projRes = await api.projects.getDefault();
+      } catch {
+        return { status: 'not_found', noun: 'project' };
+      }
+      const rows = rowsOf(projRes);
+      const project = rows.length ? rows[0]
+        : (projRes && typeof projRes === 'object' ? projRes : null);
+      if (!project?.id) return { status: 'not_found', noun: 'project' };
+      return { status: 'resolved', target: project, params: { title: slots.title } };
+    }
+
     return { status: 'unmatched', reason: 'unknown_verb' };
   }
 
@@ -448,6 +467,9 @@ export function buildInterpretation(parse, resolution) {
     case 'run.redispatch':
       model.headline = `Will re-dispatch run ${shortId(target.id)} — “${label}”`;
       break;
+    case 'task.create':
+      model.headline = `Will create “${params.title}” in ${label}`;
+      break;
     default:
       model.headline = `${cat.label} → ${shortId(target.id)}`;
   }
@@ -461,8 +483,6 @@ export function refusalCopy(reason, detail = {}) {
       return ['Batch actions aren’t supported.', 'One action, one target — select a single run/task instead.'];
     case 'temporal_not_supported':
       return ['Scheduling isn’t available here.', 'Recurring schedules live in the Cron view.'];
-    case 'task_create_unavailable':
-      return ['Task creation isn’t an available action yet.', 'Open Tasks to create it, then ask again to dispatch.'];
     case 'unknown_agent':
       return [`No agent named “${detail.agentName || ''}”.`, 'Check the spelling against the Agents view.'];
     case 'unknown_template':

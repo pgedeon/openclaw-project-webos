@@ -256,13 +256,14 @@ The command palette (`Ctrl+K` / `Cmd+K`) has two modes. **Search** finds and nav
 | "approve the deployment request" / "reject …" | Decides a pending approval | Preview modal |
 | "cancel run 4f2a" / "stop run …" | Cancels a running/queued/waiting run | Hold-to-confirm (1.2 s) |
 | "retry run 4f2a" / "re-dispatch …" | Re-queues a failed run | Preview modal |
+| "spawn agent for checkout bug, report when done" / "create task for invoices" / "add agent for \"nightly sync\"" | Creates a task titled from your sentence (everything after "for", quotes honored) in the default project | Single click |
 | "what's running" / "fleet status" | Inline answer: running runs + busy agents | Read-only |
 | "show failed runs" / "what failed" | Failed runs + re-dispatch chips | Read-only |
 | "pending approvals" / "what needs approval" | Pending approvals + approve chips | Read-only |
 | "budget status" / "am I over budget" | Names breached/amber budgets | Read-only |
 | anything else | Falls back to normal search results | — |
 
-Targets resolve against live data: task titles or `#id` prefixes, run ids (`run_…`, UUID, short id), approval subjects, agent display names, workflow template names. Quoted strings ("checkout bug") force literal title matching.
+Targets resolve against live data: task titles or `#id` prefixes, run ids (`run_…`, UUID, short id), approval subjects, agent display names, workflow template names. Quoted strings ("checkout bug") force literal title matching. Create intents need a title — the words after "for" become it verbatim; with nothing after the noun (just "spawn agent") Ask degrades to search rather than inventing one. The new task lands in the default project, same as creating from the Tasks view.
 
 ### The interpretation card
 
@@ -279,7 +280,7 @@ When several targets match ("3 runs match 'import'"), a pick list appears; Enter
 - **Batch actions** ("cancel all failed runs") — one action, one target, always.
 - **Scheduling** ("every day at 9…") — recurring schedules live in the Cron view.
 - **Config writes** — budgets, settings, snapshot restores are never proposed.
-- **Task creation** ("spawn agent for X, report when done") — not an available action yet; open Tasks to create it, then ask again to dispatch.
+- **Title-less creation** ("spawn agent") — no title, no task; Ask shows search results instead of guessing.
 - **Unknown agents/templates** — named as such, never guessed.
 
 Query answers ("what's running", "budget status") are read-only — they issue only GET requests and never construct an action. Outcomes, receipts, budget-block banners, and the Recent-actions tray behave identically whether an action came from a button or from Ask.

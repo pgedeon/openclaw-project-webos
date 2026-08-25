@@ -69,11 +69,12 @@ async function dispatch(url, { method = 'GET', pool = undefined, body = null, op
 // to impersonate WorkflowRunsAPI SQL.
 function makeExecutors(calls, failOnKind = null) {
   const fns = {};
-  for (const name of ['assignTaskOwner', 'dispatchRun', 'decideApproval', 'cancelRun', 'redispatchRun']) {
+  for (const name of ['assignTaskOwner', 'dispatchRun', 'decideApproval', 'cancelRun', 'redispatchRun', 'createTask']) {
     fns[name] = async ({ envelope }) => {
       calls.push({ executor: name, envelope });
       if (failOnKind && envelope.kind === failOnKind) throw new Error('forced executor failure');
       if (name === 'dispatchRun') return { new_run_id: 'run-new-1', status: 'running' };
+      if (name === 'createTask') return { new_task_id: 'task-new-1', title: envelope.params.title };
       return { ok: true };
     };
   }
@@ -548,6 +549,56 @@ async function testExecutorFailure() {
   assert.strictEqual(JSON.parse(pool.auditInserts[0].params[3]).outcome, 'failed');
 }
 
+// ── task.create kind (Q1 flagship): validation + receipt + audit resolution ──
+
+async function testTaskCreateKind() {
+  const calls = [];
+
+  // Validation: targetId (project) and params.title are both required.
+  let pool = makePool();
+  let r = await dispatch('/api/actions/execute', {
+    method: 'POST', pool,
+    body: { actionId: 'd1000000-0000-4000-8000-000000000001', kind: 'task.create', targetId: '', params: {} },
+    options: { executors: makeExecutors(calls) },
+  });
+  assert.strictEqual(r.status, 400);
+  assert.ok(r.payload.details.some(d => d.includes('targetId')));
+  assert.ok(r.payload.details.some(d => d.includes('params.title')));
+  assert.strictEqual(calls.length, 0);
+
+  // Happy path: creation executes over the injected createTask executor
+  // (same store.createTask path the raw POST /api/tasks endpoint uses),
+  // writes an executed receipt, and resolves the audit mirror's task_id
+  // from the executor RESULT (the id does not exist at envelope time).
+  pool = makePool();
+  calls.length = 0;
+  r = await dispatch('/api/actions/execute', {
+    method: 'POST', pool,
+    body: {
+      actionId: 'd1000000-0000-4000-8000-000000000002',
+      kind: 'task.create',
+      targetId: 'proj-1',
+      params: { title: 'Invoices sweep' },
+    },
+    options: { executors: makeExecutors(calls) },
+  });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.payload.receipt.outcome, 'executed');
+  assert.strictEqual(r.payload.receipt.rollback_hint, 'Archive task {new_task_id} if unwanted');
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0].executor, 'createTask');
+  assert.strictEqual(calls[0].envelope.targetId, 'proj-1');
+  assert.deepStrictEqual(calls[0].envelope.params, { title: 'Invoices sweep' });
+  assert.strictEqual(pool.updates.length, 1);
+  assert.strictEqual(pool.auditInserts.length, 1);
+  const audit = pool.auditInserts[0].params;
+  assert.strictEqual(audit[0], 'task-new-1'); // resolved from detail.result.new_task_id
+  assert.strictEqual(audit[2], 'action.task.create');
+
+  // Creation never probes budgets (LOW tier, not dispatch-class).
+  assert.ok(!pool.calls.some(c => /FROM budgets/.test(c.sql)), 'task.create skips budget probe');
+}
+
 // ── Migration 024 fixture: latch PK + enum CHECKs present ──────
 
 function testMigrationFixture() {
@@ -588,6 +639,7 @@ function testMigrationFixture() {
     testGovernanceDenial,
     testBudgetInterplay,
     testExecutorFailure,
+    testTaskCreateKind,
     testMigrationFixture,
   ];
   for (const test of tests) {

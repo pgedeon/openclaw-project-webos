@@ -632,7 +632,7 @@ Derived current-period spend plus the append-only enforcement event trail for on
 
 ## Actions API
 
-One governed path for every consequential operator action (One-Click Agent Actions slice 1, migration `024_add_action_receipts.sql`; design brief `docs/briefs/one-click-actions.md`). Every catalog action (`task.assign`, `run.dispatch`, `approval.decide`, `run.cancel`, `run.redispatch`) is a typed envelope validated against the registry (`lib/action-registry.js`), latched by an idempotency receipt, gated by governance, and — for dispatch-class actions — probed against budget headroom before execution. Backing business logic is the existing workflow-runs/tasks machinery called in-process; the raw endpoints stay uncordoned for scripts and agents.
+One governed path for every consequential operator action (One-Click Agent Actions slice 1, migration `024_add_action_receipts.sql`; design brief `docs/briefs/one-click-actions.md`). Every catalog action (`task.assign`, `run.dispatch`, `approval.decide`, `run.cancel`, `run.redispatch`, `task.create`) is a typed envelope validated against the registry (`lib/action-registry.js`), latched by an idempotency receipt, gated by governance, and — for dispatch-class actions — probed against budget headroom before execution. Backing business logic is the existing workflow-runs/tasks machinery called in-process; the raw endpoints stay uncordoned for scripts and agents.
 
 **Idempotency contract:** `actionId` is minted client-side ONCE per confirmed intent; retries of that intent reuse it. A replayed `actionId` returns the stored receipt with `"duplicate": true` and performs nothing. Same `actionId` with a different `paramsHash` → `409 stale_retry`. Two different `actionId`s with identical params are a legitimate repeat: both execute, both receipted.
 
@@ -652,7 +652,7 @@ Execute one catalog action. Request body:
 }
 ```
 
-Per-kind `params`: `task.assign` → `{ owner }` (required); `run.dispatch` → `{ template }` (required) + optional `input_payload` object; `approval.decide` → `{ decision }` (`approved` | `rejected`, required) + optional `notes`; `run.cancel` → optional `{ reason }`; `run.redispatch` → `{}`. `paramsHash` is computed server-side as sha256 over canonical JSON (sorted keys) of `params`. `actor` defaults to `dashboard-operator`.
+Per-kind `params`: `task.assign` → `{ owner }` (required); `run.dispatch` → `{ template }` (required) + optional `input_payload` object; `approval.decide` → `{ decision }` (`approved` | `rejected`, required) + optional `notes`; `run.cancel` → optional `{ reason }`; `run.redispatch` → `{}`; `task.create` → `{ title }` (required) + optional `description`, `owner_agent`, `status`, `due_date` — `targetId` is the project the task lands in (severity LOW, confirmation NONE: creation is reversible via archive). `paramsHash` is computed server-side as sha256 over canonical JSON (sorted keys) of `params`. `actor` defaults to `dashboard-operator`.
 
 **Response** `200` (executed):
 

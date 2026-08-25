@@ -15,7 +15,8 @@
  * - AC-G3 fail-safe defaults: unknown verb / missing slots / empty input →
  *   unmatched statuses that never carry an envelope-shaped payload.
  * - AC-G4 batch/temporal refusal with named reasons; flagship "spawn agent…"
- *   refuses task_create_unavailable (§5 flagship scoping).
+ *   parses to a real task.create envelope (title from the utterance, Q1) and
+ *   degrades honestly when no title is extractable.
  * - Misparse safety (§6.3): zero fetches during parsing, no actionId/envelope
  *   in any parse result, deterministic re-parse (same utterance → same
  *   interpretation).
@@ -56,6 +57,11 @@ const MUTATING_FIXTURES = [
   ['retry run 4f2a', 'run.redispatch', {}, { runRef: '4f2a' }, { targetId: '4f2a' }],
   ['re-dispatch run 4f2a', 'run.redispatch', {}, { runRef: '4f2a' }, { targetId: '4f2a' }],
   ['rerun 4f2a', 'run.redispatch', {}, { runRef: '4f2a' }, { targetId: '4f2a' }],
+  // Flagship create template (Q1): title extracted from the utterance.
+  ['spawn agent for checkout bug, report when done', 'task.create', { title: 'checkout bug, report when done' }, { noun: 'agent' }, {}],
+  ['create task for invoices', 'task.create', { title: 'invoices' }, { noun: 'task' }, {}],
+  ['add agent for "nightly sync"', 'task.create', { title: 'nightly sync' }, { noun: 'agent', title: 'nightly sync' }, {}],
+  ['new task deploy pipeline', 'task.create', { title: 'deploy pipeline' }, { noun: 'task' }, {}],
 ];
 
 const QUERY_FIXTURES = [
@@ -75,6 +81,7 @@ const PRECEDENCE_FIXTURES = [
   'how to cancel runs',
   'status of cancel runs',
   'list ways to approve things',
+  'show me how to spawn agents',
 ];
 
 const FAILSAFE_FIXTURES = [
@@ -85,15 +92,18 @@ const FAILSAFE_FIXTURES = [
   ['run nightly backup', 'missing_slot'],       // no task
   ['approve', 'missing_slot'],                  // no approval ref
   ['cancel', 'missing_target'],                 // no run ref
+  ['spawn agent', 'missing_slot'],              // flagship honesty: no title → no envelope
+  ['create task', 'missing_slot'],              // same, noun-only utterance
+  ['spawn runner for cleanup', 'unknown_verb'], // not the task/agent noun template
 ];
 
 const REFUSAL_FIXTURES = [
   ['cancel all failed runs', 'batch_not_supported'],
   ['retry every failed run', 'batch_not_supported'],
+  ['create tasks for all agents', 'batch_not_supported'],   // create obeys the same one-target rule
   ['every day at 9 cancel runs', 'temporal_not_supported'],
   ['schedule daily backup', 'temporal_not_supported'],
-  ['spawn agent for checkout bug, report when done', 'task_create_unavailable'],
-  ['create task for invoices', 'task_create_unavailable'],
+  ['create task every day for backups', 'temporal_not_supported'],
 ];
 
 /** Envelope-shaped payload must be absent from non-executable results. */
@@ -119,6 +129,7 @@ function makeStubApi(overrides = {}) {
     calls,
     tasks: { list: (...a) => track('tasks.list') },
     org: { agents: { list: () => track('org.agents.list') } },
+    projects: { getDefault: () => track('projects.getDefault') },
     workflows: {
       templates: () => track('workflows.templates'),
       active: () => track('workflows.active'),
@@ -136,6 +147,7 @@ function makeApiWith(values) {
     calls,
     tasks: { list: async () => { calls.push('tasks.list'); return val('tasks', []); } },
     org: { agents: { list: async () => { calls.push('org.agents.list'); return val('agents', []); } } },
+    projects: { getDefault: async () => { calls.push('projects.getDefault'); return val('project', null); } },
     workflows: {
       templates: async () => { calls.push('workflows.templates'); return val('templates', []); },
       active: async () => { calls.push('workflows.active'); return val('active', []); },
@@ -151,10 +163,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ── Test groups ────────────────────────────────────────────────
 
 function testRegistryParity() {
-  // Grammar covers exactly the five gated kinds of the §5 mapping table.
+  // Grammar covers exactly the six gated kinds of the §5 mapping table
+  // (Q1: task.create joined via the flagship create template).
   assert.deepStrictEqual(
     [...grammarKinds()].sort(),
-    ['approval.decide', 'run.cancel', 'run.dispatch', 'run.redispatch', 'task.assign']
+    ['approval.decide', 'run.cancel', 'run.dispatch', 'run.redispatch', 'task.assign', 'task.create']
   );
   // Every verb row maps to a kind that exists in the authoritative registry.
   for (const kind of grammarKinds()) {
@@ -168,6 +181,8 @@ function testRegistryParity() {
     'approval.decide': 'PREVIEW_MODAL',
     'run.cancel': 'HOLD_CONFIRM',
     'run.redispatch': 'PREVIEW_MODAL',
+    // Q1 resolution: creation is reversible (archive) → LOW/NONE tier.
+    'task.create': 'NONE',
   };
   for (const [kind, mode] of Object.entries(expectedModes)) {
     assert.strictEqual(registry.ACTION_REGISTRY[kind].confirmMode, mode, `${kind} gate tier`);
@@ -263,6 +278,7 @@ async function testResolutionDiscipline(palette) {
     ['approval.decide', parseIntent('approve deployment request'), ['approvals.pending']],
     ['run.cancel', parseIntent('cancel run 4f2a'), ['workflows.active', 'workflows.runs']],
     ['run.redispatch', parseIntent('retry run 4f2a'), ['workflows.runs']],
+    ['task.create', parseIntent('create task for invoices'), ['projects.getDefault']],
   ];
   for (const [kind, parse, allowed] of cases) {
     const api = makeStubApi();
@@ -323,6 +339,20 @@ async function testBuildInterpretationShapes(palette) {
   assert.strictEqual(assignReady.params.owner, 'Kaya');
   assert.match(assignReady.headline, /Kaya/);
 
+  // Create ready model: title preview + default-project context (Q1).
+  const createParse = parseIntent('spawn agent for checkout bug, report when done');
+  const createReady = buildInterpretation(createParse, {
+    status: 'resolved',
+    target: { id: 'proj_1', name: 'Ops' },
+    params: { title: 'checkout bug, report when done' },
+  });
+  assert.strictEqual(createReady.status, 'ready');
+  assert.strictEqual(createReady.kind, 'task.create');
+  assert.strictEqual(createReady.targetId, 'proj_1');
+  assert.deepStrictEqual(createReady.params, { title: 'checkout bug, report when done' });
+  assert.match(createReady.headline, /Will create “checkout bug, report when done” in Ops/);
+  assert.strictEqual(createReady.rollbackHint, registry.ACTION_REGISTRY['task.create'].rollbackHint);
+
   // Ambiguous model: candidates present, envelope fields absent.
   const ambiguous = buildInterpretation(cancelParse, {
     status: 'ambiguous', noun: 'run',
@@ -354,7 +384,6 @@ async function testBuildInterpretationShapes(palette) {
   const { refusalCopy } = palette;
   assert.ok(refusalCopy('batch_not_supported')[0].includes('Batch'));
   assert.ok(refusalCopy('temporal_not_supported')[1].includes('Cron'));
-  assert.ok(refusalCopy('task_create_unavailable')[0].includes('Task creation'));
   assert.ok(refusalCopy('unknown_agent', { agentName: 'zzz' })[0].includes('zzz'));
 }
 
