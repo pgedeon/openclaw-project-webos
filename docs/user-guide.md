@@ -15,12 +15,13 @@ A complete walkthrough of the OpenClaw Project Dashboard interface, workflows, a
 5. [Archive Workflow](#archive-workflow)
 6. [One-Click Actions & Confirmations](#one-click-actions--confirmations)
 7. [Ask Bar (NL Commands)](#ask-bar-nl-commands)
-8. [Install as a Desktop App (PWA)](#install-as-a-desktop-app-pwa)
-9. [Keyboard Shortcuts](#keyboard-shortcuts)
-10. [Appearance: Themes & Accent Packs](#appearance-themes--accent-packs)
-11. [Agent Integration](#agent-integration)
-12. [Import / Export](#import--export)
-13. [Accessibility](#accessibility)
+8. [Budget Management](#budget-management)
+9. [Install as a Desktop App (PWA)](#install-as-a-desktop-app-pwa)
+10. [Keyboard Shortcuts](#keyboard-shortcuts)
+11. [Appearance: Themes & Accent Packs](#appearance-themes--accent-packs)
+12. [Agent Integration](#agent-integration)
+13. [Import / Export](#import--export)
+14. [Accessibility](#accessibility)
 
 ---
 
@@ -284,6 +285,49 @@ When several targets match ("3 runs match 'import'"), a pick list appears; Enter
 - **Unknown agents/templates** — named as such, never guessed.
 
 Query answers ("what's running", "budget status") are read-only — they issue only GET requests and never construct an action. Outcomes, receipts, budget-block banners, and the Recent-actions tray behave identically whether an action came from a button or from Ask.
+
+---
+
+## Budget Management
+
+Budgets are named spending rules with automatic enforcement at dispatch time (design brief: `docs/briefs/budget-ledger.md`). Mission Control shows the read-only bars; the **Budgets** app (Operations category) is where rules are created and managed.
+
+### Reading the list
+
+Every defined budget — active or inactive — renders as a card with its scope (`agent: coder`, `department: …`, `workflow type: …`, or fleet = all agents), period with the current `period_key`, a spend-vs-cap bar, run count, and the breach action badge:
+
+- **Green bar** — under 75% of cap, routine burn.
+- **Amber bar** — strictly above 75% of cap; raise the cap before dispatch holds start.
+- **Red bar + `breached` badge** — at/over cap (exactly-at-cap counts). The action badge shows what enforcement does: `pause_new_runs` holds new runs in the queue, `hard_stop` also cancels in-flight runs.
+- **○ inactive** — rule exists but does not enforce; history is preserved.
+
+Spend derives live from completed-run cost/token data — in-flight spend appears when runs report usage.
+
+### Create a budget
+
+1. Open **Budgets** → **＋ New Budget**.
+2. Name it, pick a scope, and fill the scope ID (agent name free-text with suggestions; fleet budgets need no ID).
+3. Pick a period (daily/weekly/monthly), enter a cap, and choose USD or tokens — exactly one cap per budget (create two budgets if you want both).
+4. Choose what happens on exceed: **warn**, **pause new runs**, or **hard stop**.
+5. Submit. Validation mirrors the API client-side; anything the server rejects renders inline verbatim.
+
+Scope and period are fixed after creation (they key the one-active-budget-per-scope+period rule) — to change them, deactivate the old budget and create a new one.
+
+### Recovering from a breach
+
+There is no un-pause button by design — pause state is recomputed from live spend on every dispatch. Recovery is one of exactly three moves:
+
+1. **Wait for rollover** — a new empty period drops spend below cap automatically and held runs drain in order.
+2. **Raise the cap** — ✎ Edit on the card, enter the new cap (switching USD/tokens replaces the sibling cap), save.
+3. **Deactivate** — ⏸ Deactivate stops enforcement immediately (confirm dialog; ledger history preserved). ▶ Activate re-enables it.
+
+### Ledger drawer
+
+**☰ Ledger** expands a per-budget audit trail: timestamped enforcement events (`warned` / `paused` / `hard_stopped` / `recovered`) with the period key and detail payload — the record of what the system did and when.
+
+### Without a database
+
+Budget rules need PostgreSQL. In json_snapshot mode the view shows a named "Budgets unavailable" panel instead of an error; nothing else breaks.
 
 ---
 

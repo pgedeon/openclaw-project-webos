@@ -156,10 +156,10 @@ calls excluded).
 - **20** local ES modules load statically at shell boot (`shell-main.mjs`
   closure: window-manager, taskbar, start-menu, view-adapter, api-client,
   widget panel/registry/host, etc.).
-- **35** views are registered in `app-registry.mjs` as `viewModule` string
+- **36** views are registered in `app-registry.mjs` as `viewModule` string
   paths and are fetched via dynamic `import()` **on first window mount**
   (`window-manager.mjs`) — never at boot. `src/shell/native-views/` holds
-  41 `.mjs` files total (the 35 registered views plus shared helpers/panels).
+  42 `.mjs` files total (the 36 registered views plus shared helpers/panels).
 - The perf pass (2026-08-25) verified this lazy loading was already in place;
   no eager→lazy conversion was required, so the boot module count is
   unchanged by the pass.

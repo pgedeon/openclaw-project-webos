@@ -137,6 +137,11 @@ const appIcon = {
     <path d="m11 18-6-6 6-6" />
     <path d="m19 18-6-6 6-6" />
   `),
+  coins: iconTemplate(`
+    <ellipse cx="12" cy="6.5" rx="7" ry="3" />
+    <path d="M5 6.5v5c0 1.66 3.13 3 7 3s7-1.34 7-3v-5" />
+    <path d="M5 11.5v5c0 1.66 3.13 3 7 3s7-1.34 7-3v-5" />
+  `),
 };
 
 export const APP_CATEGORY_ORDER = ['Work', 'Operations', 'Integration', 'Admin'];
@@ -401,6 +406,16 @@ export const APP_REGISTRY = Object.freeze([
     category: 'Operations',
     defaultWidth: 1180,
     defaultHeight: 780,
+  },
+  {
+    id: 'budgets',
+    label: 'Budgets',
+    icon: appIcon.coins,
+    url: '/?view=budgets',
+    viewModule: './native-views/budgets-view.mjs',
+    category: 'Operations',
+    defaultWidth: 1000,
+    defaultHeight: 700,
   },
   {
     id: 'departments',

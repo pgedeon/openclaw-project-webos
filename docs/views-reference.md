@@ -41,6 +41,7 @@ Views are organized into four categories in the start menu: **Work**, **Operatio
 - [Cron](#cron) ✓ (see user-guide.md)
 - [Diagnostics](#diagnostics)
 - [Mission Control](#mission-control)
+- [Budgets](#budgets)
 
 ### System
 - [Spaces](#spaces)
@@ -489,6 +490,28 @@ Read-only command-center aggregation — one window answering "is anything broke
 - `GET /api/diagnostics/summary`
 - `GET /api/diagnostics/failures`
 - `GET /api/costs/summary`
+
+---
+### Budgets
+
+**Category:** Operations · **ID:** `budgets` · **Default size:** 1000×700
+
+Management surface for the budget ledger (budget-ledger brief §6 slice 4, roadmap review #3 candidate 3) — the write half that Mission Control deliberately lacks. Operators define, tune, and retire spending rules; Mission Control keeps rendering the read-only bars.
+
+**Features:**
+- **Budget list** — every defined budget (active and inactive) as a card: name, active badge, derived status badge (`warned`/`breached` from GET /api/budgets), scope line (fleet budgets render "all agents"; project scope is honestly labeled "workflow type" per brief R5), period + current `period_key`, spend-vs-cap bar reusing Mission Control's exact color semantics (green below 75% of cap, amber strictly above it, red at/over cap — exactly-at-cap IS a breach), run count, and the `action_on_exceed` badge (`pause_new_runs`/`hard_stop`; `warn` stays unbadged like MC)
+- **Create form** — name, scope select, scope_id free-text input with an agent-name datalist (best-effort from GET /api/openclaw/agents; any failure leaves plain text entry working — fleet budgets disable the field), period select, cap value + USD/tokens unit toggle, breach-action select. Validation mirrors routes/budget-routes.js `validateCreatePayload()` client-side via the exported pure helper `validateBudgetForm()` (name required, enum membership, non-fleet ⇒ scope_id, exactly-one-cap XOR surfaced through the unit toggle, usd finite > 0 / tokens positive integer); API error `details` arrays render inline verbatim on server-side rejection
+- **Edit form** — caps (unit switch replaces the sibling cap server-side), name, and breach action via PATCH; scope/scope_id/period are shown disabled because they key the active-budget unique index and are immutable after creation
+- **Deactivate / activate** — soft toggle via PATCH `{active}` with a confirm dialog on deactivate (removes a live guardrail); history and ledger rows are preserved, matching the no-DELETE API contract. Pause state stays derived per brief §2.4 — recovery is rollover, cap-raise, or deactivate, never an un-pause endpoint
+- **Ledger drawer** — per-budget expandable section fetching GET /api/budgets/:id/ledger: current window start plus the append-only enforcement events (timestamped, kind-badged warned/paused/hard_stopped/recovered, period key + detail JSON preview); cached per open-drawer until the next mutation or manual refresh
+- **Zero-throw degradation** — first load against `{available:false}` renders the named "Budgets unavailable" panel state with the reason (json_snapshot mode has no database); poll failures after last-good data keep the list and flag it stale instead of blanking; form/API failures render inline messages, never exceptions. A 60 s background poll skips itself while the create/edit form is open so in-progress input is never clobbered
+
+**API endpoints used:**
+- `GET /api/budgets`
+- `POST /api/budgets`
+- `PATCH /api/budgets/:id`
+- `GET /api/budgets/:id/ledger`
+- `GET /api/openclaw/agents` (scope_id datalist, optional)
 
 ---
 

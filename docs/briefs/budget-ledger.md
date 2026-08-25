@@ -4,7 +4,7 @@ layout: default
 
 # Design Brief — Budget Ledger + Auto-Pause Guardrail
 
-**Status:** Implemented — slices 1–3 shipped 2026-08-24 (0a1ed9b model+API, 420758b dispatcher enforcement, d276068 surfacing: SSE breach frames, MC budget bars + budget_breach flag, notification-center entries); slice 4 (management window) deferred per §6 fast-follow · **Roadmap:** Phase 1 (pulled forward from Phase 2 per market-scan-2026-08-24.md — Paperclip, 79k★, made per-agent budgets with hard-stop enforcement table stakes; scan scores Impact 9 / Effort 3)
+**Status:** Implemented — slices 1–3 shipped 2026-08-24 (0a1ed9b model+API, 420758b dispatcher enforcement, d276068 surfacing: SSE breach frames, MC budget bars + budget_breach flag, notification-center entries); slice 4 management window shipped 2026-08-25 (`budgets` app, Operations — create/edit/deactivate + ledger drawer over the shipped API) · **Roadmap:** Phase 1 (pulled forward from Phase 2 per market-scan-2026-08-24.md — Paperclip, 79k★, made per-agent budgets with hard-stop enforcement table stakes; scan scores Impact 9 / Effort 3)
 **Evidence base:** market-scan-2026-08-24.md recommendation section; migration `022_add_run_token_cost_tracking.sql` (cost/token columns shipped + accumulating, 88abe97); `routes/cost-routes.js` degradation contract; existing pause/resume/cancel machinery (`workflow-runs-api.js`, `/pause`, `/resume`, `/cancel`); dispatcher v2 tick loop (`gateway-workflow-dispatcher-v2.js`); Mission Control anomaly flags incl. `cost_spike` (`mission-control-view.mjs`); departments + agent_profiles org model (migrations 006/007)
 **Order:** docs only. No `.js/.mjs/.sql/.yml` changes in this commit. CHANGELOG entry lands with the build commit per house pattern.
 

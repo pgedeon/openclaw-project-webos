@@ -48,7 +48,7 @@ A Windows 11-style desktop environment for managing OpenClaw agent workflows —
 
 ### Desktop Shell
 - **Windows 11 aesthetic** — frosted glass taskbar, start menu with app grid, draggable/resizable windows
-- **35 windowed apps** — each feature is a self-contained view launched as a desktop window
+- **36 windowed apps** — each feature is a self-contained view launched as a desktop window
 - **19 desktop widgets** — always-on data panels (clock, health, task pulse, agent fleet, etc.)
 - **Start menu** — searchable app grid organized by category (Work, Operations, System, Integration)
 - **Taskbar** — live clock, system tray, running app indicators, theme toggle
