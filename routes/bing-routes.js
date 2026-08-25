@@ -123,8 +123,11 @@ function registerBingRoutes(router, apiKey) {
     try {
       // Use the WordPress IndexNow plugin which handles key file management
       const wpApiBase = process.env.WORDPRESS_API_URL || 'https://3dput.com/wp-json';
-      const wpUser = process.env.WORDPRESS_USER || 'admin';
-      const wpPass = process.env.WORDPRESS_APP_PASS || 'V2W3 GbQC Sbgj eeX7 9klH GHLS';
+      const wpUser = process.env.WORDPRESS_USER;
+      const wpPass = process.env.WORDPRESS_APP_PASS;
+      if (!wpUser || !wpPass) {
+        return sendJSON(res, 503, { error: 'WordPress credentials not configured' });
+      }
       const wpAuth = Buffer.from(`${wpUser}:${wpPass}`).toString('base64');
 
       const results = [];
