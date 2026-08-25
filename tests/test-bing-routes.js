@@ -272,6 +272,11 @@ async function run() {
     });
   });
 
+  await withEnv({
+    WORDPRESS_API_URL: 'https://wp.example.test/wp-json',
+    WORDPRESS_USER: 'operator',
+    WORDPRESS_APP_PASS: 'app-pass',
+  }, async () => {
   await withFetchMock(createFetchMock(async (call, index) => {
     return index === 0
       ? jsonResponse({})
@@ -285,14 +290,21 @@ async function run() {
     assert.strictEqual(res.json.submitted, 2);
     assert.strictEqual(res.json.results[1].status, 400);
     assert.strictEqual(res.json.results[1].error, 'indexnow rejected');
+    });
   });
 
+  await withEnv({
+    WORDPRESS_API_URL: 'https://wp.example.test/wp-json',
+    WORDPRESS_USER: 'operator',
+    WORDPRESS_APP_PASS: 'app-pass',
+  }, async () => {
   await withFetchMock(createFetchMock(async () => {
     throw new Error('indexnow failed');
   }), async () => {
     const res = await dispatch(router, 'POST', '/api/bing/indexnow', jsonBody({ urls: ['https://3dput.com/page'] }));
     assert.strictEqual(res.statusCode, 500);
     assert.match(res.json.error, /indexnow failed/);
+    });
   });
 
   await withFetchMock(createFetchMock(async (call) => {
