@@ -323,12 +323,20 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       18 checks (suite 59/59); deployed to staging :8120 with post-verify.
       Candidate CLOSED — budget-ledger brief defines four slices, all shipped;
       no slice 5 exists (roadmap review #4).
-- [ ] **[candidate] Task ↔ session conversation binding** — added per market
+- [x] **[candidate] Task ↔ session conversation binding** — added per market
       scan 2026-08-25b steal #2 (Paperclip made chat-style tasks their default
       UX): task detail gains a Conversation tab embedding the bound gateway
       session transcript through the ALREADY-SHIPPED session-reader routes and
       replay-view components. Read-only first; no new write path; rides the
       existing task↔session binding instead of inventing a chat store.
+      SHIPPED 2026-08-26 (4805e3e): Sessions rows gained an inline Conversation
+      expand/collapse rendering assistant/user bubbles + tool badges through
+      GET /api/oc/sessions/:sessionId/events (~200-event initial cap, cursor
+      "load more"); pure mappers in lib/task-conversation.js, tests
+      test-task-conversation.js 19 checks (ci-db-free-tests 64/64); deployed to
+      staging :8120 post-verify (served lib/task-conversation.js md5-identical,
+      health 200 storage_type postgres, unauth /api/tasks 401, PWA gates green).
+      Candidate CLOSED.
 - [x] **[candidate] Remote-access recipe via tailnet HTTPS** — added per market
       scan 2026-08-25b steal #1 (Paperclip v2026.824.0 managed-runtime previews):
       document + optionally script a `tailscale serve` exposure of the dashboard

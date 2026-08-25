@@ -155,7 +155,7 @@ ssh "$DEV_HOST" "set -e
   nohup setsid node $LAUNCHER >> $LOGFILE 2>&1 < /dev/null &
   for i in \$(seq 1 30); do
     BODY=\$(curl -sf http://127.0.0.1:$STAGING_PORT/api/health 2>/dev/null || true)
-    case \"\$BODY\" in *json_snapshot*) echo \"successor healthy (iteration \$i)\"; exit 0;; esac
+    case \"\$BODY\" in *json_snapshot*|*postgres*) echo \"successor healthy (iteration \$i)\"; exit 0;; esac
     sleep 1
   done
   echo 'FATAL: successor never became healthy — last 20 log lines:' >&2
@@ -167,7 +167,9 @@ say "6/6 health verification from $(hostname)"
 HEALTH_OK=0
 for i in $(seq 1 15); do
   BODY="$(curl -sf "http://$DEV_ADDR:$STAGING_PORT/api/health" 2>/dev/null || true)"
-  if echo "$BODY" | grep -q '"storage_type":"json_snapshot"'; then
+  # Storage flipped to postgres on staging when the workflow-runs data layer
+# landed; accept either backend so the health gates match reality.
+if echo "$BODY" | grep -Eq '"storage_type":"(json_snapshot|postgres)"'; then
     HEALTH_OK=1
     break
   fi
