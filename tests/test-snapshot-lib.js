@@ -279,21 +279,46 @@ ok('AC3 redactDeep: matching keys lose values, keep names, recurse everywhere', 
   assert.deepStrictEqual(input, original);
 });
 
-ok('AC3 redactDeep: camelCase apiKey trips, keyboard_shortcut survives, snake_case limitation pinned', () => {
+ok('AC3 redactDeep: camelCase apiKey trips, keyboard_shortcut survives, snake_case now caught (debt D3)', () => {
   const out = redactDeep({
-    apiKey: 'x', // \b fires at string start/end → matches
+    apiKey: 'x', // start/end boundary → matches
     keyboard_shortcut: 'F5', // 'keyboard' contains no alternative; shortcut safe
-    secretSanta: 'visible', // trailing word char kills \b → stays (spec-as-written)
-    postgres_password: 'structural-exclusion-handles-me', // see §5.1 comment in lib
+    secretSanta: 'visible', // trailing letter kills the lookahead → stays
+    postgres_password: 'die', // debt D3: '_' counts as a boundary now → matches
   });
   assert.strictEqual(out.apiKey, '[REDACTED]');
   assert.strictEqual(out.keyboard_shortcut, 'F5');
   assert.strictEqual(out.secretSanta, 'visible');
-  // Pinned limitation: \b does not fire after '_' (word char). The five
-  // password-type SETTINGS keys are excluded structurally by redactSettings()
-  // — this regex is the second net, not the first. Widening the regex is a
-  // brief change (§5.2), not a local tweak.
-  assert.strictEqual(out.postgres_password, 'structural-exclusion-handles-me');
+  // Debt D3 closed: underscore adjacency matches (was a pinned limitation of
+  // the original \b regex). The five password-type SETTINGS keys still die
+  // structurally in redactSettings() first — this regex remains the second
+  // net, not the first.
+  assert.strictEqual(out.postgres_password, '[REDACTED]');
+});
+
+ok('AC3 redactDeep debt D3: underscore-attached secret names trip, near-miss words survive', () => {
+  const out = redactDeep({
+    db_password: 'hunter2', // prefix_secret → matches
+    access_token: 'tok', // prefix_token → matches
+    api_key: 'sk-live-x', // alternative itself → matches
+    SECRET_KEY: 'sk', // secret_KEY suffix attachment → matches
+    auth_token: 't2', // auth_token alternative → matches
+    my_secret: 's', // suffix attachment on plain word → matches
+    keyboard: 'stays', // near-miss words must NOT trip
+    keynote: 'stays too',
+    monkeybusiness: 'untouched',
+    tokens: ['a'], // plural: trailing letter still blocks → walked, kept
+  });
+  assert.strictEqual(out.db_password, '[REDACTED]');
+  assert.strictEqual(out.access_token, '[REDACTED]');
+  assert.strictEqual(out.api_key, '[REDACTED]');
+  assert.strictEqual(out.SECRET_KEY, '[REDACTED]');
+  assert.strictEqual(out.auth_token, '[REDACTED]');
+  assert.strictEqual(out.my_secret, '[REDACTED]');
+  assert.strictEqual(out.keyboard, 'stays');
+  assert.strictEqual(out.keynote, 'stays too');
+  assert.strictEqual(out.monkeybusiness, 'untouched');
+  assert.deepStrictEqual(out.tokens, ['a']);
 });
 
 ok('AC3 redactDeep: arrays, depth cap, primitives', () => {
@@ -440,12 +465,11 @@ ok('redactSettings: flat provenance-less map falls back to deny-filter', () => {
 // ── AC13 — generated fixture artifact seeded with markers greps clean ──
 
 ok('AC13 full-artifact composition: hunter2 / sk-live markers grep clean post-redact', () => {
-  // Fixture keys stay within what the PINNED §5.2 deny-regex actually catches
-  // (boundary-conformant: password / api_key / auth_token / credential).
-  // Snake_case-attached variants (db_password, secret_sauce) are NOT caught by
-  // the pinned regex — documented limitation in lib/snapshot-redact.js; the
-  // five password-type SETTINGS keys die structurally in redactSettings()
-  // instead (assertion block below proves that path).
+  // Fixture keys stay within what the §5.2 deny-regex catches (password /
+  // api_key / auth_token / credential); since the debt-D3 widening it also
+  // catches underscore-attached variants — proven separately in the AC3
+  // block above. The five password-type SETTINGS keys die structurally in
+  // redactSettings() instead (assertion block below proves that path).
   const rowsByTable = {
     tasks: [
       {
