@@ -96,3 +96,156 @@ test.describe('Desktop shell smoke (DB-free)', () => {
   });
 
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// One-click actions flow (Phase 2 candidate queue: "e2e coverage of
+// Phase 2 features" — actions first).
+//
+// Two layers, honestly split by what json_snapshot mode allows:
+//
+// 1. LIVE json_snapshot task-server (BASE_URL): snapshot storage ships
+//    pool=null, so POST /api/actions/execute must refuse audit-first with
+//    503 {available:false} AFTER envelope validation (unknown kinds still
+//    400 — proving validation ordering over real HTTP). These tests pin
+//    the honest degradation boundary; no catalog kind can execute here.
+//
+// 2. HTTP HARNESS (tests/fixtures/actions-harness.js): the REAL Router +
+//    REAL registerActionRoutes wired to an in-memory receipt-latch pool
+//    and a counting cancelRun executor, served over a real http.Server on
+//    an ephemeral port. Drives the full pipeline — envelope validation,
+//    latch INSERT/SELECT, governance pre-check, executor invocation,
+//    finalize transaction — over actual HTTP requests, which the DB-free
+//    unit suite (tests/test-action-routes.js) cannot do (synthetic req/ctx
+//    objects). Covers: happy-path executed receipt, idempotent replay
+//    ({duplicate:true}, executor invoked exactly once), 409 stale_retry.
+//
+// The latch needs PostgreSQL semantics (unique-violation errors, tx
+// clients); json_snapshot cannot provide them, hence the harness split
+// rather than pretending some kind "works" DB-free through the live server.
+// ─────────────────────────────────────────────────────────────────────
+
+// Playwright transpiles specs to CJS, so require() of repo modules works.
+const { startActionsHarness } = require('./fixtures/actions-harness.js');
+
+interface ActionsHarness {
+  baseUrl: string;
+  executorCalls: string[];
+  stats: { inserts: number; updates: number; latchSelects: number };
+  close(): Promise<void>;
+}
+
+const ACTIONS_RUN_ID = Date.now().toString(36);
+const authHeaders = () => (AUTH_TOKEN ? { Authorization: `Bearer ${AUTH_TOKEN}` } : {});
+
+test.describe('One-click actions API', () => {
+
+  test.describe('live json_snapshot server (degradation boundary)', () => {
+
+    test('POST execute unknown kind → 400 invalid_action before any storage access', async ({ request }) => {
+      test.skip(!AUTH_TOKEN, 'E2E_AUTH_TOKEN not set');
+      const resp = await request.post(`${BASE_URL}/api/actions/execute`, {
+        headers: authHeaders(),
+        data: { actionId: `e2e-badkind-${ACTIONS_RUN_ID}`, kind: 'fleet.nuke', targetId: 't-1', params: {} },
+      });
+      expect(resp.status()).toBe(400);
+      const body = await resp.json();
+      expect(body.error).toBe('invalid_action');
+      expect(body.details.some((d: string) => d.includes('unknown_kind'))).toBeTruthy();
+    });
+
+    test('POST execute valid envelope → 503 available:false no_database (audit-first refusal)', async ({ request }) => {
+      test.skip(!AUTH_TOKEN, 'E2E_AUTH_TOKEN not set');
+      const resp = await request.post(`${BASE_URL}/api/actions/execute`, {
+        headers: authHeaders(),
+        data: {
+          actionId: `e2e-live-${ACTIONS_RUN_ID}`,
+          kind: 'run.cancel',
+          targetId: 'run-e2e-1',
+          params: { reason: 'e2e smoke' },
+        },
+      });
+      expect(resp.status()).toBe(503);
+      const body = await resp.json();
+      expect(body.available).toBe(false);
+      expect(body.reason).toBe('no_database');
+    });
+
+    test('GET recent → 200 available:false no_database (house read contract)', async ({ request }) => {
+      test.skip(!AUTH_TOKEN, 'E2E_AUTH_TOKEN not set');
+      const resp = await request.get(`${BASE_URL}/api/actions/recent?limit=10`, { headers: authHeaders() });
+      expect(resp.status()).toBe(200);
+      const body = await resp.json();
+      expect(body.available).toBe(false);
+      expect(body.reason).toBe('no_database');
+    });
+
+  });
+
+  test.describe('full pipeline over HTTP harness (latch semantics)', () => {
+    let harness: ActionsHarness;
+    let firstReceipt: object;
+
+    test.beforeAll(async () => {
+      harness = await startActionsHarness();
+    });
+
+    test.afterAll(async () => {
+      await harness.close();
+    });
+
+    // Ordered sequence on shared harness state: happy path seeds the latch
+    // that replay and stale-retry then read. Single-file specs run serially.
+    const envelope = () => ({
+      actionId: `e2e-a1-${ACTIONS_RUN_ID}`,
+      kind: 'run.cancel',
+      targetId: 'run-e2e-42',
+      params: { reason: 'stale work' },
+    });
+    const post = (request, data) =>
+      request.post(`${harness.baseUrl}/api/actions/execute`, { data });
+
+    test('happy path: valid envelope → executed receipt, executor invoked once', async ({ request }) => {
+      const resp = await post(request, envelope());
+      expect(resp.status()).toBe(200);
+      const body = await resp.json();
+      expect(body.duplicate).toBeUndefined();
+      expect(body.receipt.outcome).toBe('executed');
+      expect(body.receipt.kind).toBe('run.cancel');
+      expect(body.receipt.target_id).toBe('run-e2e-42');
+      expect(body.receipt.actor).toBe('dashboard-operator');
+      expect(body.receipt.rollback_hint).toBe('Re-dispatch via run.redispatch');
+      expect(harness.executorCalls).toEqual([envelope().actionId]);
+      firstReceipt = body.receipt;
+    });
+
+    test('replay same actionId+params → duplicate:true identical receipt, executor NOT re-invoked', async ({ request }) => {
+      const resp = await post(request, envelope());
+      expect(resp.status()).toBe(200);
+      const body = await resp.json();
+      expect(body.duplicate).toBe(true);
+      // The first response reports created_at from the finalize-side clock;
+      // the latch row carries its INSERT-time stamp (real PG: DEFAULT now()).
+      // Millisecond skew between the two is expected round-trip behavior, not
+      // drift — so compare everything else strictly, then prove two replays
+      // are byte-identical to each other (both read the same stored row).
+      const stripStamp = (r) => ({ ...r, created_at: undefined });
+      expect(stripStamp(body.receipt)).toEqual(stripStamp(firstReceipt));
+      const replay1 = body.receipt;
+      const resp2 = await post(request, envelope());
+      expect(resp2.status()).toBe(200);
+      expect((await resp2.json()).receipt).toEqual(replay1);
+      expect(harness.executorCalls.length).toBe(1); // exactly-one-side-effect holds
+    });
+
+    test('same actionId different params → 409 stale_retry, no execution', async ({ request }) => {
+      const resp = await post(request, { ...envelope(), params: { reason: 'different intent' } });
+      expect(resp.status()).toBe(409);
+      const body = await resp.json();
+      expect(body.error).toBe('stale_retry');
+      expect(String(body.details)).toContain('mint a new actionId');
+      expect(harness.executorCalls.length).toBe(1); // still exactly one side effect
+    });
+
+  });
+
+});
