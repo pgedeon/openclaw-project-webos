@@ -155,6 +155,7 @@ Lightweight text editor window for viewing and editing files from the Explorer o
 |----------|-------------|
 | [Scripts Reference](docs/scripts-reference.md) | All operational scripts — health, validation, restart, sync, migration |
 | [Developer Guide](DEVELOPER_GUIDE.md) | Contributing guidelines and architecture notes |
+| [Remote Access](docs/remote-access.md) | Tailnet recipe for off-LAN dashboard access; topology constraints and security notes |
 
 ### Implementation Details
 
