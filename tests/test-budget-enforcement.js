@@ -809,7 +809,9 @@ async function testDispatcherWarnEmitsNoBreachFrame() {
   const dispatched = await d.dispatchQueuedRuns();
   assert.strictEqual(dispatched.length, 1);
   assert.strictEqual(d.lastBudgetEnforcement.warned, 1);
-  assert.strictEqual(frames.length, 0, 'warn records an event but never pages (non-warn actions only)');
+  // 2026-08-25 live-fire + r3 fix: warned rows now flow to the notifier too —
+  // kind policy moved to BUDGET_ALERT_EVENT_KINDS env (default excludes 'warned').
+  assert.strictEqual(frames.length, 1, 'warned row flows to notifier when kinds include it');
 }
 
 async function testBroadcasterThrowDoesNotBreakDispatch() {
