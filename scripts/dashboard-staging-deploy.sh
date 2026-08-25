@@ -85,6 +85,16 @@ if (fs.existsSync(envPath)) {
     }
   }
 }
+// NODE_EXTRA_CA_CERTS is read at node bootstrap only — re-exec once so the
+// gateway TLS CA (wss:// link used by the budget channel notifier) is trusted.
+if (process.env.NODE_EXTRA_CA_CERTS && !process.env.__CA_REEXEC) {
+  const { spawnSync } = require(\"child_process\");
+  const r = spawnSync(process.execPath, [__filename], {
+    stdio: \"inherit\",
+    env: { ...process.env, __CA_REEXEC: \"1\" },
+  });
+  process.exit(r.status == null ? 0 : r.status);
+}
 process.chdir(ROOT);
 process.env.PORT = process.env.PORT || \"$STAGING_PORT\";
 process.env.HOST = process.env.HOST || \"0.0.0.0\";
