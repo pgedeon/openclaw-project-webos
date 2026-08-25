@@ -149,6 +149,7 @@ const MIME_TYPES = {
   '.js': 'application/javascript',
   '.mjs': 'application/javascript',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
   '.md': 'text/markdown',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -341,6 +342,9 @@ function sendFile(res, filePath) {
       headers['Clear-Site-Data'] = '"cache"';
       headers['Cache-Control'] = 'no-store, max-age=0';
     } else if (ext === '.css') {
+      headers['Cache-Control'] = 'public, max-age=3600';
+    } else if (ext === '.webmanifest') {
+      // PWA manifest: short cache so install-metadata edits land within an hour.
       headers['Cache-Control'] = 'public, max-age=3600';
     } else if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp'].includes(ext)) {
       headers['Cache-Control'] = 'public, max-age=86400';
@@ -1012,6 +1016,35 @@ const server = http.createServer(async (req, res) => {
     if (url === '/favicon.ico') {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // PWA install (UPGRADE_ROADMAP Phase 3): manifest + service worker + icons.
+    // Explicit branches so headers are exact regardless of extension defaults:
+    //   manifest → application/manifest+json, short cache;
+    //   sw.js    → application/javascript + no-cache so SW updates land
+    //              immediately (never the generic .js Clear-Site-Data branch);
+    //   icons    → immutable-ish long cache (content only changes with a new
+    //              generate-pwa-icons.mjs run, which ships with a deploy).
+    if (url === '/manifest.webmanifest') {
+      sendFile(res, path.join('dashboard', 'manifest.webmanifest'));
+      return;
+    }
+    if (url === '/sw.js') {
+      const swPath = path.join(WORKSPACE, 'dashboard', 'sw.js');
+      fs.readFile(swPath, (err, data) => {
+        if (err) { res.writeHead(404); res.end('Not Found'); return; }
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'no-cache',
+          'Service-Worker-Allowed': '/'
+        });
+        res.end(data);
+      });
+      return;
+    }
+    if (url.startsWith('/icons/')) {
+      sendFile(res, path.join('dashboard', url.slice(1)));
       return;
     }
 

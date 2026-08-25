@@ -11,11 +11,12 @@ A complete walkthrough of the OpenClaw Project Dashboard interface, workflows, a
 5. [Archive Workflow](#archive-workflow)
 6. [One-Click Actions & Confirmations](#one-click-actions--confirmations)
 7. [Ask Bar (NL Commands)](#ask-bar-nl-commands)
-8. [Keyboard Shortcuts](#keyboard-shortcuts)
-9. [Appearance: Themes & Accent Packs](#appearance-themes--accent-packs)
-10. [Agent Integration](#agent-integration)
-11. [Import / Export](#import--export)
-12. [Accessibility](#accessibility)
+8. [Install as a Desktop App (PWA)](#install-as-a-desktop-app-pwa)
+9. [Keyboard Shortcuts](#keyboard-shortcuts)
+10. [Appearance: Themes & Accent Packs](#appearance-themes--accent-packs)
+11. [Agent Integration](#agent-integration)
+12. [Import / Export](#import--export)
+13. [Accessibility](#accessibility)
 
 ---
 
@@ -330,6 +331,30 @@ The heartbeat automatically refreshes the agent’s task list every 30 seconds
 
 - Click “Import” and select a previously exported `.json` or `.csv` file.
 - The import merges tasks; existing tasks are matched by `id` if present, otherwise new tasks are created.
+
+---
+
+## Install as a Desktop App (PWA)
+
+The dashboard is an installable Progressive Web App — it runs in its own window with a launcher icon, no browser chrome, like a native desktop app.
+
+### Install
+
+1. Sign in to the dashboard in Chrome or Edge (the service worker registers only after authentication succeeds).
+2. Open the browser address-bar install icon (⊕ / monitor-with-arrow), or the browser menu → **Install OpenClaw Desktop** / **Cast, save and share → Install page as app**.
+3. The app opens in a standalone window and gets its own entry in your OS start menu / dock.
+
+### What gets cached
+
+- **Static assets only** (`/src/`, `/lib/`, `/icons/`, the web manifest) are served cache-first from a versioned cache (`openclaw-desktop-v1`); old versions are deleted automatically on upgrade.
+- **Navigation requests** (the app shell) are network-first with cache fallback, so you get fresh UI whenever the server is reachable and last-known UI when it is not.
+- **`/api/*` is never cached** — tasks, auth, and live data always come from the server. Your bearer token is never stored by the service worker.
+- The app shell itself carries no credentials (the token stays in memory/localStorage via the bootstrap flow), so a cached shell is safe.
+
+### Updating & uninstalling
+
+- Updates land on reload: `sw.js` is served `Cache-Control: no-cache`, so a new deploy is picked up immediately; the worker activates with `skipWaiting` + `clients.claim` and purges stale caches.
+- Uninstall like any app: right-click the launcher icon → uninstall, or edge://apps in Edge / chrome://apps in Chrome.
 
 ---
 

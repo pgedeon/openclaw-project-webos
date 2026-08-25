@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenClaw Desktop</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="icon" href="/icons/icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -103,6 +107,16 @@
         }
         if (token) storeToken(token);
         globalThis.__DASHBOARD_AUTH_TOKEN__ = token;
+
+        // PWA install (roadmap Phase 3): register the service worker ONLY after
+        // auth bootstrap succeeds — an unauthenticated session must never put
+        // the auth-gate shell under SW control. Fire-and-forget: registration
+        // failure must not block desktop boot.
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
+                console.warn('Service worker registration failed:', err);
+            });
+        }
 
         await import('/src/shell/shell-main.mjs');
     </script>
