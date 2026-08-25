@@ -30,6 +30,41 @@ const {
   evaluateGovernanceAction,
   normalizeActorContext
 } = require('./governance.js');
+const { normalizeStep } = require('./lib/workflow-graph-layout.js');
+
+// Canonical workflow_steps.status vocabulary (migration 025): the step-native
+// lifecycle plus the dispatcher v2 run vocabulary (migration 021) that gateway
+// sessions mirror onto their current step. Mirrors valid_workflow_step_status
+// in schema/migrations/025_add_workflow_normalization.sql — keep in sync.
+const WORKFLOW_STEP_STATUSES = [
+  'pending',
+  'in_progress',
+  'completed',
+  'failed',
+  'skipped',
+  'queued',
+  'dispatched',
+  'claimed',
+  'running',
+  'waiting_for_approval',
+  'blocked',
+  'retrying',
+  'cancelled',
+  'timed_out'
+];
+
+/**
+ * Lift bare-string template step entries into the canonical structured shape
+ * ({name, display_name, required}) using the same normalizeStep() rules as
+ * lib/workflow-graph-layout.js and migration 025. Object entries pass through
+ * verbatim; empty/whitespace strings become "(unnamed step N)".
+ */
+function normalizeTemplateSteps(steps) {
+  if (!Array.isArray(steps)) return steps;
+  return steps.map((entry, index) => (
+    (entry && typeof entry === 'object') ? entry : normalizeStep(entry, index)
+  ));
+}
 
 function parseJsonObject(value, fallback = {}) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -2102,6 +2137,9 @@ class WorkflowRunsAPI {
    * Update current step
    */
   async updateStep(runId, stepName, status = 'in_progress', output = {}) {
+    if (!WORKFLOW_STEP_STATUSES.includes(status)) {
+      throw new Error(`Invalid workflow step status '${status}'. Allowed statuses: ${WORKFLOW_STEP_STATUSES.join(', ')}`);
+    }
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -3221,7 +3259,7 @@ class WorkflowRunsAPI {
     const { name, display_name, description, default_owner_agent, steps, required_approvals, success_criteria, category, is_active, artifact_contract, ui_category } = data;
     if (!name) throw new Error('Template name is required');
     const contract = artifact_contract || { expected_outputs: { summary: { type: 'text', required: true, description: 'Description of what was accomplished' } } };
-    const result = await this.pool.query(`INSERT INTO workflow_templates (name, display_name, description, default_owner_agent, steps, required_approvals, success_criteria, category, is_active, artifact_contract, ui_category) VALUES ($1, COALESCE($2, $1), COALESCE($3, ''), COALESCE($4, 'main'), $5::jsonb, $6::jsonb, $7::jsonb, COALESCE($8, 'general'), $9, $10::jsonb, COALESCE($11, 'General')) RETURNING *`, [name, display_name, description, default_owner_agent, JSON.stringify(steps || []), JSON.stringify(required_approvals || []), JSON.stringify(success_criteria || {}), category, is_active !== false, JSON.stringify(contract), ui_category]);
+    const result = await this.pool.query(`INSERT INTO workflow_templates (name, display_name, description, default_owner_agent, steps, required_approvals, success_criteria, category, is_active, artifact_contract, ui_category) VALUES ($1, COALESCE($2, $1), COALESCE($3, ''), COALESCE($4, 'main'), $5::jsonb, $6::jsonb, $7::jsonb, COALESCE($8, 'general'), $9, $10::jsonb, COALESCE($11, 'General')) RETURNING *`, [name, display_name, description, default_owner_agent, JSON.stringify(normalizeTemplateSteps(steps || [])), JSON.stringify(required_approvals || []), JSON.stringify(success_criteria || {}), category, is_active !== false, JSON.stringify(contract), ui_category]);
     return result.rows[0];
   }
 
@@ -3242,7 +3280,11 @@ class WorkflowRunsAPI {
     for (const [key, value] of Object.entries(updates)) {
       if (allowedFields.includes(key)) {
         const dbKey = key === 'display_name' ? 'display_name' : key;
-        if (value !== undefined) {
+        if (key === 'steps' && Array.isArray(value)) {
+          setClauses.push(`${dbKey} = $${paramIndex}`);
+          values.push(JSON.stringify(normalizeTemplateSteps(value)));
+          paramIndex++;
+        } else if (value !== undefined) {
           setClauses.push(`${dbKey} = $${paramIndex}`);
           if (typeof value === 'object') {
             values.push(JSON.stringify(value));
@@ -3529,9 +3571,14 @@ function createWorkflowRunsHandler(pool) {
     const stepMatch = pathname.match(new RegExp('^/api/workflow-runs/([a-f0-9-]+)/step$'));
     if (stepMatch && method === 'POST') {
       const id = stepMatch[1];
-      const step = await api.updateStep(id, body.step_name, body.status || 'in_progress', body.output || {});
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(step));
+      try {
+        const step = await api.updateStep(id, body.step_name, body.status || 'in_progress', body.output || {});
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(step));
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+      }
       return true;
     }
 

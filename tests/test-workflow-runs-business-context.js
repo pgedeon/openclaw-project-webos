@@ -152,6 +152,66 @@ async function run() {
   assert.ok(Object.prototype.hasOwnProperty.call(runDetail, 'blocker'), 'run detail should include blocker context');
   assert.strictEqual(runDetail.blockerSummary.total, 0, 'run detail should still provide blocker summary shape when no blocker is active');
 
+  // --- Normalization path (roadmap debt D1 / migration 025) ----------------
+  const captured = [];
+  const normPool = {
+    async query(queryText, params) {
+      captured.push({ queryText, params });
+      if (queryText.includes('information_schema.tables')) {
+        return { rows: [{ exists: true }] };
+      }
+      if (/INSERT INTO workflow_templates/i.test(queryText)) {
+        return { rows: [{ id: 'tpl-1', name: params[0], steps: JSON.parse(params[4]) }] };
+      }
+      if (/UPDATE workflow_templates/i.test(queryText)) {
+        return { rows: [{ id: 'tpl-1', name: params[0], steps: JSON.parse(params[1]) }] };
+      }
+      if (/UPDATE workflow_steps/i.test(queryText)) {
+        return { rows: [{ id: 'step-9', step_name: params[1], status: params[2] }] };
+      }
+      return { rows: [] };
+    },
+    async connect() {
+      const client = {
+        query: (text, params) => this.query(text, params),
+        release() {}
+      };
+      return client;
+    }
+  };
+
+  const normApi = new WorkflowRunsAPI(normPool);
+
+  // 1) Dispatcher-vocabulary step status writes conform to migration 025's widened CHECK.
+  const timedOutStep = await normApi.updateStep('run-1', 'drafting', 'timed_out', { reason: 'heartbeat stale' });
+  assert.strictEqual(timedOutStep.status, 'timed_out', 'updateStep should accept dispatcher vocabulary statuses');
+
+  // 2) Unknown statuses are rejected with a named error instead of a raw CHECK violation.
+  await assert.rejects(
+    () => normApi.updateStep('run-1', 'drafting', 'exploded'),
+    /Invalid workflow step status 'exploded'/,
+    'updateStep should reject statuses outside WORKFLOW_STEP_STATUSES'
+  );
+
+  // 3) createTemplate lifts bare-string steps into the canonical object shape.
+  const created = await normApi.createTemplate({
+    name: 'norm-check',
+    steps: ['Fetch RSS/Atom feeds', '   ', { name: 'publish', display_name: 'Publish', required: false }]
+  });
+  assert.deepStrictEqual(created.steps, [
+    { name: 'Fetch RSS/Atom feeds', display_name: 'Fetch RSS/Atom feeds', required: true },
+    { name: '(unnamed step 2)', display_name: '(unnamed step 2)', required: true },
+    { name: 'publish', display_name: 'Publish', required: false }
+  ], 'createTemplate should lift string steps via normalizeStep rules and preserve objects verbatim');
+
+  // 4) updateTemplate lifts string-only step arrays on write too.
+  await normApi.updateTemplate('blog-feed-monitor', { steps: ['Fetch feeds', 'Score relevance'] });
+  const updCall = captured.filter((c) => /UPDATE workflow_templates/i.test(c.queryText)).pop();
+  assert.deepStrictEqual(JSON.parse(updCall.params[1]), [
+    { name: 'Fetch feeds', display_name: 'Fetch feeds', required: true },
+    { name: 'Score relevance', display_name: 'Score relevance', required: true }
+  ], 'updateTemplate should persist lifted structured steps');
+
   console.log('PASS: workflow runs business context');
 }
 
