@@ -183,6 +183,15 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 - [ ] **Workflow visual editor — staged** (demoted per advisory): Stage 1 = read-only
       graph render of existing workflows. Drag-drop editing only if Stage 1 earns use.
       Hardest item under the no-frameworks rule.
+      Stage 1 SHIPPED 2026-08-25 (7769c7a): read-only SVG chain graph in the
+      Workflows trigger panel (Graph toggle; latest-run status colors, node detail
+      cards, 32-step cap) + earn-use telemetry POST /api/workflow-graph/events
+      (one open event per view-session + 👍/👎 feedback chip → audit_log rows).
+      Checkbox stays UNTICKED on purpose — GO/NO-GO is the brief §6 21-day metric,
+      not vibes: GO = ≥8 distinct render-days AND ≥3 explicit asks for editing;
+      NO-GO (<4 days AND zero asks) closes drag-drop and keeps the read-only view
+      (run-mode status coloring retains standalone monitoring value). Clock starts
+      at staging deploy.
 - [x] **Snapshot/restore**: one-click full-state export (tasks + runs + config) and
       restore. Builds on export-routes. Shipped through slice 3 2026-08-24: pure libs
       (0efa391), five endpoints (slice 2), settings-view panel + staging verification
