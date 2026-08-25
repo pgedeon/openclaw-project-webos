@@ -24,6 +24,7 @@ The `scripts/` directory contains operational scripts for the dashboard: health 
 | `test-incremental-sync.js` | Node.js | Test `updated_since` pagination on task API |
 | `apply-workflow-migration.sh` | Bash | Apply the workflow runs migration (001) |
 | `backfill-run-costs.js` | Node.js | Backfill `workflow_runs` token/cost columns from OpenClaw session JSONL transcripts (dry run by default) |
+| `dag-telemetry-counter.js` | Node.js | DAG GO/NO-GO telemetry counter: workflow-graph audit events → decision inputs + branch verdict |
 | `system-improvement-scan.sh` | Bash | Cron trigger for daily system improvement scan |
 | `system-improvement-engine.py` | Python 3 | Analyze system state and create approval-gated improvement runs |
 
@@ -325,6 +326,37 @@ node scripts/backfill-run-costs.js --run-id <uuid>
 **Environment Variables:** standard `POSTGRES_*` variables; `OPENCLAW_HOME` (default `$HOME`) for the gateway data root.
 
 **Dependencies:** `pg` (via `storage/asana.js`)
+
+---
+
+### `dag-telemetry-counter.js`
+
+Operational counter for the workflow visual editor Stage 1 earn-use rule (docs/briefs/workflow-visual-editor-stage1.md §6): reads the `workflow-graph-open` / `workflow-graph-feedback` audit_log rows written by `POST /api/workflow-graph/events` since the staging deploy date **2026-08-25** and prints the decision inputs plus the current GO/NO-GO branch for the roadmap review landing ~2026-09-14.
+
+**Usage:**
+
+```bash
+node scripts/dag-telemetry-counter.js
+npm run dag:telemetry
+```
+
+**Decision window:** 2026-08-25 → 2026-09-14 inclusive (21 days, UTC calendar days).
+
+**Branch rule (mechanical, per brief §6):**
+
+| Branch | Condition |
+|--------|-----------|
+| `go` | ≥8 distinct render-days AND ≥3 explicit edit asks (👍 feedback rows) |
+| `no_go` | <4 distinct render-days AND zero asks |
+| `middle` | everything else → review with numbers |
+
+**Output:** distinct render-days, total opens, 👍/👎 counts, distinct templates touched, days remaining in the window, a GO pace check, and the branch verdict. Render-days count only `workflow-graph-open` rows (per the brief's metric definition); templates are collected from both event types. An early-window empty result numerically lands `no_go` — the report always prints days remaining so an in-flight window is never mistaken for a final verdict.
+
+**Graceful degradation:** any database-layer failure (unreachable PostgreSQL, missing database, missing `audit_log` table, auth failure) prints an honest unavailable message and exits 0 — the script must work in CI-less, DB-less contexts without failing. Unavailable is never reported as zero.
+
+**Environment Variables:** standard `POSTGRES_*` variables (same as `dashboard-validation.js`; connection timeout 5 s so DB-less contexts fail fast).
+
+**Dependencies:** `pg` (already required by the dashboard; no new dependencies). Pure evaluation lives in `evaluateDagTelemetry(rows, nowMs)` — covered DB-free by `tests/test-dag-telemetry.js`.
 
 ---
 

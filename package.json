@@ -30,6 +30,7 @@
     "validate": "node scripts/dashboard-validation.js && node scripts/docs-drift-check.js",
     "test:filters": "node tests/test-filter-behavior.js",
     "test:routes": "node tests/test-route-modules.js",
+    "dag:telemetry": "node scripts/dag-telemetry-counter.js",
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",
     "test:debug": "npx playwright test --debug",
