@@ -160,6 +160,21 @@ the real Router + registerActionRoutes over an ephemeral http.Server with an
 in-memory receipt pool, since json_snapshot ships `pool=null` and cannot back
 the PostgreSQL latch.
 
+The same philosophy extends to DB-free end-to-end flow tests that need no
+Playwright browsers at all: `tests/test-e2e-mcp-snapshot-flows.js`
+(registered in `scripts/ci-db-free-tests.js`) drives two shipped features
+against real servers — the MCP stdio server runs as a real child process
+(`initialize` → `tools/list` → executed `tools/call`) pointed at
+`tests/fixtures/snapshot-harness.js`, which serves the real snapshot routes
+over an ephemeral http.Server with json_snapshot parity (`pool: null`), and
+the snapshot/restore flow runs over real HTTP against the same harness
+(create/preview/apply degradation boundary, registry listing + byte-identical
+download of a seeded artifact, integrity-before-database ordering, redaction
+invariant on the shipped bytes). One transport lesson is pinned in the test's
+own harness comment: the MCP session must be driven with async `spawn`, never
+`spawnSync` — a synchronous wait blocks this process' event loop, freezing the
+in-process backend mid-request and deadlocking any tool call against it.
+
 ## CI
 
 GitHub Actions workflow `.github/workflows/ci.yml` runs on every push/PR to `main`:
