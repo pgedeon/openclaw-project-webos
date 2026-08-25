@@ -327,6 +327,11 @@ export function createAPIClient(baseURL = '/api', options = {}) {
       sessions(id) {
         return request(`/tasks/${encodeURIComponent(id)}/sessions`);
       },
+      // Cursor-paged normalized replay events for the embedded Conversation
+      // tab (same shipped session-reader surface Session Replay uses).
+      sessionEvents(sessionId, params = {}) {
+        return request(pathWithQuery(`/oc/sessions/${encodeURIComponent(sessionId)}/events`, params));
+      },
       async dependencies(id) {
         const payload = await request(pathWithQuery(`/tasks/${encodeURIComponent(id)}`, { includeGraph: true }));
         return payload?.dependencies || payload?.dependency_ids || [];
