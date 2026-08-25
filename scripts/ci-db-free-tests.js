@@ -48,6 +48,7 @@ const INCLUDED = [
   'test-memory-routes.js',
   'test-mcp-server.js',
   'test-metrics-api.js',
+  'test-nl-parse.js',
   'test-operational-followup.js',
   'test-org-api-storage.js',
   'test-org-api.js',

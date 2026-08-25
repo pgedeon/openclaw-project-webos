@@ -10,10 +10,11 @@ A complete walkthrough of the OpenClaw Project Dashboard interface, workflows, a
 4. [Filtering & Search](#filtering--search)
 5. [Archive Workflow](#archive-workflow)
 6. [One-Click Actions & Confirmations](#one-click-actions--confirmations)
-7. [Keyboard Shortcuts](#keyboard-shortcuts)
-8. [Agent Integration](#agent-integration)
-9. [Import / Export](#import--export)
-10. [Accessibility](#accessibility)
+7. [Ask Bar (NL Commands)](#ask-bar-nl-commands)
+8. [Keyboard Shortcuts](#keyboard-shortcuts)
+9. [Agent Integration](#agent-integration)
+10. [Import / Export](#import--export)
+11. [Accessibility](#accessibility)
 
 ---
 
@@ -186,6 +187,8 @@ For power users and accessibility:
 
 | Key | Action |
 |-----|--------|
+| `Ctrl+K` / `Cmd+K` | Open the command palette |
+| `Tab` (in the palette) | Toggle between Search and Ask mode |
 | `N` | Focus the new task input |
 | `1` | Switch to List view |
 | `2` | Switch to Board view |
@@ -231,6 +234,49 @@ Every executed action writes an immutable receipt (kind, target, actor, outcome,
 ### Retries vs repeats
 
 Retrying a timed-out action is safe: the same confirmed intent carries the same receipt id, and the server replays the stored receipt instead of executing twice. Deliberately repeating an action (e.g. dispatching the same template again) mints a fresh intent and executes again — both receipts stay in the tray.
+
+---
+
+## Ask Bar (NL Commands)
+
+The command palette (`Ctrl+K` / `Cmd+K`) has two modes. **Search** finds and navigates; **Ask** understands intents in plain language and proposes actions through the exact same governed path the buttons use (design brief: `docs/briefs/nl-command-bar.md`). Press `Tab` inside the palette to toggle — the chip next to the hint bar always shows which mode you're in. There is no implicit switching: typing a search query that happens to contain a verb never turns into an action.
+
+### What Ask understands
+
+| You type | What happens | Confirmation |
+|--------|-------|--------------|
+| "assign checkout bug to kaya" | Assigns the task to agent kaya | Single click |
+| "run nightly backup on task #42" | Dispatches template on the task | Preview modal |
+| "approve the deployment request" / "reject …" | Decides a pending approval | Preview modal |
+| "cancel run 4f2a" / "stop run …" | Cancels a running/queued/waiting run | Hold-to-confirm (1.2 s) |
+| "retry run 4f2a" / "re-dispatch …" | Re-queues a failed run | Preview modal |
+| "what's running" / "fleet status" | Inline answer: running runs + busy agents | Read-only |
+| "show failed runs" / "what failed" | Failed runs + re-dispatch chips | Read-only |
+| "pending approvals" / "what needs approval" | Pending approvals + approve chips | Read-only |
+| "budget status" / "am I over budget" | Names breached/amber budgets | Read-only |
+| anything else | Falls back to normal search results | — |
+
+Targets resolve against live data: task titles or `#id` prefixes, run ids (`run_…`, UUID, short id), approval subjects, agent display names, workflow template names. Quoted strings ("checkout bug") force literal title matching.
+
+### The interpretation card
+
+Before anything executes, Ask shows exactly what it understood: the action, the resolved target, the parameters, and the recovery hint. Nothing has fired yet — no envelope exists, zero requests sent. Confirming the card hands off to the standard confirmation gate, so the table's confirmation column above is the registry's severity tier, applied unchanged:
+
+- **Single click** actions fire on that confirm.
+- **Preview modal** actions open the typed preview next.
+- **Hold-to-confirm** (cancel) opens the 1.2 s ring next.
+
+When several targets match ("3 runs match 'import'"), a pick list appears; Enter does nothing until you pick one. If Ask can't map your sentence to an action, it says so honestly and shows normal search results for the same text instead of guessing.
+
+### What Ask refuses
+
+- **Batch actions** ("cancel all failed runs") — one action, one target, always.
+- **Scheduling** ("every day at 9…") — recurring schedules live in the Cron view.
+- **Config writes** — budgets, settings, snapshot restores are never proposed.
+- **Task creation** ("spawn agent for X, report when done") — not an available action yet; open Tasks to create it, then ask again to dispatch.
+- **Unknown agents/templates** — named as such, never guessed.
+
+Query answers ("what's running", "budget status") are read-only — they issue only GET requests and never construct an action. Outcomes, receipts, budget-block banners, and the Recent-actions tray behave identically whether an action came from a button or from Ask.
 
 ---
 

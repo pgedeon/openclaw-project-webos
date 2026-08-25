@@ -4,7 +4,7 @@ The OpenClaw Project WebOS exposes **35 windowed applications** through the desk
 
 Views are organized into four categories in the start menu: **Work**, **Operations**, **System**, and **Admin**.
 
-> **Shell chrome, not windows:** the Recent-actions tray (⚡ in the taskbar, one-click actions slice 2) is a taskbar popover sibling of the notification center — deliberately NOT a windowed app, so the app count above stays frozen. See [user-guide.md — One-Click Actions](user-guide.md#one-click-actions--confirmations).
+> **Shell chrome, not windows:** the Recent-actions tray (⚡ in the taskbar, one-click actions slice 2) is a taskbar popover sibling of the notification center — deliberately NOT a windowed app, so the app count above stays frozen. The same goes for the command palette (`Ctrl+K`): its Search mode navigates, and its Ask mode (press `Tab`) parses plain-language intents into governed one-click actions with a mandatory interpretation card before anything executes — see [user-guide.md — Ask Bar](user-guide.md#ask-bar-nl-commands). See also [user-guide.md — One-Click Actions](user-guide.md#one-click-actions--confirmations).
 
 > **Already documented in detail** in [user-guide.md](user-guide.md): Tasks, Board, Timeline, Agent, Audit, and Cron views. These are briefly cross-referenced below but not re-documented.
 
