@@ -3,6 +3,12 @@
  */
 const { URL } = require('url');
 const { broadcast } = require('./sse-routes');
+const reader = require('../lib/session-jsonl-reader');
+const { buildTaskSessionBindings } = require('../lib/task-session-binding');
+
+// v1 constant (brief §3 size discipline): cap the response at the 20 most
+// recent runs per task.
+const MAX_SESSION_RUNS = 20;
 
 function registerTaskRoutes(router) {
   // Snapshot helper — uses ctx from route handler scope
@@ -309,6 +315,59 @@ function registerTaskRoutes(router) {
     } catch (err) {
       const statusCode = err.message.includes('not found') ? 404 : 400;
       ctx.sendJSON(res, statusCode, { error: err.message });
+    }
+    return true;
+  });
+
+  // GET /api/tasks/:id/sessions — task↔session binding (read-time join,
+  // docs/briefs/task-session-binding.md). Resolves the task's workflow_runs,
+  // joins gateway_session_id (= session KEY) against sessions.json via the
+  // reader, and returns compact bindings with replay/console deep-links.
+  // Read-only; no transcript bodies ever cross this endpoint.
+  router.add('GET', '/api/tasks/:id/sessions', async (req, res, ctx, params) => {
+    if (!ctx.asanaStorage || !ctx.asanaStorage.pool) {
+      ctx.sendJSON(res, 503, { error: 'Asana storage not initialized' });
+      return true;
+    }
+    const taskId = params.id;
+    try {
+      // Unknown task → 404 (same wording family as getTask's 'not found').
+      await ctx.asanaStorage.getTask(taskId);
+    } catch (err) {
+      const status = err.message.includes('not found') ? 404 : 400;
+      ctx.sendJSON(res, status, { error: err.message });
+      return true;
+    }
+    try {
+      const runsResult = await ctx.asanaStorage.pool.query(
+        `SELECT id, workflow_type, status, gateway_session_id, gateway_session_active,
+                started_at, finished_at, last_heartbeat_at, retry_count, created_at
+           FROM workflow_runs WHERE task_id = $1
+          ORDER BY created_at DESC LIMIT ${MAX_SESSION_RUNS}`,
+        [taskId]
+      );
+      let activeRunId = null;
+      try {
+        const active = await ctx.asanaStorage.pool.query(
+          'SELECT active_workflow_run_id FROM tasks WHERE id = $1',
+          [taskId]
+        );
+        activeRunId = active.rows[0]?.active_workflow_run_id || null;
+      } catch (_) { /* optional pointer — degrade without it */ }
+      const allData = await reader.listAllSessions();
+      const sessionsIndex = [];
+      for (const agentData of allData) {
+        for (const s of agentData.sessions) {
+          if (s && s.key) {
+            sessionsIndex.push({ key: s.key, sessionId: s.sessionId || null, agentId: agentData.agentId });
+          }
+        }
+      }
+      const sessions = buildTaskSessionBindings(runsResult.rows || [], sessionsIndex, { activeRunId });
+      ctx.sendJSON(res, 200, { taskId, sessions });
+    } catch (err) {
+      console.error('[task-server] GET /api/tasks/:id/sessions failed:', err.message);
+      ctx.sendJSON(res, 500, { error: err.message });
     }
     return true;
   });

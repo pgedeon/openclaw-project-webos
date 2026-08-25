@@ -323,6 +323,10 @@ export function createAPIClient(baseURL = '/api', options = {}) {
       history(id) {
         return request(`/tasks/${encodeURIComponent(id)}/history`);
       },
+      // Task↔session bindings (read-time join, docs/briefs/task-session-binding.md).
+      sessions(id) {
+        return request(`/tasks/${encodeURIComponent(id)}/sessions`);
+      },
       async dependencies(id) {
         const payload = await request(pathWithQuery(`/tasks/${encodeURIComponent(id)}`, { includeGraph: true }));
         return payload?.dependencies || payload?.dependency_ids || [];

@@ -184,6 +184,8 @@ layout: default
 - [Sessions API](#sessions-api)
   - [GET /api/sessions/active](#get-apisessionsactive)
   - [POST /api/sessions/:id/heartbeat](#post-apisessionsidheartbeat)
+- [Task Sessions API](#task-sessions-api)
+  - [GET /api/tasks/:id/sessions](#get-apitasksidsessions)
 - [OpenClaw Session Reader API](#openclaw-session-reader-api)
   - [GET /api/oc/agents](#get-apiocagents)
   - [GET /api/oc/sessions](#get-apiocsessions)
@@ -2737,6 +2739,70 @@ List currently active gateway sessions associated with workflow runs.
 ### `POST /api/sessions/:id/heartbeat`
 
 Record a heartbeat for a session, keeping it marked as active.
+
+---
+
+## Task Sessions API
+
+Read-only bindings between a dashboard task and the gateway sessions that
+worked on it (docs/briefs/task-session-binding.md). The join is derived at
+read time from `workflow_runs.task_id` → `gateway_session_id` (which stores an
+OpenClaw session **key**, `agent:<agentId>:<kind>:<id>`) and resolved against
+each agent's `sessions.json`. No write-time bookkeeping; the dispatcher
+remains the sole writer of the binding columns.
+
+### `GET /api/tasks/:id/sessions`
+
+List the gateway sessions bound to a task's workflow runs, newest run first,
+capped at the 20 most recent runs. Response carries metadata only — never
+transcript bodies.
+
+**Response** `200`:
+
+```json
+{
+  "taskId": "uuid",
+  "sessions": [
+    {
+      "runId": "uuid",
+      "workflowType": "code-change",
+      "runStatus": "completed",
+      "isActiveRun": false,
+      "sessionKey": "agent:coder:main",
+      "agentId": "coder",
+      "sessionId": "abc123",
+      "sessionActive": false,
+      "liveness": "completed",
+      "startedAt": 1787530620467,
+      "finishedAt": 1787530999999,
+      "heartbeatAt": 1787530990000,
+      "retryCount": 0,
+      "retryCycled": false,
+      "deepLink": {
+        "view": "session-replay",
+        "params": { "agent": "coder", "session": "abc123" }
+      }
+    }
+  ]
+}
+```
+
+**Field semantics:**
+
+| Field | Meaning |
+|---|---|
+| `liveness` | `live` (run still active per migration-001 ∪ 021 status vocabulary), `completed`, or `failed` |
+| `sessionId` | resolved from sessions.json; `null` = orphaned transcript (key retained, file gone) |
+| `retryCycled` | R1 honesty flag — re-queued runs lose earlier `gateway_session_id` values, so only the latest attempt's session survives a retry cycle |
+| `deepLink` | view-routing hint: `console` (by session key) when live, `session-replay` (by sessionId) otherwise; `null` when unresolvable — links are never fabricated |
+
+**Errors:** unknown task → `404 {error}`; storage uninitialized → `503
+{error: "Asana storage not initialized"}` (the Tasks view hides the Sessions
+section on non-200).
+
+Pure mapping logic lives in `lib/task-session-binding.js` (`parseSessionKey`,
+`deriveLiveness`, `buildTaskSessionBindings`), fixture-tested DB-free in
+tests/test-task-session-binding.js.
 
 ---
 

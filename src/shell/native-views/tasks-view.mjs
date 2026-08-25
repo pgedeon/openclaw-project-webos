@@ -832,6 +832,9 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
           <button class="tv-nav-btn" data-nav="history" data-task-id="${escapeHtml(task.id)}" title="View task history">📜 History</button>
           <button class="tv-nav-btn" data-nav="memory" data-query="${escapeHtml(title)}" title="Search memory for this task">🧠 Memory</button>
         </div>
+        <!-- Sessions (task↔session binding, docs/briefs/task-session-binding.md §4):
+             filled async by loadTaskSessions(); stays empty (absent) on failure/empty -->
+        <div id="tvSessions" style="margin-top:10px;"></div>
       </div>
     `;
 
@@ -881,6 +884,90 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
             navigateToView?.('memory', { params: { query: btn.dataset.query } });
             break;
         }
+      };
+      btn.addEventListener('click', handler);
+      cleanupFns.push(() => btn.removeEventListener('click', handler));
+    });
+
+    // Sessions section (brief §4): exactly ONE GET per detail render, zero
+    // non-GET requests ever. Endpoint failure / 503 / empty list → section
+    // stays absent, silent by design (most tasks have no runs).
+    loadTaskSessions(task);
+  }
+
+  // === Sessions section (task↔session binding, docs/briefs/task-session-binding.md) ===
+  function tvRelTime(ms) {
+    if (!ms) return '';
+    const diff = Date.now() - ms;
+    if (diff < 60000) return 'just now';
+    const min = Math.floor(diff / 60000);
+    if (min < 60) return `${min}m`;
+    const hrs = Math.floor(min / 60);
+    if (hrs < 24) return `${hrs}h`;
+    return `${Math.floor(hrs / 24)}d`;
+  }
+
+  function tvSessionRowHtml(b) {
+    const time = b.startedAt ? tvRelTime(b.startedAt) : '';
+    const meta = `${escapeHtml(b.workflowType || 'run')} · ${escapeHtml(b.runStatus || '')}${time ? ` · ${time}` : ''}`;
+    // R1 honesty label: re-queued runs lose earlier gateway_session_id values,
+    // so what is listed is only the latest attempt's session.
+    const retryNote = b.retryCycled
+      ? `<div style="font-size:0.66rem;color:var(--win11-text-tertiary);margin:2px 0 0 20px;">└ retried ${escapeHtml(String(b.retryCount ?? 0))}× · latest attempt shown</div>`
+      : '';
+
+    let main;
+    if (b.deepLink && b.deepLink.params) {
+      // Resolvable transcript: live → Live Console (auto-attach), everything
+      // else → Session Replay (resolves by sessionId).
+      const isLive = b.deepLink.view === 'console';
+      const glyph = isLive ? '▶' : (b.runStatus === 'completed' ? '✔' : '✕');
+      const label = isLive ? 'Live →' : 'Replay →';
+      main = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span style="width:14px;text-align:center;color:${isLive ? '#22c55e' : 'var(--win11-text-secondary)'};">${glyph}</span>
+        <span style="font-family:monospace;font-size:0.74rem;color:var(--win11-text);word-break:break-all;">${escapeHtml(b.sessionKey || '')}</span>
+        <span style="font-size:0.72rem;color:var(--win11-text-tertiary);">· ${meta}</span>
+        <button class="tv-action-btn tv-session-nav" data-view="${escapeHtml(b.deepLink.view)}" data-agent="${escapeHtml(b.deepLink.params.agent || '')}" data-session="${escapeHtml(b.deepLink.params.session || '')}" style="margin-left:auto;">${label}</button>
+      </div>`;
+    } else if (b.sessionKey) {
+      // Orphaned: key retained but transcript pruned/rotated — permanent honest
+      // dead end, never a fabricated link (brief §4 rule 4).
+      main = `<div title="transcript no longer on disk" style="cursor:not-allowed;font-size:0.78rem;color:var(--win11-text-tertiary);">
+        <span style="display:inline-block;width:14px;text-align:center;">∅</span>
+        <span style="font-family:monospace;font-size:0.74rem;word-break:break-all;">${escapeHtml(b.sessionKey)}</span>
+        <span style="font-size:0.72rem;"> · ${meta}</span>
+      </div>`;
+    } else {
+      // Pre-binding / queued run with no session recorded (AC5 legacy rows).
+      main = `<div style="font-size:0.78rem;color:var(--win11-text-tertiary);opacity:0.7;">
+        <span style="display:inline-block;width:14px;text-align:center;">?</span>
+        no session recorded · ${meta}
+      </div>`;
+    }
+
+    return `<div style="padding:3px 0;border-bottom:1px solid var(--win11-border);">${main}${retryNote}</div>`;
+  }
+
+  async function loadTaskSessions(task) {
+    const holder = root.querySelector('#tvSessions');
+    if (!holder) return;
+    const taskId = task.id;
+    let bindings = [];
+    try {
+      const payload = await api.tasks.sessions(taskId);
+      bindings = Array.isArray(payload?.sessions) ? payload.sessions : [];
+    } catch (_) {
+      return; // 503 / failure → section absent, silent (§4 interaction rules)
+    }
+    if (selectedTaskId !== taskId) return; // selection moved on — drop stale render
+    if (!bindings.length) return;          // empty list → absent
+    holder.innerHTML = `
+      <div style="font-size:0.7rem;font-weight:600;color:var(--win11-text-tertiary);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Sessions</div>
+      ${bindings.map(tvSessionRowHtml).join('')}
+    `;
+    holder.querySelectorAll('.tv-session-nav').forEach(btn => {
+      const handler = () => {
+        navigateToView?.(btn.dataset.view, { params: { agent: btn.dataset.agent, session: btn.dataset.session } });
       };
       btn.addEventListener('click', handler);
       cleanupFns.push(() => btn.removeEventListener('click', handler));

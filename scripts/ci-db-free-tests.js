@@ -73,6 +73,7 @@ const INCLUDED = [
   'test-sse-routes.js',
   'test-task-routes.js',
   'test-task-server-storage-fallback.js',
+  'test-task-session-binding.js',
   'test-view-routes.js',
   'test-workflow-approvals-api.js',
   'test-workflow-artifacts-api.js',

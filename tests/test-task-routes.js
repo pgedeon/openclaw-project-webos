@@ -14,6 +14,23 @@ const os = require('os');
 const path = require('path');
 const Router = require('../routes/router');
 
+// GET /api/tasks/:id/sessions resolves gateway session keys through
+// lib/session-jsonl-reader.js, which pins AGENTS_DIR ($HOME/.openclaw/agents)
+// at require time. Point HOME at a fixture dir BEFORE task-routes (and thus
+// the reader) is first required so the join is deterministic and DB-free.
+const FAKE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'task-routes-sessions-'));
+const SESSIONS_FIXTURE_DIR = path.join(FAKE_HOME, '.openclaw', 'agents', 'coder', 'sessions');
+fs.mkdirSync(SESSIONS_FIXTURE_DIR, { recursive: true });
+fs.writeFileSync(
+  path.join(SESSIONS_FIXTURE_DIR, 'sessions.json'),
+  JSON.stringify({
+    'agent:coder:webchat:s-live': { sessionId: 'sess-live', updatedAt: 1787530990000 },
+    'agent:coder:main:s-done': { sessionId: 'sess-done', updatedAt: 1787530900000 },
+  }),
+  'utf8'
+);
+process.env.HOME = FAKE_HOME;
+
 const sseRoutesPath = require.resolve('../routes/sse-routes');
 const taskRoutesPath = require.resolve('../routes/task-routes');
 
@@ -612,10 +629,102 @@ async function run() {
     }));
     assert.strictEqual(retryNotFound.status, 404);
 
+    // ── GET /api/tasks/:id/sessions (task↔session binding) ──
+
+    const expectedSessionRoutes = [
+      ['GET', '/api/tasks/:id/sessions'],
+    ];
+    for (const [method, routePath] of expectedSessionRoutes) {
+      assert.ok(
+        router.list().some((route) => route.method === method && route.path === routePath),
+        `${method} ${routePath} should be registered`
+      );
+    }
+
+    // 503 without storage — house degradation pattern.
+    const sessionsNoStorage = await dispatch(router, 'GET', '/api/tasks/task-1/sessions', createContext());
+    assert.strictEqual(sessionsNoStorage.status, 503);
+    assert.match(sessionsNoStorage.payload.error, /not initialized/);
+
+    // Fixture storage: runs + active pointer + getTask existence check.
+    function makeSessionsStorage(queryLog) {
+      return {
+        pool: {
+          async query(sql, args) {
+            queryLog.push({ sql, args });
+            if (sql.startsWith('SELECT id, workflow_type')) {
+              return { rows: [
+                { id: 'run-old', workflow_type: 'code-change', status: 'completed', gateway_session_id: 'agent:coder:main:s-done', gateway_session_active: false, started_at: new Date(1787530000000).toISOString(), finished_at: new Date(1787530900000).toISOString(), last_heartbeat_at: null, retry_count: 1, created_at: new Date(1787529900000).toISOString() },
+                { id: 'run-live', workflow_type: 'code-change', status: 'running', gateway_session_id: 'agent:coder:webchat:s-live', gateway_session_active: true, started_at: new Date(1787530620467).toISOString(), finished_at: null, last_heartbeat_at: new Date(1787530990000).toISOString(), retry_count: 0, created_at: new Date(1787530610000).toISOString() },
+              ] };
+            }
+            if (sql.startsWith('SELECT active_workflow_run_id')) {
+              return { rows: [{ active_workflow_run_id: 'run-live' }] };
+            }
+            return { rows: [] };
+          },
+        },
+        async getTask(id) {
+          if (id === 'missing-task') throw new Error('task not found');
+          return { id, title: 'T' };
+        },
+      };
+    }
+
+    // Happy path: bindings ordered newest-first, deep-links present, no
+    // transcript bodies in the payload (AC1 size discipline).
+    const queryLog = [];
+    const sessionsOk = await dispatch(router, 'GET', '/api/tasks/task-1/sessions', createContext({ asanaStorage: makeSessionsStorage(queryLog) }));
+    assert.strictEqual(sessionsOk.status, 200);
+    assert.deepStrictEqual(sessionsOk.payload.taskId, 'task-1');
+    assert.deepStrictEqual(sessionsOk.payload.sessions.map(b => b.runId), ['run-live', 'run-old']);
+    const liveBinding = sessionsOk.payload.sessions[0];
+    assert.strictEqual(liveBinding.liveness, 'live');
+    assert.strictEqual(liveBinding.isActiveRun, true);
+    assert.deepStrictEqual(liveBinding.deepLink, { view: 'console', params: { agent: 'coder', session: 'agent:coder:webchat:s-live' } });
+    const doneBinding = sessionsOk.payload.sessions[1];
+    assert.strictEqual(doneBinding.liveness, 'completed');
+    assert.strictEqual(doneBinding.retryCycled, true); // R1 honesty flag from retry_count=1
+    assert.deepStrictEqual(doneBinding.deepLink, { view: 'session-replay', params: { agent: 'coder', session: 'sess-done' } });
+    assert.match(queryLog[0].sql, /FROM workflow_runs WHERE task_id = \$1/);
+    assert.deepStrictEqual(queryLog[0].args, ['task-1']);
+    const longestString = JSON.stringify(sessionsOk.payload)
+      .match(/"[^"\\]*"/g)
+      .reduce((max, s) => Math.max(max, s.length), 0);
+    assert.ok(longestString < 200, `no transcript bodies expected; longest string ${longestString} chars`);
+
+    // Unknown task → 404.
+    const sessionsUnknown = await dispatch(router, 'GET', '/api/tasks/missing-task/sessions', createContext({ asanaStorage: makeSessionsStorage([]) }));
+    assert.strictEqual(sessionsUnknown.status, 404);
+    assert.match(sessionsUnknown.payload.error, /not found/);
+
+    // Orphaned row shape: key retained but absent from the reader index →
+    // sessionId null, NO deepLink (never a fabricated link).
+    const orphanStorage = makeSessionsStorage([]);
+    orphanStorage.pool.query = async (sql) => (
+      sql.startsWith('SELECT id, workflow_type')
+        ? { rows: [{ id: 'run-orphan', workflow_type: 'code-change', status: 'completed', gateway_session_id: 'agent:gone:main:pruned', gateway_session_active: false, started_at: new Date(1787530000000).toISOString(), finished_at: null, last_heartbeat_at: null, retry_count: 0, created_at: new Date(1787530000000).toISOString() }] }
+        : { rows: [{ active_workflow_run_id: null }] }
+    );
+    const sessionsOrphan = await dispatch(router, 'GET', '/api/tasks/task-1/sessions', createContext({ asanaStorage: orphanStorage }));
+    assert.strictEqual(sessionsOrphan.status, 200);
+    const [orphan] = sessionsOrphan.payload.sessions;
+    assert.strictEqual(orphan.sessionKey, 'agent:gone:main:pruned');
+    assert.strictEqual(orphan.sessionId, null);
+    assert.strictEqual(orphan.deepLink, null);
+
+    // Query failure degrades to 500 with the error surfaced.
+    const failingStorage = makeSessionsStorage([]);
+    failingStorage.pool.query = async () => { throw new Error('db exploded'); };
+    const sessionsDbError = await quiet(() => dispatch(router, 'GET', '/api/tasks/task-1/sessions', createContext({ asanaStorage: failingStorage })));
+    assert.strictEqual(sessionsDbError.status, 500);
+    assert.match(sessionsDbError.payload.error, /db exploded/);
+
     console.log('PASS: task routes');
   } finally {
     loaded.restore();
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(FAKE_HOME, { recursive: true, force: true });
   }
 }
 

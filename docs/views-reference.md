@@ -76,6 +76,8 @@ The primary task list view. Fully documented in the [User Guide — List View](u
 
 Owner set/change from the edit form routes through the governed `task.assign` action (`POST /api/actions/execute`, LOW severity → fires immediately with a receipt); unassigning stays on the raw PATCH. See [user-guide.md — One-Click Actions](user-guide.md#one-click-actions--confirmations).
 
+**Sessions section** (task↔session binding, docs/briefs/task-session-binding.md): task detail lists the gateway sessions bound to the task's workflow runs via `GET /api/tasks/:id/sessions` — one GET per detail render, zero non-GET requests; endpoint failure / 503 / empty list leaves the section absent, silently. Rows carry a liveness glyph + status chip; live runs deep-link to Live Console (`/?view=console&agent=<agentId>&session=<sessionKey>`, auto-attach), everything resolvable deep-links to Session Replay (`/?view=session-replay&agent=<agentId>&session=<sessionId>`); orphaned transcripts (pruned sessions.json entries) render disabled with a "transcript no longer on disk" tooltip and never get a fabricated link. Retry-cycled rows are labeled honestly: "latest attempt shown" (earlier bindings are erased by re-queue per brief R1).
+
 ### Board
 
 **Category:** Work · **ID:** `board` · **Default size:** 1120×740
