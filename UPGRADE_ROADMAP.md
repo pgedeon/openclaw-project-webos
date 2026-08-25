@@ -54,7 +54,7 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       (F5: standalone filesystem API bearer auth, Host/Origin allowlists,
       JSON-only mutations, crontab/.ssh/sessions write refusal); CVE-2026-44240
       dependency fix in 1eb8137. All 11 audit findings closed. Remaining
-      hardening (advisory, not an audit finding): `npm audit` not yet a CI gate.
+      hardening complete: `npm audit` prod-deps gate live in CI since d6a0a22 (critical level; tightening path documented in workflow).
 - [x] **Version bump to 1.1.0** once Phase 0 lands. Update CHANGELOG + RELEASE.
       Done 2026-08-23: released 1.1.0 (CHANGELOG section added; RELEASE.md carries
       no version line, nothing to update).
