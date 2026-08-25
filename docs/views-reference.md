@@ -4,7 +4,7 @@ The OpenClaw Project WebOS exposes **35 windowed applications** through the desk
 
 Views are organized into four categories in the start menu: **Work**, **Operations**, **System**, and **Admin**.
 
-> **Shell chrome, not windows:** the Recent-actions tray (⚡ in the taskbar, one-click actions slice 2) is a taskbar popover sibling of the notification center — deliberately NOT a windowed app, so the app count above stays frozen. The same goes for the command palette (`Ctrl+K`): its Search mode navigates, and its Ask mode (press `Tab`) parses plain-language intents into governed one-click actions with a mandatory interpretation card before anything executes — see [user-guide.md — Ask Bar](user-guide.md#ask-bar-nl-commands). See also [user-guide.md — One-Click Actions](user-guide.md#one-click-actions--confirmations).
+> **Shell chrome, not windows:** the Recent-actions tray (⚡ in the taskbar, one-click actions slice 2) is a taskbar popover sibling of the notification center — deliberately NOT a windowed app, so the app count above stays frozen. The same goes for the command palette (`Ctrl+K`): its Search mode navigates, and its Ask mode (press `Tab`) parses plain-language intents into governed one-click actions with a mandatory interpretation card before anything executes — see [user-guide.md — Ask Bar](user-guide.md#ask-bar-nl-commands). See also [user-guide.md — One-Click Actions](user-guide.md#one-click-actions--confirmations). The taskbar's accent picker (palette icon in the tray) is the same kind of shell chrome: a small swatch popover for the five built-in accent packs layered over dark/light — see [user-guide.md — Appearance](user-guide.md#appearance-themes--accent-packs).
 
 > **Already documented in detail** in [user-guide.md](user-guide.md): Tasks, Board, Timeline, Agent, Audit, and Cron views. These are briefly cross-referenced below but not re-documented.
 
@@ -591,6 +591,7 @@ Workflow engine management and monitoring.
 - **Tabbed navigation** — switch between active, completed, failed, and all runs
 - **Run detail panel** — expandable panel showing run input, output, steps, and agent routing
 - **Run row actions (one-click actions slice 2)** — non-terminal rows expose ⛔ Cancel behind hold-to-confirm (HIGH severity gate, keyboard parity via held Enter); failed rows expose ↻ Re-dispatch behind a typed preview modal (resets to `queued`, dispatcher picks it up); both fire through `POST /api/actions/execute` and record receipts
+- **Graph toggle (visual editor Stage 1, read-only)** — the trigger panel gains a Graph button rendering the template's step chain as a vertical SVG (nodes = steps with type icon + display name + required dot; edges = connectors). Nodes colorize from the latest run's `workflow_steps` rows (green completed / blue in-progress / red failed / gray pending / unknown status strings shown verbatim, e.g. `timed_out`); without runs nodes stay neutral. Click a node for a detail card (config summary; run mode adds status, timestamps, error message, truncated output preview). Render caps at 32 steps with an honest truncation banner; layout comes from the pure `layoutLayered()` helper in `lib/workflow-graph-layout.js` (longest-path layering — linear chains degenerate to a single column; cyclic `depends_on` input throws and renders a named error state). Read-only invariant: nothing in the graph mutates workflow state — the only POST is fire-and-forget earn-use telemetry (`POST /api/workflow-graph/events`: one `open` event per view-session on first render plus an explicit 👍/👎 feedback chip feeding the Stage-2 GO/NO-GO metric)
 - **Step timeline** — visual step progression for active runs
 - **Template reference** — link to workflow template definition
 - **Claim integration** — shows claim status and agent session binding
@@ -600,11 +601,13 @@ Workflow engine management and monitoring.
 - `GET /api/workflow-runs`
 - `GET /api/workflow-runs/active`
 - `GET /api/workflow-runs/:id`
+- `GET /api/workflow-runs?workflow_type=<name>&limit=1` (latest run for graph status colors)
 - `POST /api/workflow-runs/:id/start`
 - `POST /api/workflow-runs/:id/complete`
 - `POST /api/actions/execute` (kinds `run.cancel` / `run.redispatch` → existing cancel / override-failure logic in-process)
 - `GET /api/workflow-templates`
 - `GET /api/projects`
+- `POST /api/workflow-graph/events` (graph earn-use telemetry — see Workflow Graph API)
 
 ---
 

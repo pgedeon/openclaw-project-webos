@@ -68,6 +68,7 @@ const { registerExportRoutes } = require('./routes/export-routes');
 const { registerSnapshotRoutes } = require('./routes/snapshot-routes');
 const { registerSpaceRoutes } = require('./routes/space-routes');
 const { registerWorkflowRoutingRoutes } = require('./routes/workflow-routing-routes');
+const { registerWorkflowGraphRoutes } = require('./routes/workflow-graph-routes');
 const { registerCostRoutes } = require('./routes/cost-routes');
 const { registerBudgetRoutes } = require('./routes/budget-routes');
 const { registerActionRoutes } = require('./routes/action-routes');
@@ -699,6 +700,8 @@ registerHistoryRoutes(router, settingsDeps);
 registerExportRoutes(router, settingsDeps, settingsStore);
 registerSpaceRoutes(router, settingsDeps);
 registerWorkflowRoutingRoutes(router, settingsDeps);
+// Workflow graph telemetry (visual editor Stage 1 earn-use events, brief §6).
+registerWorkflowGraphRoutes(router, settingsDeps);
 registerCostRoutes(router);
 registerBudgetRoutes(router);
 registerActionRoutes(router, { settingsStore });

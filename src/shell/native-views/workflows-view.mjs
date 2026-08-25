@@ -54,6 +54,18 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
     .wfv-tab { padding:6px 14px;border-radius:6px 6px 0 0;border:1px solid var(--win11-border);border-bottom:none;background:var(--win11-surface-solid);color:var(--win11-text-secondary);cursor:pointer;font-size:0.82rem; }
     .wfv-tab.active { background:var(--win11-surface);color:var(--win11-text);font-weight:600;border-bottom:2px solid var(--win11-accent); }
     .wfv-trigger-panel { background:var(--win11-surface);border:1px solid var(--win11-border);border-radius:10px;padding:14px;margin-bottom:16px; }
+    /* Workflow graph (visual editor Stage 1 — read-only chain render) */
+    .wfv-graph-wrap { background:var(--win11-surface-solid);border:1px solid var(--win11-border);border-radius:8px;padding:12px;overflow-x:auto; }
+    .wfv-graph-node rect { transition:fill 0.15s; }
+    .wfv-graph-node:hover rect { filter:brightness(1.15); }
+    .wfv-graph-node.selected rect { stroke-width:2.5; }
+    .wfv-graph-banner { padding:6px 10px;border-radius:6px;font-size:0.75rem;margin-bottom:8px;background:rgba(234,179,8,0.12);color:#eab308;border:1px solid rgba(234,179,8,0.25); }
+    .wfv-graph-state { padding:18px;text-align:center;color:var(--win11-text-tertiary);font-size:0.82rem; }
+    .wfv-graph-detail { margin-top:10px;padding:10px;border-radius:8px;background:var(--win11-surface);border:1px solid var(--win11-border);font-size:0.78rem;color:var(--win11-text-secondary); }
+    .wfv-graph-detail pre { white-space:pre-wrap;word-break:break-word;font-size:0.72rem;max-height:180px;overflow-y:auto;background:var(--win11-surface-solid);padding:8px;border-radius:6px;margin:6px 0 0; }
+    .wfv-graph-feedback { display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px;font-size:0.78rem;color:var(--win11-text-secondary); }
+    .wfv-graph-feedback input { flex:1;min-width:120px;padding:4px 8px;border-radius:5px;border:1px solid var(--win11-border);background:var(--win11-surface-solid);color:var(--win11-text);font-size:0.78rem;outline:none; }
+    .wfv-graph-feedback .active { border-color:var(--win11-accent);box-shadow:0 0 0 1px var(--win11-accent); }
   `;
   root.appendChild(style);
 
@@ -232,8 +244,11 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
 
       <div style="display:flex;gap:8px;align-items:center;">
         <button id="wfvTriggerBtn" class="wfv-btn primary" style="padding:6px 20px;font-size:0.85rem;">⚡ Trigger Workflow</button>
+        <button id="wfvGraphBtn" class="wfv-btn" title="Read-only step chain graph (latest run status colors)">Graph</button>
         <span style="font-size:0.72rem;color:var(--win11-text-tertiary);">Creates a run and starts it immediately</span>
       </div>
+
+      <div id="wfvGraphPanel" style="display:none;margin-top:12px;"></div>
     </div>`;
 
     // Wire close button
@@ -243,8 +258,189 @@ export async function renderWorkflowsView({ mountNode, api, adapter, stateStore,
       renderTriggerPanel();
     });
 
+    // Wire graph toggle (visual editor Stage 1 — read-only chain render)
+    panel.querySelector('#wfvGraphBtn')?.addEventListener('click', () => {
+      const gPanel = root.querySelector('#wfvGraphPanel');
+      if (!gPanel) return;
+      const show = gPanel.style.display === 'none';
+      gPanel.style.display = show ? 'block' : 'none';
+      if (show) renderGraphPanel(tpl);
+    });
+
     // Wire trigger button
     panel.querySelector('#wfvTriggerBtn')?.addEventListener('click', handleTrigger);
+  }
+
+  // ── Workflow graph (visual editor Stage 1 — read-only chain render) ────
+  // Pure helpers live in lib/workflow-graph-layout.js (DB-free tested); this
+  // view only assembles data + renders SVG. Read-only invariant: the ONLY
+  // non-GET is the fire-and-forget earn-use telemetry POST (brief §6).
+
+  let graphLibPromise = null;
+  let graphOpenSent = false; // one 'open' event per view-session (brief §6)
+
+  function ensureGraphLib() {
+    if (globalThis.WorkflowGraphLayout?.layoutLayered) return Promise.resolve(globalThis.WorkflowGraphLayout);
+    if (!graphLibPromise) {
+      // Served at /lib/workflow-graph-layout.js (UMD fallback sets globalThis).
+      graphLibPromise = import('/lib/workflow-graph-layout.js')
+        .then(() => globalThis.WorkflowGraphLayout || null)
+        .catch(() => null);
+    }
+    return graphLibPromise;
+  }
+
+  function sendGraphEvent(payload) {
+    // Fire-and-forget: telemetry must never bother the operator (brief §4
+    // degradation matrix — endpoint absent/staging no-DB fails silently).
+    try { api.workflows.graphEvent(payload)?.catch(() => {}); } catch { /* ignore */ }
+  }
+
+  const GRAPH_TONE_COLORS = {
+    success: { stroke: '#22c55e', fill: 'rgba(34,197,94,0.12)' },
+    info: { stroke: 'var(--win11-accent)', fill: 'rgba(96,205,255,0.10)' },
+    danger: { stroke: '#ef4444', fill: 'rgba(239,68,68,0.12)' },
+    warning: { stroke: '#eab308', fill: 'rgba(234,179,8,0.12)' },
+    neutral: { stroke: 'var(--win11-border)', fill: 'var(--win11-surface-solid)' },
+    unknown: { stroke: 'var(--win11-text-tertiary)', fill: 'var(--win11-surface-solid)' }
+  };
+
+  function truncLabel(s, n) {
+    const str = String(s ?? '');
+    return str.length > n ? str.substring(0, n - 1) + '…' : str;
+  }
+
+  async function renderGraphPanel(tpl) {
+    const panel = root.querySelector('#wfvGraphPanel');
+    if (!panel) return;
+    panel.innerHTML = '<div class="wfv-graph-state">Loading graph…</div>';
+
+    const lib = await ensureGraphLib();
+    if (!lib) {
+      panel.innerHTML = '<div class="wfv-graph-state">Graph helpers unavailable — retry by toggling Graph.</div>';
+      return;
+    }
+
+    let layout;
+    try {
+      layout = lib.layoutLayered(Array.isArray(tpl.steps) ? tpl.steps : []);
+    } catch (err) {
+      // Cycle in depends_on authoring — named error state, never a blank frame.
+      panel.innerHTML = `<div class="wfv-graph-state" style="color:#ef4444;">Cannot render graph: ${escapeHtml(err?.message || 'invalid step graph')}</div>`;
+      return;
+    }
+
+    if (!layout.nodes.length) {
+      panel.innerHTML = '<div class="wfv-graph-state">Template has no steps.</div>';
+      return;
+    }
+
+    // Latest run for status colors (template mode fallback: neutral nodes).
+    let run = null;
+    try {
+      const res = await api.workflows.runs({ workflow_type: tpl.name, limit: 1 });
+      const list = Array.isArray(res?.runs) ? res.runs : [];
+      if (list.length && list[0]?.id) run = await api.workflows.get(list[0].id);
+    } catch { /* template mode — neutral nodes are honest without a run */ }
+
+    const merged = lib.mergeRunStatus(layout.laidOut, run?.steps);
+    const hasRun = Boolean(run?.id);
+
+    const banner = layout.truncated
+      ? `<div class="wfv-graph-banner">Showing first ${merged.length} of ${layout.total} steps</div>`
+      : '';
+
+    const nodeById = new Map(merged.map((n) => [n.id, n]));
+    const posById = new Map(layout.laidOut.map((n) => [n.id, n]));
+
+    const edgesSvg = layout.edges.map((e) => {
+      const a = posById.get(e.from);
+      const b = posById.get(e.to);
+      if (!a || !b) return '';
+      return `<path d="M ${a.x + a.width / 2} ${a.y + a.height} L ${b.x + b.width / 2} ${b.y}" fill="none" stroke="var(--win11-text-tertiary)" stroke-width="1.5" marker-end="url(#wfvArrow)" />`;
+    }).join('');
+
+    const nodesSvg = merged.map((n) => {
+      const tone = GRAPH_TONE_COLORS[n.tone] || GRAPH_TONE_COLORS.neutral;
+      const dash = n.tone === 'unknown' ? 'stroke-dasharray="4 3"' : '';
+      const icon = lib.stepIcon(n.name);
+      const statusLabel = hasRun ? ` · ${truncLabel(n.status, 14)}` : '';
+      return `<g class="wfv-graph-node" data-node-id="${escapeHtml(n.id)}">
+        <rect x="${n.x}" y="${n.y}" width="${n.width}" height="${n.height}" rx="8"
+          fill="${tone.fill}" stroke="${tone.stroke}" stroke-width="1.5" ${dash} />
+        <text x="${n.x + 12}" y="${n.y + 28}" font-size="15">${icon}</text>
+        <text x="${n.x + 36}" y="${n.y + 19}" font-size="12" fill="var(--win11-text)">${escapeHtml(truncLabel(n.display_name, 24))}</text>
+        <text x="${n.x + 36}" y="${n.y + 34}" font-size="10" fill="var(--win11-text-tertiary)">Step ${n.index + 1}${statusLabel}</text>
+        <circle cx="${n.x + n.width - 12}" cy="${n.y + n.height / 2}" r="4"
+          fill="${n.required ? 'var(--win11-accent)' : 'var(--win11-text-tertiary)'}">
+          <title>${n.required ? 'Required step' : 'Optional step'}</title>
+        </circle>
+      </g>`;
+    }).join('');
+
+    panel.innerHTML = `
+      ${banner}
+      <div style="font-size:0.72rem;color:var(--win11-text-tertiary);margin-bottom:6px;">
+        ${hasRun ? `Latest run <code>${escapeHtml(String(run.id).substring(0, 8))}</code> · ${escapeHtml(run.status || 'unknown')}` : 'Template view — no runs yet (neutral nodes)'} · click a node for details
+      </div>
+      <div class="wfv-graph-wrap">
+        <svg width="${layout.width + 8}" height="${layout.height + 8}" role="img" aria-label="Workflow step chain for ${escapeHtml(tpl.display_name || tpl.name)}">
+          <defs>
+            <marker id="wfvArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--win11-text-tertiary)" />
+            </marker>
+          </defs>
+          ${edgesSvg}
+          ${nodesSvg}
+        </svg>
+      </div>
+      <div id="wfvGraphDetail"></div>
+      <div class="wfv-graph-feedback">
+        <span>Should editing happen here?</span>
+        <button class="wfv-btn wfv-fb-helpful" title="Yes — editing belongs in this graph">👍</button>
+        <button class="wfv-btn wfv-fb-not-helpful" title="No — read-only is enough">👎</button>
+        <input type="text" id="wfvFbNote" placeholder="Optional note…" maxlength="500" />
+      </div>`;
+
+    // Earn-use telemetry: one open event per view-session on first successful render.
+    if (!graphOpenSent) {
+      graphOpenSent = true;
+      sendGraphEvent({ event: 'open', template: tpl.name });
+    }
+
+    // Click node → detail card (config summary; run mode adds status/error/output).
+    panel.querySelectorAll('.wfv-graph-node').forEach((gEl) => {
+      gEl.addEventListener('click', () => {
+        const node = nodeById.get(gEl.dataset.nodeId);
+        if (!node) return;
+        panel.querySelectorAll('.wfv-graph-node.selected').forEach((s) => s.classList.remove('selected'));
+        gEl.classList.add('selected');
+        const detail = root.querySelector('#wfvGraphDetail');
+        if (!detail) return;
+        const outputPreview = node.output == null ? ''
+          : truncLabel(typeof node.output === 'string' ? node.output : JSON.stringify(node.output), 400);
+        detail.innerHTML = `<div class="wfv-graph-detail">
+          <strong style="color:var(--win11-text);">${escapeHtml(node.display_name)}</strong>
+          <div>name: <code>${escapeHtml(node.name)}</code> · position ${node.index + 1} of ${merged.length} · ${node.required ? 'required' : 'optional'}</div>
+          ${hasRun ? `<div>status: <strong>${escapeHtml(node.status)}</strong>${node.started_at ? ` · started ${escapeHtml(fmtDate(node.started_at))}` : ''}${node.finished_at ? ` · finished ${escapeHtml(fmtDate(node.finished_at))}` : ''}</div>` : ''}
+          ${node.error_message ? `<div style="color:#ef4444;margin-top:4px;">${escapeHtml(node.error_message)}</div>` : ''}
+          ${outputPreview ? `<div style="margin-top:4px;color:var(--win11-text-tertiary);">output preview (truncated):<pre>${escapeHtml(outputPreview)}</pre></div>` : ''}
+        </div>`;
+      });
+    });
+
+    // Feedback chip: 👍/👎 posts verdict (+ optional note) immediately.
+    const noteInput = panel.querySelector('#wfvFbNote');
+    const feedbackRow = panel.querySelector('.wfv-graph-feedback');
+    async function postFeedback(helpful, btn) {
+      sendGraphEvent({ event: 'feedback', template: tpl.name, helpful, note: noteInput?.value?.trim() || undefined });
+      if (feedbackRow) {
+        feedbackRow.innerHTML = `<span style="color:#22c55e;">Thanks — feedback recorded${helpful ? '' : ' (read-only stays)'}.</span>`;
+      }
+      void btn;
+    }
+    panel.querySelector('.wfv-fb-helpful')?.addEventListener('click', (e) => postFeedback(true, e.currentTarget));
+    panel.querySelector('.wfv-fb-not-helpful')?.addEventListener('click', (e) => postFeedback(false, e.currentTarget));
   }
 
   async function handleTrigger() {

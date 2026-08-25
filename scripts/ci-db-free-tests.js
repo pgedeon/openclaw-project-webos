@@ -24,6 +24,7 @@ const TEST_TIMEOUT_MS = 45000;
 const INCLUDED = [
   'test-action-client.js',
   'test-action-routes.js',
+  'test-accent-packs.js',
   'test-agent-routes.js',
   'test-auth-policy.js',
   'test-backfill-run-costs.js',
@@ -73,6 +74,7 @@ const INCLUDED = [
   'test-workflow-artifacts-api.js',
   'test-workflow-blockers-api.js',
   'test-workflow-governance.js',
+  'test-workflow-graph.js',
   'test-workflow-routing-routes.js',
   'test-workflow-runs-business-context.js'
 ];

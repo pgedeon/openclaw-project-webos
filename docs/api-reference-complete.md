@@ -158,6 +158,8 @@
   - [GET /api/workflow-routing](#get-apiworkflow-routing)
   - [PUT /api/workflow-routing](#put-apiworkflow-routing)
   - [DELETE /api/workflow-routing/:type](#delete-apiworkflow-routingtype)
+- [Workflow Graph API](#workflow-graph-api)
+  - [POST /api/workflow-graph/events](#post-apiworkflow-graphevents)
 - [Workflow Templates API](#workflow-templates-api)
   - [GET /api/workflow-templates](#get-apiworkflow-templates)
   - [GET /api/workflow-templates/:name](#get-apiworkflow-templatesname)
@@ -2497,6 +2499,54 @@ Delete the routing rule for a workflow type.
 ```
 
 Returns `404` when no rule exists for `type`.
+
+---
+
+## Workflow Graph API
+
+Read-only telemetry for the workflow visual editor Stage 1 (workflows view
+Graph toggle). One endpoint, instrumentation only: appends `audit_log` rows
+that feed the Stage-2 GO/NO-GO earn-use metric (≥8 distinct render-days AND
+≥3 explicit asks within 21 days of staging deploy). It never touches workflow
+state.
+
+### `POST /api/workflow-graph/events`
+
+Record one earn-use event.
+
+**Body**:
+
+```json
+{
+  "event": "open",
+  "template": "topic-discovery"
+}
+```
+
+- `event` (required): `open` (first successful graph render per view-session)
+  or `feedback` (operator 👍/👎 on the "Should editing happen here?" chip).
+- `template` (required): workflow template name matching `[a-z0-9-]+`.
+- `helpful` (required for `feedback`): boolean verdict.
+- `note` (optional): free-text feedback, trimmed and capped at 500 chars.
+
+Validation failures return `400` with a named error:
+`invalid_body` / `invalid_event` / `invalid_template` / `invalid_helpful`.
+
+**Response** `200` on success:
+
+```json
+{ "stored": true, "action": "workflow-graph-open" }
+```
+
+Audit actions written: `workflow-graph-open`, `workflow-graph-feedback`
+(actor `dashboard-operator`, `task_id` NULL — same non-task precedent as the
+import marker rows in export-routes).
+
+**Degradation** (telemetry must never bother the operator — the graph view
+fires these fire-and-forget): without a database pool or when `audit_log` is
+missing, the endpoint answers `200 {"stored": false, "reason":
+"no_database" | "audit_log_missing"}` instead of erroring; unexpected write
+failures return `500 {"error": "query_failed"}`.
 
 ---
 

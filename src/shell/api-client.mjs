@@ -425,6 +425,11 @@ export function createAPIClient(baseURL = '/api', options = {}) {
           body: data,
         });
       },
+      // Workflow graph telemetry (visual editor Stage 1, brief §6). Fire-and-forget
+      // from the view; server degrades to {stored:false} without a database.
+      graphEvent(data) {
+        return jsonRequest('/workflow-graph/events', { method: 'POST', body: data });
+      },
     },
     catalog: {
       all() {
