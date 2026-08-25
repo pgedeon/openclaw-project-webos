@@ -549,6 +549,34 @@ async function testExecutorFailure() {
   assert.strictEqual(JSON.parse(pool.auditInserts[0].params[3]).outcome, 'failed');
 }
 
+// ── Debt D4: snapshot failure keeps the endpoint's structured body ──
+
+async function testSnapshotFailureDetail() {
+  const calls = [];
+  const pool = makePool({ runRow: { id: BASE_ENVELOPE.targetId, task_id: 'task-1' } });
+  const snapshotBody = { error: 'artifact_corrupt', missing_tables: ['tasks', 'projects'] };
+  const r = await dispatch('/api/actions/execute', {
+    method: 'POST', pool,
+    body: { ...BASE_ENVELOPE, kind: 'snapshot.create', targetId: 'snap-d4' },
+    options: {
+      executors: {
+        createSnapshot: async () => {
+          throw Object.assign(new Error('snapshot capture failed (500)'), { snapshotBody });
+        },
+      },
+    },
+  });
+  assert.strictEqual(r.status, 400);
+  assert.strictEqual(r.payload.error, 'execution_failed');
+  assert.strictEqual(r.payload.receipt.outcome, 'failed');
+  assert.strictEqual(r.payload.receipt.detail.error, 'snapshot capture failed (500)');
+  assert.deepStrictEqual(r.payload.receipt.detail.snapshot_body, snapshotBody);
+  // Same structured detail reaches the latch UPDATE (JSONB persistence).
+  assert.strictEqual(pool.updates.length, 1);
+  const persisted = JSON.parse(pool.updates[0].params[3]);
+  assert.deepStrictEqual(persisted.snapshot_body, snapshotBody);
+}
+
 // ── task.create kind (Q1 flagship): validation + receipt + audit resolution ──
 
 async function testTaskCreateKind() {
@@ -639,6 +667,7 @@ function testMigrationFixture() {
     testGovernanceDenial,
     testBudgetInterplay,
     testExecutorFailure,
+    testSnapshotFailureDetail,
     testTaskCreateKind,
     testMigrationFixture,
   ];

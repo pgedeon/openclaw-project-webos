@@ -543,6 +543,12 @@ function registerActionRoutes(router, options = {}) {
     } catch (err) {
       const detail = { error: err && err.message ? err.message : String(err) };
       if (err && err.runCreatedId) detail.new_run_id = err.runCreatedId; // dispatch: run exists, start failed
+      // Debt D4: structured executor payloads survive finalization. The
+      // snapshot.create executor attaches the snapshot endpoint's exact
+      // failure body (createSnapshotArtifact's {status, body}) as
+      // err.snapshotBody; keep it in receipt.detail JSONB so operators see
+      // WHY the capture failed, not just a message string.
+      if (err && err.snapshotBody !== undefined) detail.snapshot_body = err.snapshotBody;
       const receipt = await finalize('failed', detail);
       const message = detail.error || '';
       const status = /not found/i.test(message) ? 404 : 400;
