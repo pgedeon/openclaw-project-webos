@@ -291,16 +291,44 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 > 2026-08-25): top-3 of five scored candidates. `[candidate]` items are
 > proposals, not commitments — CEO picks before any build starts.
 
-- [ ] **[candidate] Workflow data normalization migration** — repair the
+- [x] **[candidate] Workflow data normalization migration** — repair the
       `timed_out` CHECK-constraint violation (migration 021) and lift 14/29
       string-only template steps to object steps. Highest leverage debt (review
       #3 D1): unblocks visual-editor Stage 2, fixes live constraint violations,
       makes run-status monitoring and MCP run tooling honest. Pure backend.
-- [ ] **[candidate] NL command bar closes flagship gap** — add `task.create`
+      Shipped 2026-08-25 (CHANGELOG Unreleased): migration
+      `025_add_workflow_normalization.sql` widens the `workflow_steps.status`
+      CHECK to the documented 14-value set (step lifecycle ∪ migration-021 run
+      statuses incl. `timed_out`) with matching `updateStep` validation, and
+      idempotently backfills string-only `workflow_templates.steps` to the
+      canonical object shape (`normalizeTemplateSteps()` also runs on writes so
+      rot cannot re-accumulate). Both halves of this candidate are done;
+      visual-editor Stage 2's data blocker is cleared pending the telemetry GO.
+- [x] **[candidate] NL command bar closes flagship gap** — add `task.create`
       to the action registry (kind + governance rule + executor over existing
       store.createTask) so "spawn agent for X" executes instead of refusing
       with task_create_unavailable. Reuses gating/receipt machinery unchanged.
+      Shipped 2026-08-25 (CHANGELOG Unreleased): registry gained task.create in
+      the MCP slice 2 work (LOW/NONE tier, governance rule, executor), and
+      `lib/nl-parse.js` now maps create-class verbs ("spawn/create/add/new …
+      task/agent for …") to a real task.create envelope with verbatim title
+      extraction — no-title utterances still degrade honestly to search.
 - [ ] **[candidate] Budget management window (slice 4)** — create/edit budgets
       UI over the shipped budgets API; completes the cost-governance loop
       (budgets currently exist but are unmanageable from the dashboard).
-      §6 fast-follow go/no-go already scheduled this.
+      §6 fast-follow go/no-go already scheduled this. IN FLIGHT 2026-08-25:
+      concurrent build lane has `src/shell/native-views/budgets-view.mjs` +
+      tests in the working tree (36th windowed app); do not start a competing
+      implementation.
+- [ ] **[candidate] Task ↔ session conversation binding** — added per market
+      scan 2026-08-25b steal #2 (Paperclip made chat-style tasks their default
+      UX): task detail gains a Conversation tab embedding the bound gateway
+      session transcript through the ALREADY-SHIPPED session-reader routes and
+      replay-view components. Read-only first; no new write path; rides the
+      existing task↔session binding instead of inventing a chat store.
+- [ ] **[candidate] Remote-access recipe via tailnet HTTPS** — added per market
+      scan 2026-08-25b steal #1 (Paperclip v2026.824.0 managed-runtime previews):
+      document + optionally script a `tailscale serve` exposure of the dashboard
+      (staging slot first) for signed HTTPS phone/remote access — kills the
+      loopback landmine for operators away from the LAN with ZERO new network
+      binds. Docs/runbook-first; code only if serve proves insufficient.
