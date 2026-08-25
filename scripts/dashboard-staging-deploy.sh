@@ -179,4 +179,17 @@ echo "Index       : ${TITLE:-<missing>}"
 echo "Noindex     : ${NOINDEX:-<missing>}"
 echo "Unauth /api/tasks : HTTP $UNAUTH_CODE (expect 401)"
 [[ "$UNAUTH_CODE" == "401" ]] || { echo "FATAL: unauthenticated API did not return 401" >&2; exit 1; }
+
+# PWA post-verify (feat 206aaa8): manifest + service worker + icons must serve
+# with exact content-types and cache headers on staging.
+PWA_MANIFEST_CT="$(curl -sI "http://$DEV_ADDR:$STAGING_PORT/manifest.webmanifest" | grep -i '^content-type:' || true)"
+[[ "$PWA_MANIFEST_CT" == *application/manifest+json* ]] || { echo "FATAL: staging manifest content-type wrong: $PWA_MANIFEST_CT" >&2; exit 1; }
+PWA_SW_HEADERS="$(curl -sI "http://$DEV_ADDR:$STAGING_PORT/sw.js")"
+echo "$PWA_SW_HEADERS" | grep -qi '^cache-control: no-cache' || { echo "FATAL: staging sw.js missing Cache-Control: no-cache" >&2; exit 1; }
+for PWA_ICON in 192 512; do
+  PWA_ICON_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://$DEV_ADDR:$STAGING_PORT/icons/icon-$PWA_ICON.png")"
+  [[ "$PWA_ICON_CODE" == "200" ]] || { echo "FATAL: staging icon-$PWA_ICON.png HTTP $PWA_ICON_CODE" >&2; exit 1; }
+done
+curl -s "http://$DEV_ADDR:$STAGING_PORT/" | grep -q 'serviceWorker.register' || { echo "FATAL: staging index lacks SW registration" >&2; exit 1; }
+echo "PWA         : manifest application/manifest+json · sw.js no-cache · icons 192/512 200 · registration present"
 echo "Deploy complete."
