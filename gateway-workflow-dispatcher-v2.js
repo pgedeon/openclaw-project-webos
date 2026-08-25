@@ -664,8 +664,11 @@ class GatewayWorkflowDispatcherV2 {
         collected.push(...await gate.hardStopInFlight(verdict.breached));
       }
       collected.push(...await gate.collectBreachEventRows(verdict.breached, verdict.action, { run_ids: runIds }));
-      if (verdict.action === 'pause_new_runs' || verdict.action === 'hard_stop') {
-        // Non-warn actions only: warn records its event but never pages.
+      if (collected.length) {
+        // Slice 5 live-fire: surface EVERY latched breach row (warn included).
+        // Channel/kind policy lives in the notifier env config — the default
+        // BUDGET_ALERT_EVENT_KINDS excludes `warned`, so deployments that did
+        // not opt in still never page on warn (behavior unchanged by default).
         this.emitBudgetBreachFrames(collected);
       }
       return verdict;
