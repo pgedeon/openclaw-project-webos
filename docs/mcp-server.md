@@ -105,6 +105,65 @@ openclaw mcp add webos-dashboard \
   (see `resolveMcpConfig()` in lib/mcp-server.js) — no other env needed for
   the read-only profile.
 
+## Agent integration (pilot wiring, 2026-08-26)
+
+Registration alone does not put the tools in front of an agent's model — it
+saves a definition. Exposure works like this: OpenClaw projects every enabled
+`mcp.servers` entry into agent runtimes as plugin-owned tools under the
+`bundle-mcp` plugin id, and the tool profiles implicitly allow that id for
+`coding` and `messaging` profiles (`full` allows everything). So after plain
+registration the tools are already visible to agents whose profile/allowlist
+doesn't exclude them; per-server scoping is done with a tool filter:
+
+```bash
+# Scope the server to the 10 read-only tools (include-list; mutating trio
+# additionally stays hidden behind OPENCLAW_MCP_MUTATIONS=1 at the server).
+openclaw mcp tools webos-dashboard --include \
+  'get_fleet_status,get_mission_control_summary,list_tasks,get_task,list_budgets,get_budget_ledger,list_snapshots,get_costs_summary,get_cost_rollup,search_audit'
+```
+
+This writes a `toolFilter.include` array into the server's config entry
+(`openclaw mcp show webos-dashboard` to inspect). Config changes live outside
+the repo in `/root/.openclaw/openclaw.json` — nothing in this repo needs to
+change for the wiring. Notes learned during the pilot:
+
+- Agents with an explicit `tools.allow` list (e.g. `main`,
+  `dashboard-manager`) do NOT get MCP tools automatically — `allow` replaces
+  the profile default, so entries like `bundle-mcp` or specific
+  `webos-dashboard__*` names must be added there explicitly. Agents using
+  `tools.alsoAllow` + `deny` (e.g. `coder`) inherit the unrestricted profile
+  and see the filtered tools immediately.
+- Per-agent granularity exists at two levels: `agents.list[].tools.allow/
+  deny` (whole-surface) and the per-server `toolFilter.include/exclude`
+  above (per-tool). There is no per-agent-per-server matrix; combine both if
+  you need one.
+- After changing filters, start a NEW session (or reload) so discovery picks
+  up the change; dynamic tool-list changes invalidate the cached catalog on
+  next use.
+
+### Pilot evidence (first organic calls)
+
+Pilot agent: **coder** (the repo's own coding agent). A fresh session was
+given the natural-language task "What is the current fleet status of my
+agents, and are there any budget breaches right now?" via
+`openclaw agent --agent coder --session-key agent:coder:mcp-pilot-0826` with
+no tool hints. The agent answered from live data (fleet healthy; 4 budgets,
+all under cap) and the adoption telemetry recorded exactly two new rows —
+proof the calls went through the MCP path (telemetry only fires on executed
+`tools/call`):
+
+| timestamp (UTC) | tool | outcome | durationMs |
+| --- | --- | --- | --- |
+| 2026-08-26T06:46:08Z | `get_fleet_status` | ok | 50 |
+| 2026-08-26T06:46:09Z | `list_budgets` | ok | 9 |
+
+Reproduce the check: `npm run mcp:telemetry` (needs `POSTGRES_HOST/PORT/DB/
+USER/PASSWORD` env pointing at the dashboard DB) — organic calls appear as
+new rows after the pilot timestamp. Baseline before the pilot was 5 rows
+(manual probe + same-session verification calls); the counter cannot
+distinguish clients over stdio, so "organic" = rows created by an agent turn
+that was never told which tools exist.
+
 ## Mutating tools & the receipts audit trail
 
 The mutating set is deliberately tiny — three tools, each routed through the
