@@ -81,6 +81,30 @@ client spawn, explicit, and local to the operator's machine.
 The token value is the operator's own (same one the dashboard uses). The MCP
 server never mints or proxies credentials.
 
+### Registering with OpenClaw
+
+OpenClaw has first-class MCP server management (`openclaw mcp add` probes the
+server before saving). Registered 2026-08-26 as `webos-dashboard`, pointed at
+the LAN staging task-server (current code — the telemetry route ships there
+first):
+
+```bash
+openclaw mcp add webos-dashboard \
+  --command node \
+  --arg /mnt/c/Users/Rosa/Documents/openclaw-project-webos/mcp-server.js \
+  --cwd /mnt/c/Users/Rosa/Documents/openclaw-project-webos \
+  --env TASK_SERVER_URL=http://192.168.0.81:8120 \
+  --env DASHBOARD_AUTH_TOKEN=<staging token from webroot/.env>
+```
+
+- The probe connects over stdio and lists capabilities before saving; expect
+  `webos-dashboard: 10 tools` (13 registered minus the 3 mutation-gated).
+- Verify with `openclaw mcp probe webos-dashboard`; inspect with
+  `openclaw mcp show webos-dashboard`.
+- Env names are exactly `TASK_SERVER_URL` + `DASHBOARD_AUTH_TOKEN`
+  (see `resolveMcpConfig()` in lib/mcp-server.js) — no other env needed for
+  the read-only profile.
+
 ## Mutating tools & the receipts audit trail
 
 The mutating set is deliberately tiny — three tools, each routed through the
@@ -182,6 +206,15 @@ exit cannot kill an in-flight POST.
   Same graceful no-DB contract as `dag:telemetry`: database unavailability
   prints an honest unavailable message and exits 0 — unavailable is never
   reported as zero.
+- **First real adoption (2026-08-26)**: after OpenClaw registration (see
+  "Registering with OpenClaw" above), one read-only `get_fleet_status` call
+  through the registered server recorded the first row — counter output:
+  `Total tool calls: 1 · 1 ok / 0 error · Tools used: 1 of 13 ·
+  get_fleet_status: 1 call, ok`.
+- **Schema note**: `audit_log.task_id` must be nullable for these task-less
+  system rows; migrations/20260826_audit_log_task_id_nullable.sql aligns
+  schemas provisioned from the original NOT NULL DDL (prod was already
+  nullable — drift, not a semantic change).
 
 ## Tool catalog (10 read-only + 3 mutating)
 

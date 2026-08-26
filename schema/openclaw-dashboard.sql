@@ -76,7 +76,7 @@ CREATE INDEX idx_projects_metadata ON projects USING GIN(metadata);
 -- Audit log: track all significant changes
 CREATE TABLE audit_log (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  task_id UUID NULL REFERENCES tasks(id) ON DELETE CASCADE, -- NULL = system event not tied to a task (see migrations/20260826_audit_log_task_id_nullable.sql)
   actor TEXT NOT NULL, -- user or agent name
   action TEXT NOT NULL, -- create, update, delete, claim, release, move, etc.
   old_value JSONB NULL, -- Snapshot of relevant fields before change
