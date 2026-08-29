@@ -105,7 +105,7 @@ openclaw mcp add webos-dashboard \
   (see `resolveMcpConfig()` in lib/mcp-server.js) — no other env needed for
   the read-only profile.
 
-## Agent integration (pilot wiring, 2026-08-26)
+## Agent integration (pilot wiring, 2026-08-26; extended 2026-08-29)
 
 Registration alone does not put the tools in front of an agent's model — it
 saves a definition. Exposure works like this: OpenClaw projects every enabled
@@ -133,6 +133,12 @@ change for the wiring. Notes learned during the pilot:
   `webos-dashboard__*` names must be added there explicitly. Agents using
   `tools.alsoAllow` + `deny` (e.g. `coder`) inherit the unrestricted profile
   and see the filtered tools immediately.
+- Coverage (2026-08-29): `main` and `dashboard-manager` now carry
+  `bundle-mcp` in their explicit `tools.allow` lists (the plugin id under
+  which OpenClaw projects enabled MCP servers), so both inherit the
+  `webos-dashboard` tool surface (10 read-only tools via the server's
+  `toolFilter.include`) alongside their existing allowlists. `coder`
+  unchanged (already covered via `alsoAllow` + `deny`).
 - Per-agent granularity exists at two levels: `agents.list[].tools.allow/
   deny` (whole-surface) and the per-server `toolFilter.include/exclude`
   above (per-tool). There is no per-agent-per-server matrix; combine both if
@@ -163,6 +169,25 @@ new rows after the pilot timestamp. Baseline before the pilot was 5 rows
 (manual probe + same-session verification calls); the counter cannot
 distinguish clients over stdio, so "organic" = rows created by an agent turn
 that was never told which tools exist.
+
+### Main-agent adoption evidence (2026-08-29)
+
+`main` (the primary operator agent) was given the same natural-language
+prompt — "show me current fleet status and any budget alerts" — in a fresh
+session (`agent:main:mcp-adoption-0829` via `openclaw agent`) with zero tool
+hints. It answered from live data (fleet healthy; 5 budgets all under cap,
+zero spend, no alerts) and the adoption telemetry recorded exactly two new
+rows, confirming the calls went through the MCP path:
+
+| timestamp (UTC) | tool | outcome | durationMs |
+| --- | --- | --- | --- |
+| 2026-08-29T06:20:55Z | `get_fleet_status` | ok | 42 |
+| 2026-08-29T06:20:55Z | `list_budgets` | ok | 13 |
+
+Counter after the run: 19 total rows (11 ok / 8 error), 5 distinct tools
+used across 3 active days. `dashboard-manager` inherits the same surface
+via its `bundle-mcp` allow entry but has no organic call yet — telemetry
+will record its first rows when it next runs a dashboard question.
 
 ## Mutating tools & the receipts audit trail
 
