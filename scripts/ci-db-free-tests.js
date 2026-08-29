@@ -82,6 +82,7 @@ const INCLUDED = [
   'test-task-server-storage-fallback.js',
   'test-task-session-binding.js',
   'test-view-routes.js',
+  'test-widget-panel-reorder.js',
   'test-workflow-approvals-api.js',
   'test-workflow-artifacts-api.js',
   'test-workflow-blockers-api.js',

@@ -9,7 +9,7 @@
 | File | Owns |
 |------|------|
 | `widget-registry.mjs` | `WIDGET_INDEX` — registry of all 18 widgets with manifests |
-| `widget-panel.mjs` | Side panel: add/remove widgets, drag reorder, size overrides |
+| `widget-panel.mjs` | Side panel: add/remove widgets, drag reorder, keyboard/touch move menu, size overrides |
 | `widgets/*.mjs` | Individual widget implementations |
 
 ## Widget Contract
