@@ -26,6 +26,7 @@ The `scripts/` directory contains operational scripts for the dashboard: health 
 | `backfill-run-costs.js` | Node.js | Backfill `workflow_runs` token/cost columns from OpenClaw session JSONL transcripts (dry run by default) |
 | `dag-telemetry-counter.js` | Node.js | DAG GO/NO-GO telemetry counter: workflow-graph audit events → decision inputs + branch verdict |
 | `mcp-adoption-counter.js` | Node.js | MCP tool-call adoption counter: `mcp-tool-call` audit rows → per-tool call counts, ok/error split, days-with-activity, never-called tools |
+| `schema-drift-check.js` | Node.js | Two-tier schema drift guard: `schema_migrations` tracking table (numbered migrations) + `information_schema`/`pg_indexes` object probes (date-prefixed + untracked numbered migrations) |
 | `system-improvement-scan.sh` | Bash | Cron trigger for daily system improvement scan |
 | `system-improvement-engine.py` | Python 3 | Analyze system state and create approval-gated improvement runs |
 
@@ -379,6 +380,32 @@ npm run mcp:telemetry
 **Environment Variables:** standard `POSTGRES_*` variables (same as `dashboard-validation.js`; connection timeout 5 s so DB-less contexts fail fast).
 
 **Dependencies:** `pg` (already required by the dashboard; no new dependencies). Pure aggregation lives in `evaluateMcpAdoption(rows)` — covered DB-free by `tests/test-mcp-telemetry.js`.
+
+---
+
+### `schema-drift-check.js`
+
+Operational guard for schema drift between `schema/migrations/` and a live PostgreSQL instance — the tool that would have caught the **2026-08-29 incident** (staging DB silently missing 8 migrations: `GET /api/tasks/all` 500'd for days with `column t.deleted_at does not exist`, `/api/spaces` 500'd with `relation "workspaces" does not exist`; nobody noticed until MCP adoption telemetry showed `list_tasks` erroring 8/8).
+
+**Two-tier design** (a tracking-table-only comparison false-positives on every healthy DB — the DATE-prefixed migrations are never inserted into `schema_migrations`):
+
+1. **Tier 1 — tracking table:** `SELECT migration_name FROM schema_migrations` compared against the NUMBERED migration files (`NNN_*.sql`, minus the untracked trio 020/021/022 which predate the self-registration convention). Files present but not applied → **DRIFT**; applied rows with no file (historical/superseded names) → WARN only, never drift.
+2. **Tier 2 — object probes:** every date-prefixed migration (plus 020/021/022) maps to concrete probes — `table:<name>`, `column:<table>.<column>`, `column-nullable:<table>.<column>`, `index:<name>` — resolved via `information_schema.tables`, `information_schema.columns`, and `pg_indexes`. Any missing object → **DRIFT**. `PROBE_MAP` coverage is enforced by a guard test: a new migration without a probe or self-registration fails CI.
+
+**Usage:**
+
+```bash
+node scripts/schema-drift-check.js
+npm run db:drift-check
+```
+
+**Output:** per-tier report (expected vs applied tracking rows, missing objects with the migration file + probe name) and a final `VERDICT: ok | drift | unavailable` line. Exit 1 only on confirmed drift.
+
+**Graceful degradation:** identical contract to `dag-telemetry-counter.js` — any database-layer failure (unreachable PostgreSQL, missing database, missing `schema_migrations` table, auth failure) prints an honest unavailable message and exits 0. Unavailable is never reported as zero drift.
+
+**Environment Variables:** standard `POSTGRES_*` variables (same as `dashboard-validation.js`; connection timeout 5 s so DB-less contexts fail fast).
+
+**Dependencies:** `pg` (already required by the dashboard; no new dependencies). Pure evaluation lives in `evaluateTier1`/`evaluateTier2`/`verdictFor` (plus `parseProbe`/`collectProbes`/`splitTiers`) — covered DB-free by `tests/test-schema-drift-check.js`.
 
 ---
 
