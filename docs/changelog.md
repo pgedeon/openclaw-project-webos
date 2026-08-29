@@ -1,3 +1,7 @@
+---
+title: Changelog
+---
+
 # Changelog
 
 All notable changes to the Project Dashboard will be documented in this file.

@@ -14,6 +14,9 @@ Looking for something specific? [Search the docs](search) — client-side, power
 - [Development Guide](development.md)
 - [Install — OpenClaw Workspace](install-openclaw.md)
 - [Install — Standalone](install-standalone.md)
+## Release Notes & Changelog
+
+- [Changelog](changelog.md)
 ## User Documentation
 
 - [Admin Guide](admin-guide.md)
@@ -59,6 +62,8 @@ Looking for something specific? [Search the docs](search) — client-side, power
 ## Research & Spikes
 
 - [Gateway Bridge v1 — Live Validation](research/bridge-validation-2026-08-24.md)
+- [Budget Alerts Slice-5 Live-Fire Validation — 2026-08-25 (attempt 3)](research/budget-alerts-livefire-2026-08-25.md)
+- [WhatsApp budget-alert live-fire — ESCALATED (2026-08-29)](research/budget-alerts-whatsapp-livefire-2026-08-29.md)
 - [Live Agent Console — Validation Against Live Gateway (2026-08-24)](research/console-validation-2026-08-24.md)
 - [Gateway Streaming Spike — Feasibility + Recipes](research/gateway-streaming-spike-2026-08-24.md)
 - [Market Scan — 2026-08-23](research/market-scan-2026-08-23.md)

@@ -144,6 +144,12 @@
     "excerpt": "Design Brief — Workflow Visual Editor, Stage 1 (Read-Only Graph Render) Status: Draft for build review · Roadmap: Phase 2 (UPGRADE ROADMAP.md \"Workflow visual editor — staged\", demoted per advisory): "
   },
   {
+    "title": "Changelog",
+    "url": "/openclaw-project-webos/changelog/",
+    "section": "Release Notes & Changelog",
+    "excerpt": "Changelog All notable changes to the Project Dashboard will be documented in this file. The format is based on Keep a Changelog, and this project adheres to Semantic Versioning. [Unreleased] Added - P"
+  },
+  {
     "title": "Configuration Reference",
     "url": "/openclaw-project-webos/configuration-reference/",
     "section": "Getting Started",
@@ -208,6 +214,18 @@
     "url": "/openclaw-project-webos/research/bridge-validation-2026-08-24/",
     "section": "Research & Spikes",
     "excerpt": "Gateway Bridge v1 — Live Validation Date: 2026-08-24 · Scope: end-to-end run of shipped bridge (6184097) against live gateway Stack: isolated task-server.js :13883, STORAGE TYPE=json snapshot , GATEWA"
+  },
+  {
+    "title": "Budget Alerts Slice-5 Live-Fire Validation — 2026-08-25 (attempt 3)",
+    "url": "/openclaw-project-webos/research/budget-alerts-livefire-2026-08-25/",
+    "section": "Research & Spikes",
+    "excerpt": "Budget Alerts Slice-5 Live-Fire Validation — 2026-08-25 (attempt 3) Work order: slice-5 live-fire validation, attempt 3 (final before escalation). Attempts 1–2 died to infra timeouts, not task failure"
+  },
+  {
+    "title": "WhatsApp budget-alert live-fire — ESCALATED (2026-08-29)",
+    "url": "/openclaw-project-webos/research/budget-alerts-whatsapp-livefire-2026-08-29/",
+    "section": "Research & Spikes",
+    "excerpt": "WhatsApp budget-alert live-fire — ESCALATED (2026-08-29) Status: ESCALATED to owner after 3 consecutive failed attempts. Staging restored to safe default (channel=off). What was attempted Prove budget"
   },
   {
     "title": "Live Agent Console — Validation Against Live Gateway (2026-08-24)",

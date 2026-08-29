@@ -6,6 +6,12 @@
 // client-side search page docs/search.html (vanilla JS, fetched at load,
 // zero dependencies). One entry per doc: {title, url, section, excerpt}.
 //
+// Also mirrors the repo-root CHANGELOG.md verbatim into docs/changelog.md
+// (Jekyll front-matter + full CHANGELOG body) so the public docs site serves
+// the release story without any hand-sync. The mirror is generated, not
+// copied by hand: re-running this script after editing CHANGELOG.md keeps
+// the site page identical to repo truth, and --check flags it as stale.
+//
 // Also stamps every docs/**/*.md with a minimal Jekyll front-matter block when
 // one is missing: Jekyll only runs files WITH front matter through the
 // markdown→HTML pipeline; without it they would be served as raw text.
@@ -28,6 +34,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DOCS = join(ROOT, 'docs');
 const OUT = join(DOCS, 'index.md');
 const OUT_SEARCH = join(DOCS, 'search-index.json');
+const OUT_CHANGELOG_MIRROR = join(DOCS, 'changelog.md');
+const SRC_CHANGELOG = join(ROOT, 'CHANGELOG.md');
 const SITE_BASE = '/openclaw-project-webos/';
 const REPO_URL = 'https://github.com/pgedeon/openclaw-project-webos';
 
@@ -41,6 +49,10 @@ const CATEGORIES = [
       'development.md',
       'configuration-reference.md',
     ],
+  },
+  {
+    name: 'Release Notes & Changelog',
+    files: ['changelog.md'],
   },
   {
     name: 'User Documentation',
@@ -137,6 +149,18 @@ function stampFrontMatter(files) {
   return n;
 }
 
+// CHANGELOG mirror: docs/changelog.md = front-matter + verbatim repo CHANGELOG.
+// Written BEFORE scanning docs/ so the very same run indexes it (section entry,
+// title, search corpus) — outputs stay deterministic whether or not the file
+// already exists from a previous run. In --check mode nothing is written; a
+// missing or outdated mirror is flagged as stale below. stampFrontMatter skips
+// it (it already starts with `---`).
+const changelogMirror =
+  '---\ntitle: Changelog\n---\n\n' + readFileSync(SRC_CHANGELOG, 'utf8');
+if (!process.argv.includes('--check')) {
+  writeFileSync(OUT_CHANGELOG_MIRROR, changelogMirror);
+}
+
 const allAbs = listMarkdown(DOCS).filter((p) => p !== OUT);
 const stamped = stampFrontMatter(allAbs);
 
@@ -200,16 +224,21 @@ if (process.argv.includes('--check')) {
   if (currentIndex !== md) stale.push('docs/index.md');
   const currentSearch = existsSync(OUT_SEARCH) ? readFileSync(OUT_SEARCH, 'utf8') : '';
   if (currentSearch !== searchJson) stale.push('docs/search-index.json');
+  const currentMirror = existsSync(OUT_CHANGELOG_MIRROR)
+    ? readFileSync(OUT_CHANGELOG_MIRROR, 'utf8')
+    : '';
+  if (currentMirror !== changelogMirror) stale.push('docs/changelog.md');
   if (stale.length) {
     console.error(stale.join(' and ') + ' stale — re-run scripts/build-docs-index.mjs');
     process.exit(1);
   }
-  console.log('docs/index.md + docs/search-index.json up to date');
+  console.log('docs/index.md + docs/search-index.json + docs/changelog.md up to date');
 } else {
   writeFileSync(OUT, md);
   writeFileSync(OUT_SEARCH, searchJson);
   console.log(
     `docs/index.md written (${allRel.length} docs indexed, ${stamped} front-matter stamped)` +
-      ` + docs/search-index.json written (${searchEntries.length} entries)`,
+      ` + docs/search-index.json written (${searchEntries.length} entries)` +
+      ` + docs/changelog.md written (mirror of CHANGELOG.md)`,
   );
 }

@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Budget Alerts Slice-5 Live-Fire Validation — 2026-08-25 (attempt 3)
 
 Work order: slice-5 live-fire validation, attempt 3 (final before escalation).

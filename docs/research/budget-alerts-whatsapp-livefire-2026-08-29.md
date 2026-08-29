@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # WhatsApp budget-alert live-fire — ESCALATED (2026-08-29)
 
 **Status: ESCALATED to owner after 3 consecutive failed attempts. Staging restored to safe default (channel=off).**
