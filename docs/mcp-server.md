@@ -422,7 +422,8 @@ no HTTP-SSE transport. See brief §7.
 ## Testing
 
 DB-free suite: `node tests/test-mcp-server.js` plus
-`node tests/test-mcp-telemetry.js` (both registered in
+`node tests/test-mcp-telemetry.js` and `node tests/test-mcp-adapter.js`
+(all registered in
 `scripts/ci-db-free-tests.js`). Covers protocol conformance, framing survival,
 validation-before-fetch, per-tool dispatch golden paths, degradation/auth/
 unreachable mapping, allSettled composition, a no-token-leakage grep, the

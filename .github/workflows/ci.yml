@@ -7,7 +7,9 @@
 # tests/test-*.js with PostgreSQL unreachable, on Node v20 and v22; re-triaged
 # 2026-08-23 in "test: triage 31 CI-excluded tests"):
 #
-# INCLUDED (36) — pass without a database; run by scripts/ci-db-free-tests.js:
+# INCLUDED — pass without a database; the authoritative list lives in
+# scripts/ci-db-free-tests.js (66 tests as of 2026-08-29). The names below
+# are the original 2026-08-23 triage snapshot, kept for context:
 #   test-agent-routes.js, test-auth-policy.js, test-bing-routes.js,
 #   test-catalog-api.js, test-chat-routes.js, test-cron-routes.js,
 #   test-dispatcher-v2.js, test-export-routes.js,

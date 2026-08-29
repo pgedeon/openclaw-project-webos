@@ -191,6 +191,22 @@ own harness comment: the MCP session must be driven with async `spawn`, never
 `spawnSync` — a synchronous wait blocks this process' event loop, freezing the
 in-process backend mid-request and deadlocking any tool call against it.
 
+Two adapter-path suites close the seams the real-server and unit tests
+leave open (both registered in `scripts/ci-db-free-tests.js`):
+`tests/test-mcp-adapter.js` drives the list_tasks/get_task httpJson →
+mapUpstream seam with a fake fetch — every upstream outcome shape (500 with
+the error body preserved verbatim, 401, `{tasks:[…]}` envelope, unrecognized
+shape passthrough, degradation body passthrough) × the local status/limit/
+truncated composition, pinning the exact path that shipped the 2026-08-29
+staging failure (GET /api/tasks/all 500 → MCP list_tasks errored 8/8);
+`tests/test-snapshot-e2e-lite.js` connects the full mutating seam without
+sockets or a database — MCP create_snapshot → minted envelope → the real
+actions pipeline (validation → governance → latch → executor) → the real
+`createSnapshotArtifact()` over a routing fake pool → receipt → MCP payload —
+plus the route-level application of the debt-D3 deny-regex (snake_case
+secret names in nested JSONB) and a no-secret-marker sweep over every
+response body, artifact byte, and MCP frame.
+
 ## CI
 
 GitHub Actions workflow `.github/workflows/ci.yml` runs on every push/PR to `main`:
