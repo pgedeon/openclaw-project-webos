@@ -64,6 +64,7 @@ const INCLUDED = [
   'test-project-routes.js',
   'test-pwa-install.js',
   'test-route-modules.js',
+  'test-schema-drift-check.js',
   'test-service-requests-api.js',
   'test-session-jsonl-reader.js',
   'test-session-routes.js',
