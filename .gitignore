@@ -17,6 +17,9 @@ gateway-status.json
 task-server.pid
 *.pid
 
+# Manual perf harness output (D5) — regenerated per run, never committed.
+perf-results.json
+
 # Snapshot/restore artifacts (docs/briefs/snapshot-restore.md §6): runtime
 # full-state exports + restore checkpoint files — never committed.
 storage/snapshots/

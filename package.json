@@ -32,6 +32,7 @@
     "test:routes": "node tests/test-route-modules.js",
     "dag:telemetry": "node scripts/dag-telemetry-counter.js",
     "mcp:telemetry": "node scripts/mcp-adoption-counter.js",
+    "perf": "node scripts/perf-benchmark.mjs",
     "db:drift-check": "node scripts/schema-drift-check.js",
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",

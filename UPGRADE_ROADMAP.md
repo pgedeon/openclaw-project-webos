@@ -394,9 +394,7 @@ DAG decision; budget slice 5 does not exist (all four brief slices shipped).
 - **Tailnet rollout pending owner** — docs shipped (docs/remote-access.md);
   tailscale NOT installed on dev machine; install + `tailscale serve`
   exposure is an owner hardware/network call.
-- **D5 benchmarks deferred-by-design** — stays deferred until measured
-  honestly outside sprint pressure; fix shape per review #3 (scripted
-  Playwright timing harness, manual per release, never CI-blocking).
+- **D5 benchmarks deferred-by-design** — CLOSED 2026-08-29: `scripts/perf-benchmark.mjs` (`npm run perf`) ships the scripted Playwright timing harness per review #3's fix shape — boot-to-interactive, tasks-view first meaningful render, capped-list "load more" growth, median of 3 cold runs, JSON output to gitignored `perf-results.json`. Manual per release, never CI-blocking, not registered in ci-db-free-tests; numbers live only in harness output, never in docs (they rot).
 - **Staging deploy-script observation** — restart robustness fixed 2026-08-25
   (5301ce5 detached successor + health gate) after instability; healthy since,
   but observation window ~1 day. Keep on watch one week.

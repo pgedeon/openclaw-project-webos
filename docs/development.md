@@ -248,6 +248,28 @@ covered by `tests/test-list-window.js`):
   - `board-view.mjs`: first 50 cards per column, +50 per click; a column
     that receives a dragged/dropped task auto-reveals it.
 
+### Manual perf harness (D5)
+
+`npm run perf` (`scripts/perf-benchmark.mjs`) is the scripted Playwright
+ timing harness from roadmap debt D5 (reviews #3/#4). It boots task-server
+the same way the CI e2e job does (json_snapshot, staged dashboard assets,
+`OPENCLAW_WORKSPACE` pointed at a temp dir — never `/root/.openclaw`) and
+measures, median of 3 cold runs: boot-to-interactive (navigation start →
+taskbar + pinned apps + desktop ready), tasks-view first meaningful render
+(open window → rows > 0 or the honest empty state), and capped-list growth
+(one "load more" click → rows added + synchronous re-render wall time).
+
+Rules: run manually per release, **never CI-blocking** — perf numbers gate
+nothing and the script is not registered in `ci-db-free-tests.js` (it is
+not a DB-free test; `playwright.config.ts` testMatch cannot pick it up).
+Numbers are only meaningful on the machine that produced them (LAN latency,
+local Chromium); the harness is the source of truth — no measured numbers
+are copied into docs, they rot. Output lands in gitignored
+`perf-results.json` (timestamp, node version, commit sha) plus a
+human-readable table with a `VERDICT: measured` line; exit 1 only on
+infrastructure failure (server never ready / Chromium cannot launch),
+never on a slow number.
+
 ## Debugging
 
 - Server logs: `node task-server.js` (stdout)

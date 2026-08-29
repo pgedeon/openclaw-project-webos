@@ -15,6 +15,7 @@ CLI scripts for validation, diagnostics, and operational tasks. Run with `node s
 | `check-env.js` | Checks environment variables and config |
 | `sync-gateway-status.mjs` | Syncs gateway agent status to static JSON |
 | `sync-models-catalog.js` | Syncs model providers to catalog JSON |
+| `perf-benchmark.mjs` | Manual D5 timing harness (Playwright; boot-to-interactive, tasks-view first render, capped-list load-more). NOT a test, NOT CI-blocking, NOT registered in ci-db-free-tests |
 
 ## Conventions
 
