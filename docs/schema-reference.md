@@ -613,7 +613,7 @@ Records full entity state at each mutation for point-in-time recovery and undo.
 
 ## Spaces / Workspaces
 
-#### `workspaces` (extended)
+#### `workspaces` (base: 026; extended: 20260429a)
 
 Multi-workspace support with per-space configuration.
 
@@ -671,6 +671,7 @@ Multi-workspace support with per-space configuration.
 | 024 | `024_add_action_receipts.sql` | 2026-08-24 | Add `action_receipts` idempotency latch + persisted operator-action receipts (one-click actions slice 1) |
 | 025 | `025_add_workflow_normalization.sql` | 2026-08-25 | Debt D1 normalization: widen `workflow_steps` status CHECK to step-native ∪ dispatcher-vocabulary (14 values); lift string-only `workflow_templates.steps` into `{name, display_name, required}` objects (idempotent, order-preserving) |
 | 20260826a | `20260826_audit_log_task_id_nullable.sql` | 2026-08-26 | Make `audit_log.task_id` nullable — task-less system events (MCP adoption telemetry, workflow-graph events) append rows with `task_id NULL`; aligns canonical DDL with prod reality + docs (drift fix) |
+| 026 | `026_add_workspaces_base.sql` | 2026-08-29 | Add the missing base `workspaces` CREATE TABLE (P3 Spaces shipped the ALTER migrations but never the base DDL — fresh DBs had `/api/spaces` fail with `relation "workspaces" does not exist`); seeds the `default` workspace idempotently |
 
 ---
 
