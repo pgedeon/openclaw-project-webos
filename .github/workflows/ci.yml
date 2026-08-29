@@ -3,6 +3,11 @@
 # Scope: syntax check + docs drift check + DB-free tests + npm audit (prod deps) only.
 # No PostgreSQL or any other service is started or required.
 #
+# Dependency alerting is two-layered: this npm-audit step catches advisories at
+# CI time, and GitHub Dependabot (vulnerability alerts + automated security
+# fixes, both enabled 2026-08-29 by repo owner) provides continuous upstream
+# alerting between runs.
+#
 # Test inclusion/exclusion (originally verified 2026-08-23 by running every
 # tests/test-*.js with PostgreSQL unreachable, on Node v20 and v22; re-triaged
 # 2026-08-23 in "test: triage 31 CI-excluded tests"):
