@@ -348,6 +348,13 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       rollout — recon confirms tailscale is NOT yet installed on the dev
       machine. Rollout (install + serve exposure) awaits OWNER order; see
       Post-2.0 Steady State watch-list below.
+- [ ] **[candidate] MCP approval elicitation via SEP-2322** — added per market
+      scan 2026-08-30 steal #3 (FleetQ #148 migrated its approval gate to MRTR
+      elicitation, Aug 29): HOLD-tier MCP mutation requests surface a native
+      approval prompt in the MCP client (SEP-2322 elicitation round-trip) instead
+      of a hidden refusal, while receipts and the envelope path stay unchanged.
+      PROPOSAL ONLY — not scheduled; needs a protocol-fit check against our stdio
+      JSON-RPC server's hidden-not-refused contract before any build.
 
 ## Post-2.0 Steady State
 
