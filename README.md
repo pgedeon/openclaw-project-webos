@@ -1,6 +1,6 @@
 # OpenClaw Project WebOS
 
-`2.0.0`
+`2.1.0`
 
 A Windows 11-style desktop environment for managing OpenClaw agent workflows — served entirely in the browser with vanilla JS, no frameworks, no build step. Each feature is a windowed application launched from the taskbar or start menu.
 
@@ -119,7 +119,7 @@ Lightweight text editor window for viewing and editing files from the Explorer o
 | Document | Description |
 |----------|-------------|
 | [User Guide](docs/user-guide.md) | Desktop usage — tasks, board, timeline, agents, audit, cron |
-| [Views Reference](docs/views-reference.md) | All 31 desktop views — features, API calls, UI elements |
+| [Views Reference](docs/views-reference.md) | All 36 desktop views — features, API calls, UI elements |
 | [Widget Catalog](docs/widget-catalog.md) | All 19 desktop widgets — manifests, sizes, data sources |
 | [Admin Guide](docs/admin-guide.md) | Operator guide for administration and monitoring |
 
@@ -230,7 +230,7 @@ When installed at `~/.openclaw/workspace/dashboard`, the server auto-detects the
 │   │   │   ├── widget-registry.mjs  # Widget auto-discovery
 │   │   │   ├── widget-panel.mjs     # Widget panel container
 │   │   │   └── widgets/             # 19 widget implementations
-│   │   └── native-views/            # 23 window view implementations
+│   │   └── native-views/            # 37 window view implementations
 │   │       ├── tasks-view.mjs
 │   │       ├── board-view.mjs
 │   │       ├── agents-view.mjs
@@ -338,7 +338,7 @@ DASHBOARD_API_BASE=http://localhost:3887 node scripts/dashboard-validation.js
 
 ## Release
 
-Tagged as `v2.0.0` on [github.com/pgedeon/openclaw-project-webos](https://github.com/pgedeon/openclaw-project-webos).
+Tagged as `v2.1.0` on [github.com/pgedeon/openclaw-project-webos](https://github.com/pgedeon/openclaw-project-webos).
 
 - Release notes: [RELEASE.md](RELEASE.md)
 - Change history: [CHANGELOG.md](CHANGELOG.md)
