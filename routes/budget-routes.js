@@ -11,8 +11,16 @@
  * of erroring; query failures degrade to `{ available: false,
  * reason: 'query_failed' }`. Callers treat `available === false` as the
  * "Budgets unavailable — no database" panel state.
+ *
+ * The two degrade points resolve through lib/capability-status.js
+ * (resolveCapability + toDegradedBody, market-scan 2026-08-30 steal #2
+ * pilot): pool absent ⇒ configured:false, thrown query ⇒ verified:false —
+ * wire shapes byte-identical to the contract above (pinned by
+ * tests/test-budget-routes.js), so this is a refactor with a proof, not a
+ * behavior change.
  */
 const { decisionFor, pctOfCap } = require('../lib/budget-eval');
+const { resolveCapability, toDegradedBody } = require('../lib/capability-status');
 
 const SCOPES = ['agent', 'department', 'project', 'fleet'];
 const PERIODS = ['daily', 'weekly', 'monthly'];
@@ -46,18 +54,25 @@ function getStorage(ctx) {
 }
 
 function noDatabase(ctx, res, extra = {}) {
+  // Pool absent ⇒ the database leg is not configured; verification never
+  // ran (null). Resolves to status 'misconfigured' with the pinned house
+  // reason 'no_database' — wire shape byte-identical to the hand-rolled
+  // body this replaced.
+  const cap = resolveCapability('budgets', { declared: true, verified: null, configured: false });
   respond(ctx, res, 200, {
-    available: false,
-    reason: 'no_database',
+    ...toDegradedBody(cap),
     timestamp: new Date().toISOString(),
     ...extra,
   });
 }
 
 function queryFailed(ctx, res, err, extra = {}) {
+  // Pool present (database configured) but the query threw ⇒ verification
+  // failed at runtime. Resolves to status 'unreachable' with the pinned
+  // house reason 'query_failed' — wire shape byte-identical.
+  const cap = resolveCapability('budgets', { declared: true, verified: false, configured: true });
   respond(ctx, res, 200, {
-    available: false,
-    reason: 'query_failed',
+    ...toDegradedBody(cap),
     details: err && err.message ? err.message : String(err),
     timestamp: new Date().toISOString(),
     ...extra,

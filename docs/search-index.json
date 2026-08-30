@@ -147,7 +147,7 @@
     "title": "Changelog",
     "url": "/openclaw-project-webos/changelog/",
     "section": "Release Notes & Changelog",
-    "excerpt": "Changelog All notable changes to the Project Dashboard will be documented in this file. The format is based on Keep a Changelog, and this project adheres to Semantic Versioning. [Unreleased] Added - P"
+    "excerpt": "Changelog All notable changes to the Project Dashboard will be documented in this file. The format is based on Keep a Changelog, and this project adheres to Semantic Versioning. [Unreleased] Added - C"
   },
   {
     "title": "Configuration Reference",
@@ -256,6 +256,12 @@
     "url": "/openclaw-project-webos/research/market-scan-2026-08-25b/",
     "section": "Research & Spikes",
     "excerpt": "Market Scan — 2026-08-25b (post-2.0 competitive refresh) Third competitive pass, one day after market-scan-2026-08-24.md and the v2.0.0 release. Since scan #2 we shipped: live gateway streaming (valid"
+  },
+  {
+    "title": "Market Scan — 2026-08-30 (post-v2.1.0 delta refresh)",
+    "url": "/openclaw-project-webos/research/market-scan-2026-08-30/",
+    "section": "Research & Spikes",
+    "excerpt": "Market Scan — 2026-08-30 (post-v2.1.0 delta refresh) Fourth competitive pass, five days after market-scan-2026-08-25b and one day after the v2.1.0 release (adoption/assurance/accessibility: MCP server"
   },
   {
     "title": "Database Schema Reference",

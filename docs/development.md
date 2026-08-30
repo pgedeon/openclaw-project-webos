@@ -110,6 +110,27 @@ PostgreSQL storage layer with parameterized queries. All mutations write to an a
 4. Add tests in `tests/`
 5. Update `docs/api.md`
 
+### Capability resolution
+
+Every feature that can degrade answers through one contract instead of
+ad-hoc per-route shapes: `lib/capability-status.js` (pure, zero IO) resolves
+a feature's EFFECTIVE capability as declared ∩ verified ∩ configured — each
+leg a boolean, `null` meaning not-applicable — fail-closed: any `false` leg
+means not capable, with the first failed leg named (`disabled` = declared
+false, `unreachable` = verified false, `misconfigured` = configured false;
+garbage leg values count as `false`). `toDegradedBody()` maps a result to
+the house degrade shape `{ available: false, reason }` with the existing
+reason vocabulary (`no_database`, `query_failed`, …) preserved
+byte-identically, and `describeForUi()` renders one honest human string per
+status so views stop hand-stringing panel states. Piloted on two surfaces
+(2026-08-30, market-scan steal #2): the budget-routes degrade points and the
+Mission Control runs/cron panel failure strings. Migration path for the
+rest (snapshot-routes, mcp-server, remaining views): route each feature's
+degrade points through `resolveCapability` + `toDegradedBody` /
+`describeForUi` in place, keeping test-pinned reason strings unchanged; the
+all-null `unassessed` status is the honest interim for features not yet
+wired to real checks.
+
 ### Adding a Database Migration
 
 1. Create `schema/migrations/NNN_description.sql`

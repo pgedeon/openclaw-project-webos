@@ -1,4 +1,20 @@
 import { ensureNativeRoot, escapeHtml, createStatCard } from './helpers.mjs';
+import { resolveCapability, describeForUi } from '../../../lib/capability-status.js';
+
+// ── Capability-resolved panel down-states (scan steal #2 pilot) ─────
+// The runs + cron panels stop hand-stringing their failure text: the legs
+// state what the poll actually proved — the endpoint fetch failed
+// (verified:false); configuration is not observable from the view (null).
+// Fleet and cost panels keep their hand-strings this run (pilot scope:
+// exactly two surfaces; the lib is available for the rest later).
+const RUNS_PANEL_DOWN = describeForUi(
+  resolveCapability('runs', { declared: true, verified: false, configured: null }),
+  'Runs'
+);
+const CRON_PANEL_DOWN = describeForUi(
+  resolveCapability('cron', { declared: true, verified: false, configured: null }),
+  'Cron'
+);
 
 // ── Poll tunables (brief §3 data contracts) ─────────────────────
 const FLEET_POLL_MS = 30000;
@@ -486,7 +502,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
 
     if (!running.ok) {
       state.runs = null;
-      handlePanelFailure('runs', 'Runs unavailable — no database');
+      handlePanelFailure('runs', RUNS_PANEL_DOWN);
       recomputeAnomalies();
       return;
     }
@@ -502,7 +518,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
 
   function renderRuns() {
     const r = state.runs;
-    if (!r) { setPanelState('runs', 'error', 'Runs unavailable — no database'); return; }
+    if (!r) { setPanelState('runs', 'error', RUNS_PANEL_DOWN); return; }
     const runningList = Array.isArray(r.running) ? r.running : [];
     const failedList = Array.isArray(r.failed24h) ? r.failed24h : [];
     const blockedCount = Array.isArray(r.stuck)
@@ -541,7 +557,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     if (state.destroyed) return;
     if (!jobsRes.ok) {
       state.cron = null;
-      handlePanelFailure('cron', 'Cron unavailable — openclaw CLI not reachable');
+      handlePanelFailure('cron', CRON_PANEL_DOWN);
       return;
     }
     const jobs = jobsRes.data?.jobs || [];
@@ -578,7 +594,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
 
   function renderCron() {
     const c = state.cron;
-    if (!c) { setPanelState('cron', 'error', 'Cron unavailable — openclaw CLI not reachable'); return; }
+    if (!c) { setPanelState('cron', 'error', CRON_PANEL_DOWN); return; }
     const jobs = c.jobs || [];
     if (!jobs.length) {
       setPanelState('cron', 'empty', 'No cron jobs configured.');

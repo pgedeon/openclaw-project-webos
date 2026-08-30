@@ -33,6 +33,7 @@ const INCLUDED = [
   'test-budget-notifier.js',
   'test-budget-routes.js',
   'test-budgets-view.js',
+  'test-capability-status.js',
   'test-catalog-api.js',
   'test-chat-routes.js',
   'test-console-feed.js',

@@ -69,6 +69,7 @@ Looking for something specific? [Search the docs](search) — client-side, power
 - [Market Scan — 2026-08-23](research/market-scan-2026-08-23.md)
 - [Market Scan — 2026-08-24 (post-1.1.0 delta refresh)](research/market-scan-2026-08-24.md)
 - [Market Scan — 2026-08-25b (post-2.0 competitive refresh)](research/market-scan-2026-08-25b.md)
+- [Market Scan — 2026-08-30 (post-v2.1.0 delta refresh)](research/market-scan-2026-08-30.md)
 ## Other
 
 - [OpenClaw WebOS Improvement Plan — Progress Tracker](IMPROVEMENT-PLAN.md)
