@@ -106,6 +106,43 @@ try {
 }
 
 // ── 3. Route Coverage ──────────────────────────────────────
+
+/**
+ * Pure route-documentation matcher (exported for DB-free tests).
+ *
+ * Source routes captured from route files can carry template-string
+ * interpolations (`/api/memory/file/${params.name}`) and query builders
+ * (`/api/memory/context?${qs(req)}`), while docs reference either the clean
+ * prefix, the `:param` form, or the parent path. This resolves ALL those
+ * candidate forms against the concatenated docs corpus.
+ */
+function isRouteDocumented(route, allDocs) {
+  const templateFree = route.replace(/\$\{[^}]*\}/g, '').replace(/\?[^/]*/g, '');
+  const candidates = [route, templateFree];
+  // A trailing slash means an interpolation consumed the final segment
+  // (`/api/memory/file/${name}` → `/api/memory/file/`): docs may document the
+  // parent at exactly that boundary. Guarded to multi-segment paths so a
+  // bare `/api/` prefix can never match (it would match any API doc).
+  const lastSegmentIndex = templateFree.lastIndexOf('/');
+  // Guard: the parent prefix must be longer than `/api/` — anything shorter
+  // would match virtually every API doc.
+  const parentPrefix = templateFree.slice(0, lastSegmentIndex + 1);
+  if (lastSegmentIndex > 0 && parentPrefix.length > '/api/'.length) {
+    candidates.push(parentPrefix);
+  }
+  // Template params may be documented in `:param` form: `${params.name}` → `:name`
+  const paramForm = route.replace(/\$\{(?:params\.)?(\w+)\}/g, ':$1');
+  if (paramForm !== route) {
+    candidates.push(paramForm);
+    // And the `:name` variant with the trailing segment before it stripped
+    const paramFormParent = paramForm.slice(0, paramForm.lastIndexOf('/'));
+    if (paramFormParent.length > '/api/'.length) {
+      candidates.push(paramFormParent);
+    }
+  }
+  return candidates.some((c) => allDocs.includes(c));
+}
+
 console.log('\n=== Route Coverage ===');
 try {
   // Collect route patterns from task-server + routes/
@@ -133,9 +170,7 @@ try {
   for (const route of uniqueRoutes) {
     // Skip parametric routes for now
     if (route.includes('/:')) continue;
-    // Normalize for search
-    const normalized = route.replace(/\/:[\w]+/g, '/:param');
-    if (!allDocs.includes(route) && !allDocs.includes(route.split('/:')[0])) {
+    if (!isRouteDocumented(route, allDocs)) {
       // Only warn, not error — some routes are internal
       if (!route.includes('/oc/') && !route.includes('/events') && !route.includes('/auth/')) {
         warn(`Route ${route} may not be documented`);
@@ -179,11 +214,17 @@ console.log(`  Errors: ${errors}`);
 console.log(`  Warnings: ${warnings}`);
 if (errors > 0) {
   console.log('\n💥 Drift detected! Fix the errors above.');
-  process.exit(1);
 } else if (warnings > 0) {
   console.log('\n⚠️  Some warnings found. Review recommended.');
-  process.exit(0);
 } else {
   console.log('\n✨ All checks passed!');
-  process.exit(0);
 }
+
+// Exported for DB-free tests (test-docs-drift-check.js). Exit applies only
+// when invoked as a script; requiring the module returns the matcher without
+// affecting the parent's exit code.
+module.exports = { isRouteDocumented };
+if (require.main === module) {
+  process.exit(errors > 0 ? 1 : 0);
+}
+

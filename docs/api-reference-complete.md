@@ -902,7 +902,90 @@ drop-oldest, missed gateway frames detected via envelope-seq gap, or a fresh bri
 connect/reconnect): the client should do one manual refresh. Assistant token deltas are
 deliberately not fanned out in v1 — too chatty for dashboard state.
 
+### `GET /api/console/stream`
+
+Opens a Server-Sent Events stream of live agent console output for one gateway session
+(the Live Console window's data source). Requires the `session` query parameter (the
+gateway session key to subscribe to); all other SSE auth rules from `/api/events` apply.
+
+**Query parameters:**
+
+| Param | Required | Description |
+|---|---|---|
+| `session` | yes | Gateway session key to stream console events for |
+
+**Response** `200` (`text/event-stream`):
+
+Initial frame: `: connected` comment. Named events follow — agent tool calls,
+assistant output, and session lifecycle, mirroring the gateway console feed:
+
+```text
+event: console:end
+data: {"reason":"unsubscribed"}
+```
+
+**Degradation** (clean-disable): when no gateway console feed is configured (no
+`GATEWAY_BRIDGE_URL` / gateway feed resolution fails), the server writes a single
+`console:end` event with `reason: "unsubscribed"` and closes the stream immediately —
+the UI renders its named "console unavailable" state instead of a hanging connection.
+Client disconnect detaches the feed; periodic heartbeat comments keep intermediaries
+from timing the connection out.
+
+**Errors:**
+
+| Status | Body |
+|---|---|
+| `400` | `{"error":"Missing required query parameter: session"}` |
+
 ---
+
+### `GET /api/lead-handoffs`
+
+Lists task ownership-change events (handoffs) derived from the audit log — owner
+`update`s, `claim`, and `release` actions joined with their task and project. Powers
+the lead-handoff analytics in the Agents window.
+
+**Query parameters:**
+
+| Param | Default | Description |
+|---|---|---|
+| `action` | none | Filter by action name substring (e.g. `claim`, `update`); when the filter does not include `delete`, deleted tasks are excluded |
+| `actor` | none | Filter by actor, case-insensitive substring match |
+| `project_id` | none | Restrict to one project |
+| `limit` | `50` | Page size, clamped to 1–200 |
+| `offset` | `0` | Pagination offset |
+
+**Response** `200`:
+
+```json
+{
+  "total": 12,
+  "limit": 50,
+  "offset": 0,
+  "stats": {
+    "handoffs": 5, "created": 3, "updated": 9, "archived": 1, "deleted": 0, "actors": 4
+  },
+  "events": [
+    {
+      "id": 941, "taskId": "…", "taskTitle": "…", "taskStatus": "in_progress",
+      "taskPriority": "high", "taskOwner": "coder", "projectId": "…", "projectName": "…",
+      "actor": "dashboard-operator", "action": "claim",
+      "timestamp": "2026-08-29T…",
+      "isOwnerChange": true, "oldOwner": null, "newOwner": "dashboard-operator",
+      "oldStatus": null, "newStatus": null,
+      "oldValue": null, "newValue": null
+    }
+  ]
+}
+```
+
+`isOwnerChange` is true for owner `update`s and `claim`/`release` actions; `oldOwner`/
+`newOwner` are extracted from the audit old/new values (claims attribute the new owner
+to the actor). **Errors:** `503` when Asana storage is not initialized; `500` with the
+query error message otherwise.
+
+---
+
 
 ## Settings Control Panel API
 
@@ -2448,7 +2531,55 @@ List currently active (running/in-progress) workflow runs.
 Cleanup zombie sessions — marks runs as timed out if their gateway sessions are
 no longer active.
 
+### `GET /api/workflow-runs/pending`
+
+V2 dispatcher endpoint: lists queued runs awaiting dispatch, oldest first (the
+dispatcher's claimable queue). Served by the gateway workflow dispatcher v2
+(`gateway-workflow-dispatcher-v2.js`) through the task-server's v2 route shim.
+
+**Query parameters**:
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `limit` | number | dispatcher `batchSize` (10) | Max runs to return |
+| `agent_id` / `agentId` | string | — | Restrict to runs routable to one agent |
+
+**Response** `200`:
+
+```json
+{ "runs": [ { "id": "…", "status": "queued", "workflow_type": "…", "created_at": "…" } ] }
+```
+
+### `GET /api/workflow-runs/dispatcher/stats`
+
+V2 dispatcher health/telemetry endpoint: one tick-level summary of dispatcher
+state — counts by status, dispatch outcome rates, and the configuration of the
+current poll loop. The `last_tick_summary` object carries the most recent tick's
+results including `budgetEnforcement` (`held`, `stopped`, `warned`) counts from
+the budget-enforcement slice wired into the dispatch loop.
+
+**Response** `200` (abridged; snake_case aliases ride along, e.g. `route_count`,
+`poll_interval_ms`):
+
+```json
+{
+  "queuedCount": 0, "dispatchedCount": 12, "claimedCount": 0, "runningCount": 2,
+  "completedCount": 30, "failedCount": 1, "timedOutCount": 0,
+  "staleDispatchCount": 0, "staleClaimCount": 0,
+  "routeCount": 8, "failureRate": 0.0278,
+  "pollIntervalMs": 30000, "staleDispatchMs": 300000, "staleClaimMs": 120000,
+  "maxDispatchRetries": 3,
+  "lastTickAt": "2026-08-30T…", "lastTickError": null,
+  "lastTickSummary": { "dispatched": 1, "held": 0, "stopped": 0, "warned": 0,
+    "budgetEnforcement": { "held": 0, "stopped": 0, "warned": 0 } }
+}
+```
+
+`failureRate` is `(failed + timedOut) / dispatched` over the stats window (0 when
+nothing has been dispatched).
+
 ---
+
 
 ## Workflow Routing API
 
