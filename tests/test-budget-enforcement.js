@@ -34,6 +34,7 @@
 const assert = require('assert');
 const { GatewayWorkflowDispatcherV2 } = require('../gateway-workflow-dispatcher-v2.js');
 const { createBudgetEnforcement, scopePredicate } = require('../lib/budget-enforcement');
+const { periodKey } = require('../lib/budget-eval');
 
 // ─── Fake pool ─────────────────────────────────────────────────────
 
@@ -306,8 +307,14 @@ async function testMultiPeriodSeparateWindows() {
   const verdict = await gate.checkRun({ agentId: null, workflowType: 'x' });
   assert.strictEqual(verdict.action, 'pause_new_runs');
   const keys = verdict.breached.map((b) => b.key).sort();
-  assert.ok(keys.includes('2026-W35'), `weekly key present: ${keys}`);
-  assert.ok(keys.includes('2026-08'), `monthly key present: ${keys}`);
+  // Derive the expected keys from the production periodKey() (the function
+  // under test) instead of hardcoding calendar values — a hardcoded week
+  // (2026-W35) broke at the W36 rollover. Deriving keeps this test valid at
+  // every week/month boundary while still proving the period lands in the key.
+  const expectedWeekly = periodKey('weekly', Date.now());
+  const expectedMonthly = periodKey('monthly', Date.now());
+  assert.ok(keys.includes(expectedWeekly), `weekly key present: ${keys}`);
+  assert.ok(keys.includes(expectedMonthly), `monthly key present: ${keys}`);
   const spendCalls = pool.calls.filter((c) => /SUM\(cost_estimate\)/.test(c.sql));
   assert.strictEqual(spendCalls.length, 2, 'one aggregate per (scope-hit, period)');
   assert.notStrictEqual(spendCalls[0].params[0], spendCalls[1].params[0], 'distinct window starts');
