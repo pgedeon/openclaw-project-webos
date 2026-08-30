@@ -355,6 +355,11 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       of a hidden refusal, while receipts and the envelope path stay unchanged.
       PROPOSAL ONLY — not scheduled; needs a protocol-fit check against our stdio
       JSON-RPC server's hidden-not-refused contract before any build.
+      Fit check 2026-08-30: CONDITIONAL — see
+      docs/research/sep2322-protocol-fit-2026-08-30.md; do not build before
+      OpenClaw's MCP client declares elicitation support and renders prompts to the
+      operator (today it auto-answers elicitation/create with -32601), and then only
+      with an owner-approved visible-but-gated reshape that revises hidden-not-refused.
 
 ## Post-2.0 Steady State
 
