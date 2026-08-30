@@ -25,6 +25,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const { resolveCapability, toDegradedBody } = require('../lib/capability-status');
+
 const {
   sha256Canonical,
   validateManifest,
@@ -130,6 +132,27 @@ function getPool(ctx) {
   const pool = ctx && ctx.asanaStorage && ctx.asanaStorage.pool;
   if (!pool || typeof pool.query !== 'function') return null;
   return pool;
+}
+
+/**
+ * Degrade bodies resolve through lib/capability-status.js (capability
+ * migration completion, 2026-08-30): pool absent ⇒ the database leg is not
+ * configured (verified never ran — null); thrown query ⇒ the database is
+ * configured but verification failed at runtime. The reason vocabulary
+ * ('no_database', 'query_failed') and the HTTP 503 status stay EXACTLY as
+ * the brief §4.1 contract pinned them (tests/test-snapshot-routes.js) —
+ * only the body construction routes through the resolver. Status
+ * passthrough stays the route's job; the resolver names the body.
+ */
+function noDatabaseBody() {
+  return toDegradedBody(resolveCapability('snapshots', { declared: true, verified: null, configured: false }));
+}
+
+function queryFailedBody(err) {
+  return {
+    ...toDegradedBody(resolveCapability('snapshots', { declared: true, verified: false, configured: true })),
+    details: err && err.message ? err.message : String(err),
+  };
 }
 
 /**
@@ -358,7 +381,7 @@ async function applyReplaceDeletes(pool, table, rows, pk) {
 async function createSnapshotArtifact({ pool, settingsStore = null, snapshotsDir, name }) {
   try {
     if (!pool || typeof pool.query !== 'function') {
-      return { status: 503, body: { available: false, reason: 'no_database' } };
+      return { status: 503, body: noDatabaseBody() };
     }
     // Serialize all tiers in one pass (§3.1 step 2), deterministic order.
     const tables = {};
@@ -411,7 +434,7 @@ function registerSnapshotRoutes(router, options = {}) {
   router.add('POST', '/api/snapshots', async (req, res, ctx) => {
     const pool = getPool(ctx);
     if (!pool) {
-      return ctx.sendJSON(res, 503, { available: false, reason: 'no_database' });
+      return ctx.sendJSON(res, 503, noDatabaseBody());
     }
 
     const parsed = await readJsonBody(req, restoreMaxBytes());
@@ -500,14 +523,14 @@ function registerSnapshotRoutes(router, options = {}) {
 
       const pool = getPool(ctx);
       if (!pool) {
-        return ctx.sendJSON(res, 503, { available: false, reason: 'no_database' });
+        return ctx.sendJSON(res, 503, noDatabaseBody());
       }
 
       let targetMigrations;
       try {
         targetMigrations = await readTargetMigrations(pool);
       } catch (err) {
-        return ctx.sendJSON(res, 503, { available: false, reason: 'query_failed', details: err.message });
+        return ctx.sendJSON(res, 503, queryFailedBody(err));
       }
 
       // §4.3: refuse restore from newer, warn into older.
@@ -611,7 +634,7 @@ function registerSnapshotRoutes(router, options = {}) {
 
       const pool = getPool(ctx);
       if (!pool) {
-        return ctx.sendJSON(res, 503, { available: false, reason: 'no_database' }); // zero writes
+        return ctx.sendJSON(res, 503, noDatabaseBody()); // zero writes
       }
 
       const resolved = resolveAndValidateArtifact(body, snapshotsDir);
@@ -624,7 +647,7 @@ function registerSnapshotRoutes(router, options = {}) {
       try {
         targetMigrations = await readTargetMigrations(pool);
       } catch (err) {
-        return ctx.sendJSON(res, 503, { available: false, reason: 'query_failed', details: err.message });
+        return ctx.sendJSON(res, 503, queryFailedBody(err));
       }
       const compat = compareSchemaVersions(artifact.manifest.schema_version.migrations_applied, targetMigrations);
       if (compat.verdict === 'too_new') {

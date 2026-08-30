@@ -1,12 +1,15 @@
 import { ensureNativeRoot, escapeHtml, createStatCard } from './helpers.mjs';
 import { resolveCapability, describeForUi } from '../../../lib/capability-status.js';
 
-// ── Capability-resolved panel down-states (scan steal #2 pilot) ─────
-// The runs + cron panels stop hand-stringing their failure text: the legs
-// state what the poll actually proved — the endpoint fetch failed
+// ── Capability-resolved panel down-states (scan steal #2 pilot + the
+// 2026-08-30 migration completion) ─────────────────────────────────
+// Every Mission Control panel failure string comes from describeForUi:
+// the legs state what the poll actually proved — the endpoint fetch failed
 // (verified:false); configuration is not observable from the view (null).
-// Fleet and cost panels keep their hand-strings this run (pilot scope:
-// exactly two surfaces; the lib is available for the rest later).
+// Fleet's down-state means every fleet input (health + CLI agents) failed;
+// cost's fires on a failed fetch OR an {available:false} body — both name
+// the data, not a backend the view cannot observe. The panel state machine
+// is untouched: same states, same tones, honest strings.
 const RUNS_PANEL_DOWN = describeForUi(
   resolveCapability('runs', { declared: true, verified: false, configured: null }),
   'Runs'
@@ -14,6 +17,14 @@ const RUNS_PANEL_DOWN = describeForUi(
 const CRON_PANEL_DOWN = describeForUi(
   resolveCapability('cron', { declared: true, verified: false, configured: null }),
   'Cron'
+);
+const FLEET_PANEL_DOWN = describeForUi(
+  resolveCapability('fleet', { declared: true, verified: false, configured: null }),
+  'Fleet'
+);
+const COST_PANEL_DOWN = describeForUi(
+  resolveCapability('cost', { declared: true, verified: false, configured: null }),
+  'Cost'
 );
 
 // ── Poll tunables (brief §3 data contracts) ─────────────────────
@@ -430,7 +441,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     if (!health.ok && !cliAgents.ok) {
       // Every fleet input down: named error state (AC4 — only this panel blanks).
       state.fleet = null;
-      handlePanelFailure('fleet', 'Fleet unavailable — gateway not reachable');
+      handlePanelFailure('fleet', FLEET_PANEL_DOWN);
       recomputeAnomalies();
       return;
     }
@@ -453,7 +464,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
 
   function renderFleet() {
     const f = state.fleet;
-    if (!f) { setPanelState('fleet', 'error', 'Fleet unavailable — gateway not reachable'); return; }
+    if (!f) { setPanelState('fleet', 'error', FLEET_PANEL_DOWN); return; }
     const overall = f.health?.status || 'unknown';
     const overallTone = overall === 'healthy' || overall === 'ok' ? 'ok' : overall === 'degraded' ? 'warn' : 'error';
     const gatewayStatus = f.health?.gateway?.status || '—';
@@ -636,14 +647,14 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
     if (!res.ok) {
       state.cost = null;
       state.budgets = null;
-      handlePanelFailure('cost', 'Cost unavailable — no database');
+      handlePanelFailure('cost', COST_PANEL_DOWN);
       recomputeAnomalies();
       return;
     }
     if (res.data && res.data.available === false) {
       state.cost = null;
       state.budgets = null;
-      handlePanelFailure('cost', 'Cost unavailable — no database');
+      handlePanelFailure('cost', COST_PANEL_DOWN);
       recomputeAnomalies();
       return;
     }
@@ -659,7 +670,7 @@ export async function renderMissionControlView({ mountNode, api, sync, navigateT
 
   function renderCost() {
     const c = state.cost;
-    if (!c) { setPanelState('cost', 'error', 'Cost unavailable — no database'); return; }
+    if (!c) { setPanelState('cost', 'error', COST_PANEL_DOWN); return; }
 
     // Three-way distinction: error above (endpoint/DB down), empty here
     // (endpoint healthy, migration-022 history simply not accumulated yet),

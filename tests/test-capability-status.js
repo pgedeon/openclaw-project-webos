@@ -18,8 +18,13 @@
  * - toDegradedBody round-trip: budget shapes preserve the EXISTING wire
  *   reasons byte-identically ('no_database', 'query_failed'); generic
  *   features get the new explicit tokens; capable/garbage results throw.
+ * - Snapshot 503 mapping (migration completion 2026-08-30): the
+ *   snapshot-routes degrade bodies fed into the 503 path produce
+ *   byte-identical bodies to the hand-rolled shapes the brief §4.1 contract
+ *   pinned — status passthrough is the route's job, NOT the resolver's.
  * - describeForUi output table: per-feature clauses where the dependency is
- *   nameable (budgets/runs/cron), generic clauses otherwise, label fallback.
+ *   nameable (budgets/runs/cron/fleet/cost), generic clauses otherwise,
+ *   label fallback.
  */
 
 const assert = require('assert');
@@ -151,6 +156,49 @@ check('budget shapes preserve the EXISTING wire reasons byte-identically', () =>
   assert.deepStrictEqual(toDegradedBody(qf), { available: false, reason: 'query_failed' });
 });
 
+check('snapshot 503 mapping: resolver bodies fed into the 503 path are byte-identical (migration completion)', () => {
+  // routes/snapshot-routes.js answers 503-flavored degrades (brief §4.1,
+  // deliberately stricter than budgets' HTTP-200 variant). The resolver
+  // names the BODY; the HTTP status passthrough stays the route's job —
+  // these assertions pin exactly that split.
+  //
+  // Pool absent ⇒ configured:false ⇒ 'no_database' — byte-identical to the
+  // hand-rolled {available:false, reason:'no_database'} the four 503 call
+  // sites (create route, createSnapshotArtifact, preview gate, apply gate)
+  // answered before the migration (pinned by tests/test-snapshot-routes.js
+  // [03]/[19]).
+  const noDb = resolveCapability('snapshots', { declared: true, verified: null, configured: false });
+  assert.deepStrictEqual(toDegradedBody(noDb), { available: false, reason: 'no_database' });
+  // The 503 path feeds the body through unchanged — status is the route's:
+  const routeAnswer = { status: 503, body: toDegradedBody(noDb) };
+  assert.deepStrictEqual(routeAnswer, { status: 503, body: { available: false, reason: 'no_database' } });
+
+  // Query threw ⇒ verified:false ⇒ 'query_failed' with the err.message
+  // detail preserved verbatim — byte-identical to the preview/apply
+  // readTargetMigrations catch shapes.
+  const qf = resolveCapability('snapshots', { declared: true, verified: false, configured: true });
+  const err = new Error('relation "schema_migrations" does not exist');
+  const qfBody = { ...toDegradedBody(qf), details: err.message };
+  assert.deepStrictEqual(qfBody, {
+    available: false,
+    reason: 'query_failed',
+    details: 'relation "schema_migrations" does not exist',
+  });
+  const qfRouteAnswer = { status: 503, body: qfBody };
+  assert.deepStrictEqual(qfRouteAnswer, {
+    status: 503,
+    body: { available: false, reason: 'query_failed', details: 'relation "schema_migrations" does not exist' },
+  });
+
+  // Non-Error throwables stringify honestly, same as the pre-migration
+  // `details: err.message` sites degraded to undefined — the route helper
+  // preserves the verbatim-message contract either way.
+  assert.strictEqual(
+    JSON.stringify({ ...toDegradedBody(qf), details: String(null) }),
+    JSON.stringify({ available: false, reason: 'query_failed', details: 'null' })
+  );
+});
+
 check('generic features get the new explicit tokens', () => {
   assert.deepStrictEqual(
     toDegradedBody(resolveCapability('unknown-feature', { declared: true, verified: false, configured: null })),
@@ -194,6 +242,19 @@ check('per-feature clauses where the dependency is nameable', () => {
   assert.strictEqual(
     describeForUi(resolveCapability('cron', { declared: true, verified: false, configured: null }), 'Cron'),
     'Cron — openclaw CLI not reachable'
+  );
+  // Mission Control fleet + cost panels (migration completion 2026-08-30):
+  // fleet's down-state means every fleet input failed its fetch — the
+  // honest clause names the gateway; cost's fires on a failed fetch OR an
+  // {available:false} body — the honest clause names the data, not a
+  // backend the view cannot observe from a failed fetch.
+  assert.strictEqual(
+    describeForUi(resolveCapability('fleet', { declared: true, verified: false, configured: null }), 'Fleet'),
+    'Fleet — gateway not reachable'
+  );
+  assert.strictEqual(
+    describeForUi(resolveCapability('cost', { declared: true, verified: false, configured: null }), 'Cost'),
+    'Cost — cost data unreachable'
   );
 });
 

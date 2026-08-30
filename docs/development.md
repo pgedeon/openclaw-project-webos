@@ -124,12 +124,18 @@ reason vocabulary (`no_database`, `query_failed`, …) preserved
 byte-identically, and `describeForUi()` renders one honest human string per
 status so views stop hand-stringing panel states. Piloted on two surfaces
 (2026-08-30, market-scan steal #2): the budget-routes degrade points and the
-Mission Control runs/cron panel failure strings. Migration path for the
-rest (snapshot-routes, mcp-server, remaining views): route each feature's
-degrade points through `resolveCapability` + `toDegradedBody` /
-`describeForUi` in place, keeping test-pinned reason strings unchanged; the
-all-null `unassessed` status is the honest interim for features not yet
-wired to real checks.
+Mission Control runs/cron panel failure strings. Migration COMPLETE across
+the remaining surfaces (2026-08-30): snapshot-routes' six 503 degrade
+bodies resolve through the lib with reason strings and HTTP statuses
+byte-identical (status passthrough stays the route's job), and every Mission
+Control panel failure string (fleet, cost included) comes from
+`describeForUi`. One honest skip: `lib/mcp-server.js` `settledSection` stays
+hand-rolled — deferred on shape contract: its `{section:'unavailable'}`
+output is a different pinned wire shape than the `{available:false, reason}`
+degrade body, and the resolver adds nothing to a boolean
+fulfilled/rejected decision; forcing it would change the shape tests and UI
+consumers pin. The all-null `unassessed` status remains the honest interim
+for features not yet wired to real checks.
 
 ### Adding a Database Migration
 
