@@ -386,10 +386,13 @@ async function testRecoveredMarkerOnRollover() {
 async function testHardStopInFlightStatusGuard() {
   const pool = makePool({ cancelledIds: ['run-a', 'run-b'] });
   const gate = createBudgetEnforcement(pool, { log: quietLog() });
+  // The reason string echoes THIS entry's key, so derive the fixture key from
+  // periodKey() rather than hardcoding a month that rots at every boundary.
+  const monthlyKey = periodKey('monthly', Date.now());
   const results = await gate.hardStopInFlight([{
     budget: budgetRow({ name: 'fleet monthly cap' }),
     decision: 'hard_stop',
-    key: '2026-08',
+    key: monthlyKey,
     spendUsd: 42,
     spendTokens: 0,
   }]);
@@ -402,8 +405,8 @@ async function testHardStopInFlightStatusGuard() {
   // Status guard: only in-flight statuses; completed/failed/cancelled untouched.
   assert.match(cancel.sql, /status IN \('dispatched', 'claimed', 'running'\)/);
   assert.match(cancel.sql, /RETURNING id/);
-  // Fleet scope → TRUE predicate, reason is $1.
-  assert.strictEqual(cancel.params[0], 'Budget hard stop: fleet monthly cap (2026-08)');
+  // Fleet scope → TRUE predicate, reason is $1 (echoing the derived key).
+  assert.strictEqual(cancel.params[0], `Budget hard stop: fleet monthly cap (${monthlyKey})`);
 
   const event = pool.calls.filter((c) => /INSERT INTO budget_events/.test(c.sql))
     .map((c) => c.params[2]);
@@ -502,9 +505,12 @@ async function testDispatcherHardStopCancelsQueuedCandidate() {
   assert.strictEqual(d.lastBudgetEnforcement.stopped, 1);
 
   // In-flight bulk cancel ran with the status guard + reason string.
+  // The month key inside the reason is DERIVED from periodKey() (the function
+  // under test) — a hardcoded '2026-08' here was date-rotten and failed the
+  // moment the calendar rolled to September (observed 2026-08-31 UTC).
   const bulk = pool.calls.filter((c) => /status IN \('dispatched', 'claimed', 'running'\)/.test(c.sql));
   assert.strictEqual(bulk.length, 1);
-  assert.strictEqual(bulk[0].params[0], 'Budget hard stop: fleet monthly cap (2026-08)');
+  assert.strictEqual(bulk[0].params[0], `Budget hard stop: fleet monthly cap (${periodKey('monthly', Date.now())})`);
 
   // Queued candidate went through the existing status-guarded cancel path.
   const queuedCancel = pool.calls.find((c) => /AND status = 'queued'/.test(c.sql) && /SET status = 'cancelled'/.test(c.sql));
@@ -678,7 +684,7 @@ async function testRetryPathHardStopCancelsInFlight() {
   assert.strictEqual(result.retried.length, 0);
   const bulk = pool.calls.find((c) => /status IN \('dispatched', 'claimed', 'running'\)/.test(c.sql));
   assert.ok(bulk, 'hard_stop bulk cancel ran on the retry path');
-  assert.strictEqual(bulk.params[0], 'Budget hard stop: fleet monthly cap (2026-08)');
+  assert.strictEqual(bulk.params[0], `Budget hard stop: fleet monthly cap (${periodKey('monthly', Date.now())})`);
   assert.strictEqual(
     pool.calls.filter((c) => /SET owner_agent_id = \$2/.test(c.sql)).length,
     0
@@ -750,26 +756,29 @@ async function testDispatcherEmitsOnePauseFramePerLatch() {
     pollIntervalMs: 30000,
     budgetSseBroadcast: (event, data) => frames.push({ event, data }),
   });
+  // The dispatcher derives the period key from the live clock — derive the
+  // expected key the same way (hardcoded months rot at every boundary).
+  const monthlyKey = periodKey('monthly', Date.now());
 
   await d.dispatchQueuedRuns();
   assert.strictEqual(frames.length, 1, 'exactly one breach frame on the first tick');
   assert.strictEqual(frames[0].event, 'budget:breach');
   assert.deepStrictEqual(frames[0].data, {
     type: 'budget:breach',
-    id: 'b-1:2026-08:paused',
+    id: `b-1:${monthlyKey}:paused`,
     budget_id: 'b-1',
     budget_name: 'fleet monthly cap',
     scope: 'fleet',
     scope_id: null,
     period: 'monthly',
-    period_key: '2026-08',
+    period_key: monthlyKey,
     event_kind: 'paused',
     action: 'pause_new_runs',
     spend_usd: 12.5,
     spend_tokens: 7000,
     cap_usd: 10,
     cap_tokens: null,
-    message: 'pause_new_runs enforced at $12.50 of $10.00 cap (2026-08)',
+    message: `pause_new_runs enforced at $12.50 of $10.00 cap (${monthlyKey})`,
     timestamp: frames[0].data.timestamp,
   });
 
@@ -795,7 +804,7 @@ async function testDispatcherEmitsHardStopFrameFromPrimaryInsert() {
   assert.strictEqual(frames.length, 1, 'hard_stop surfaces from its primary latch insert, not a duplicate');
   assert.strictEqual(frames[0].data.event_kind, 'hard_stopped');
   assert.strictEqual(frames[0].data.action, 'hard_stop');
-  assert.strictEqual(frames[0].data.id, 'b-1:2026-08:hard_stopped');
+  assert.strictEqual(frames[0].data.id, `b-1:${periodKey('monthly', Date.now())}:hard_stopped`);
   assert.strictEqual(frames[0].data.budget_name, 'fleet monthly cap');
 }
 
