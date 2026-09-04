@@ -91,8 +91,40 @@ jobs:
       #     path traversal); fixed by puppeteer[-core] 25.9.0 (breaking major
       #     bump; puppeteer is used only in CI-excluded browser tests).
       # `npm audit --omit=dev` now reports 0 vulnerabilities.
+      #
+      # Registry-error resilience (2026-09-04): the npm audit endpoint is in
+      # a deprecation window and intermittently returns transport errors
+      # (observed: 400 "Invalid package tree", 503 "Service Unavailable")
+      # with zero advisory content. This step retries ONLY those registry
+      # errors — recognized by the exact "audit endpoint returned an error"
+      # marker npm prints for them — up to 3 attempts. A real audit report
+      # (any vulnerability output, including the exit-1 "found N
+      # vulnerabilities" path) is NEVER retried and always fails the gate.
       - name: npm audit (prod deps, high+ fails)
-        run: npm audit --omit=dev --audit-level=high
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if out=$(npm audit --omit=dev --audit-level=high 2>&1); then
+              echo "$out"
+              echo "audit clean (attempt $attempt)"
+              exit 0
+            else
+              code=$?
+              if echo "$out" | grep -q "audit endpoint returned an error"; then
+                echo "attempt $attempt: npm registry audit endpoint error (deprecation-window flapping) — retrying"
+                echo "$out" | tail -5
+                sleep $((attempt * 20))
+                continue
+              fi
+              # Real audit failure (vulnerabilities at/above gate level) —
+              # show the full report and fail. Never retried.
+              echo "$out"
+              exit $code
+            fi
+          done
+          echo "npm audit endpoint failed with registry errors 3 times in a row"
+          echo "::warning::npm audit endpoint unavailable (registry-side) — gate could not run"
+          exit 1
 
       - name: Syntax check (node --check over root, routes/, storage/, scripts/, src/)
         run: |
