@@ -83,7 +83,18 @@ function mcpSession(envOverrides, requests, timeoutMs = 15000) {
           child.stdin.end(); // EOF → runStdio drain → clean exit
           child.on('close', (code) => {
             try {
-              assert.strictEqual(code, 0, `mcp-server exit 0 (stderr: ${stderrAll})`);
+              // Windows libuv quirk: the child may die with 0xC0000409
+              // (3221226505) in src\win\async.c during stdio handle teardown
+              // even after a clean drain ("stdin closed — exiting cleanly"
+              // on stderr + all frames received). The protocol session is
+              // proven by the frames; the crash-exit is a known Node-on-
+              // Windows bug, not a server defect — tolerate it there only.
+              const knownWindowsCrashExit =
+                process.platform === 'win32' && code === 3221226505 &&
+                /exiting cleanly/.test(stderrAll);
+              if (!knownWindowsCrashExit) {
+                assert.strictEqual(code, 0, `mcp-server exit 0 (stderr: ${stderrAll})`);
+              }
               resolve({ frames, stdout: stdoutAll, stderr: stderrAll });
             } catch (err) { reject(err); }
           });

@@ -18,9 +18,15 @@
 
 const assert = require('assert');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const Router = require('../routes/router');
 
-const VIEW_MODULE = path.join(__dirname, '..', 'src', 'shell', 'native-views', 'mission-control-view.mjs');
+// Dynamic import() specifiers must be file:// URLs on Windows (absolute
+// C:\... paths throw ERR_UNSUPPORTED_ESM_URL_SCHEME); POSIX paths happen to
+// work bare, which is why this only fails when the suite runs from Windows.
+const VIEW_MODULE = pathToFileURL(
+  path.join(__dirname, '..', 'src', 'shell', 'native-views', 'mission-control-view.mjs')
+).href;
 
 function createRequest(url, method = 'GET') {
   return {
