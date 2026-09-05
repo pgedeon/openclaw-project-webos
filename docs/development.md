@@ -134,7 +134,11 @@ hand-rolled — deferred on shape contract: its `{section:'unavailable'}`
 output is a different pinned wire shape than the `{available:false, reason}`
 degrade body, and the resolver adds nothing to a boolean
 fulfilled/rejected decision; forcing it would change the shape tests and UI
-consumers pin. The all-null `unassessed` status remains the honest interim
+consumers pin. (2026-09-06 follow-up: `settledSection` still does not use the
+resolver — the skip stands — but unavailable sections now carry an additive
+`reason` sibling naming the failure class, so MCP consumers can tell
+transport-down from auth-rejected from upstream 5xx; see docs/mcp-server.md
+failure contract.) The all-null `unassessed` status remains the honest interim
 for features not yet wired to real checks.
 
 ### Adding a Database Migration
