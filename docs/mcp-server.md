@@ -54,6 +54,31 @@ Failure honesty contract:
   `{error:"unavailable", reason, hint:"…nothing executed"}` — an honest
   write-refusal mapping, never a crash and never a half-executed write.
 
+### Unavailable sections: the reason sibling
+
+`get_fleet_status` and `get_mission_control_summary` compose their endpoint
+sets with `Promise.allSettled` semantics: a failing section never blanks the
+rest. The pinned fallback marker `{section:"unavailable"}` gains one
+additive sibling — `reason`, a string naming the failure class derived from
+the raw upstream outcome — so an operator debugging "why is my fleet summary
+missing the runs section" gets a signal instead of a bare marker:
+
+```jsonc
+// get_mission_control_summary, cron endpoint answered 401:
+"cron": { "section": "unavailable", "reason": "auth_failed" }
+// get_fleet_status, running-runs endpoint answered 500:
+"running_runs": { "section": "unavailable", "reason": "upstream_error", "status": 500 }
+```
+
+Classes: `task_server_unreachable` (transport down / fetch rejected),
+`auth_failed` (401/403), `not_found` (404), `upstream_error` (other non-2xx,
+carries the HTTP `status` when known), `empty_payload` (2xx but null/empty or
+unusable body). Multi-call sections (agents, runs) report the class of the
+first failing leg. The `section:"unavailable"` key itself is unchanged —
+this is an additive sibling, not a shape migration (the 2026-08-30
+capability-resolver skip stands; `lib/capability-status.js` stays out of
+`lib/mcp-server.js`).
+
 ## Client registration
 
 OpenClaw MCP client config (same shape for Claude Desktop's
@@ -384,7 +409,8 @@ Breach latches, warnings, rollovers for one budget.
 Composes `/api/health-status` + `/api/agents/status` +
 `/api/workflow-runs?status=running&limit=N` (+ `/api/workflow-runs/stuck`)
 into one flat answer. Sections fail soft: a failing section reports
-`{section:"unavailable"}` without blanking the rest.
+`{section:"unavailable", reason}` without blanking the rest — see
+[Unavailable sections: the reason sibling](#unavailable-sections-the-reason-sibling).
 
 ### `get_mission_control_summary`
 
@@ -397,8 +423,9 @@ Flagship depth tool — one call answers what otherwise takes ten. Server-side
 health-status, openclaw/agents + agents/status, queued tasks (DB-backed list,
 queued filter applied in the adapter, cap 200), workflow runs
 (running/stuck/failed), blockers summary, cron jobs, costs summary (7d),
-budgets. A failing section yields `{section:"unavailable"}`; remaining
-sections stay populated.
+budgets. A failing section yields `{section:"unavailable", reason}`;
+remaining sections stay populated — see
+[Unavailable sections: the reason sibling](#unavailable-sections-the-reason-sibling).
 
 ### `search_audit`
 

@@ -609,10 +609,11 @@ run('throwing handler → -32603 frame, processor survives next message', async 
   });
   const server = makeServer(fetchImpl);
   // get_fleet_status without include_stuck hits the throwing third call via
-  // allSettled → section unavailable, NOT a crash.
+  // allSettled → section unavailable, NOT a crash. The reason sibling names
+  // the failure class: a thrown fetch is a transport failure.
   const frame = await callTool(server, 'get_fleet_status', { include_stuck: false });
   assert.strictEqual(contentOf(frame).stuck_runs, undefined);
-  assert.deepStrictEqual(contentOf(frame).running_runs, { section: 'unavailable' });
+  assert.deepStrictEqual(contentOf(frame).running_runs, { section: 'unavailable', reason: 'task_server_unreachable' });
 
   // A genuinely throwing handler surfaces as -32603 and the processor lives on.
   const lib = require('../lib/mcp-server');
@@ -654,9 +655,127 @@ run('mission control: one failing section → unavailable marker, rest populated
   });
   const outcome = await dispatch('get_mission_control_summary', {}, { ...DEPS, fetchImpl });
   const s = outcome.payload.sections;
-  assert.deepStrictEqual(s.health, { section: 'unavailable' });
+  assert.deepStrictEqual(s.health, { section: 'unavailable', reason: 'task_server_unreachable' });
   assert.strictEqual(s.costs.available, true, 'remaining sections stay populated');
   assert.strictEqual(s.runs.running.length, 0);
+});
+
+// ── Failure-cause reason sibling on unavailable sections ────────────────
+
+run('fleet status: each failure class → {section:unavailable, reason:<class>}, rest populated', async () => {
+  const good = {
+    '/api/health-status': { body: { ok: true } },
+    '/api/agents/status': { body: { agents: [] } },
+  };
+  const cases = [
+    // [label, failing spec for the running-runs call, expected reason, expected status sibling]
+    ['unreachable', { throw: 'connect ECONNREFUSED' }, 'task_server_unreachable', undefined],
+    ['auth 401', { status: 401, body: {} }, 'auth_failed', undefined],
+    ['auth 403', { status: 403, body: {} }, 'auth_failed', undefined],
+    ['not found 404', { status: 404, body: {} }, 'not_found', undefined],
+    ['upstream 500', { status: 500, body: {} }, 'upstream_error', 500],
+    ['upstream 503', { status: 503, body: {} }, 'upstream_error', 503],
+    ['empty payload 200', { status: 200, body: null }, 'empty_payload', undefined],
+  ];
+  for (const [label, failing, reason, status] of cases) {
+    const fetchImpl = makeFetch({
+      ...good,
+      '/api/workflow-runs?status=running&limit=5': failing,
+      '/api/workflow-runs/stuck': { body: [] },
+    });
+    const outcome = await dispatch('get_fleet_status', { running_limit: 5 }, { ...DEPS, fetchImpl });
+    assert.strictEqual(outcome.isError, false, `${label}: composition stays a normal result`);
+    const expected = status === undefined ? { section: 'unavailable', reason } : { section: 'unavailable', reason, status };
+    assert.deepStrictEqual(outcome.payload.running_runs, expected, `${label}: running_runs carries reason ${reason}`);
+    assert.strictEqual(outcome.payload.health.ok, true, `${label}: health stays populated`);
+    assert.deepStrictEqual(outcome.payload.stuck_runs, [], `${label}: stuck stays populated`);
+  }
+});
+
+run('mission control: per-section failure classes thread into the reason sibling', async () => {
+  const good = {
+    '/api/health-status': { body: { ok: true } },
+    '/api/openclaw/agents': { body: { agents: ['cli-a'] } },
+    '/api/agents/status': { body: { agents: ['org-a'] } },
+    '/api/tasks/all': { body: [{ id: 't1', status: 'queued' }] },
+    '/api/workflow-runs?status=running&limit=50': { body: [] },
+    '/api/workflow-runs/stuck': { body: [] },
+    '/api/workflow-runs?status=failed&limit=10': { body: [] },
+    '/api/costs/summary': { body: { available: true } },
+  };
+  const cases = [
+    // [label, failing endpoint substring, spec, expected reason, expected status]
+    ['blockers unreachable', '/api/blockers/summary', { throw: 'ECONNREFUSED' }, 'task_server_unreachable', undefined],
+    ['cron auth', '/api/cron/jobs', { status: 401, body: {} }, 'auth_failed', undefined],
+    ['budgets 404', '/api/budgets', { status: 404, body: {} }, 'not_found', undefined],
+    ['blockers 500', '/api/blockers/summary', { status: 500, body: {} }, 'upstream_error', 500],
+  ];
+  for (const [label, endpoint, spec, reason, status] of cases) {
+    const fetchImpl = makeFetch({ ...good, [endpoint]: spec });
+    const outcome = await dispatch('get_mission_control_summary', {}, { ...DEPS, fetchImpl });
+    const s = outcome.payload.sections;
+    const target = endpoint.includes('blockers') ? s.blockers : endpoint.includes('cron') ? s.cron : s.budgets;
+    const expected = status === undefined ? { section: 'unavailable', reason } : { section: 'unavailable', reason, status };
+    assert.deepStrictEqual(target, expected, `${label}: section carries reason ${reason}`);
+    assert.strictEqual(s.health.ok, true, `${label}: health stays populated`);
+    assert.strictEqual(s.queue.total, 1, `${label}: queue stays populated`);
+  }
+});
+
+run('mission control: agents partial failure names the failing leg; queue empty body → empty_payload', async () => {
+  // agents: cli leg ok, org leg 403 → whole section unavailable with auth_failed
+  let fetchImpl = makeFetch({
+    '/api/health-status': { body: { ok: true } },
+    '/api/openclaw/agents': { body: { agents: ['cli-a'] } },
+    '/api/agents/status': { status: 403, body: {} },
+    '/api/tasks/all': { body: [] },
+    '/api/workflow-runs?status=running&limit=50': { body: [] },
+    '/api/workflow-runs/stuck': { body: [] },
+    '/api/workflow-runs?status=failed&limit=10': { body: [] },
+    '/api/blockers/summary': { body: { blockers: [] } },
+    '/api/cron/jobs': { body: { jobs: [] } },
+    '/api/costs/summary': { body: { available: true } },
+    '/api/budgets': { body: [] },
+  });
+  let outcome = await dispatch('get_mission_control_summary', {}, { ...DEPS, fetchImpl });
+  assert.deepStrictEqual(outcome.payload.sections.agents, { section: 'unavailable', reason: 'auth_failed' });
+
+  // queue: 200 with null body → rows===null → empty_payload (not a transport class)
+  fetchImpl = makeFetch({
+    '/api/health-status': { body: { ok: true } },
+    '/api/openclaw/agents': { body: { agents: [] } },
+    '/api/agents/status': { body: { agents: [] } },
+    '/api/tasks/all': { status: 200, body: null },
+    '/api/workflow-runs?status=running&limit=50': { body: [] },
+    '/api/workflow-runs/stuck': { body: [] },
+    '/api/workflow-runs?status=failed&limit=10': { body: [] },
+    '/api/blockers/summary': { body: { blockers: [] } },
+    '/api/cron/jobs': { body: { jobs: [] } },
+    '/api/costs/summary': { body: { available: true } },
+    '/api/budgets': { body: [] },
+  });
+  outcome = await dispatch('get_mission_control_summary', {}, { ...DEPS, fetchImpl });
+  assert.deepStrictEqual(outcome.payload.sections.queue, { section: 'unavailable', reason: 'empty_payload' });
+  assert.strictEqual(outcome.payload.sections.health.ok, true, 'health stays populated');
+});
+
+run('mission control: runs section partial failure names the failed leg', async () => {
+  const fetchImpl = makeFetch({
+    '/api/health-status': { body: { ok: true } },
+    '/api/openclaw/agents': { body: { agents: [] } },
+    '/api/agents/status': { body: { agents: [] } },
+    '/api/tasks/all': { body: [] },
+    '/api/workflow-runs?status=running&limit=50': { body: [{ run_id: 'r1' }] },
+    '/api/workflow-runs/stuck': { status: 500, body: {} },
+    '/api/workflow-runs?status=failed&limit=10': { body: [] },
+    '/api/blockers/summary': { body: { blockers: [] } },
+    '/api/cron/jobs': { body: { jobs: [] } },
+    '/api/costs/summary': { body: { available: true } },
+    '/api/budgets': { body: [] },
+  });
+  const outcome = await dispatch('get_mission_control_summary', {}, { ...DEPS, fetchImpl });
+  assert.deepStrictEqual(outcome.payload.sections.runs, { section: 'unavailable', reason: 'upstream_error', status: 500 });
+  assert.strictEqual(outcome.payload.sections.health.ok, true, 'health stays populated');
 });
 
 // ── No secret leakage (AC10) ─────────────────────────────────────────────

@@ -264,6 +264,18 @@
     "excerpt": "Market Scan — 2026-08-30 (post-v2.1.0 delta refresh) Fourth competitive pass, five days after market-scan-2026-08-25b and one day after the v2.1.0 release (adoption/assurance/accessibility: MCP server"
   },
   {
+    "title": "Market Scan — 2026-09-05 (post-v2.1.0 delta refresh)",
+    "url": "/openclaw-project-webos/research/market-scan-2026-09-05/",
+    "section": "Research & Spikes",
+    "excerpt": "Market Scan — 2026-09-05 (post-v2.1.0 delta refresh) Fifth competitive pass, six days after market-scan-2026-08-30 and one week after the v2.1.0 release. Since the last scan we shipped the market-scan"
+  },
+  {
+    "title": "SEP-2322 MCP Elicitation — Protocol-Fit Check",
+    "url": "/openclaw-project-webos/research/sep2322-protocol-fit-2026-08-30/",
+    "section": "Research & Spikes",
+    "excerpt": "SEP-2322 MCP Elicitation — Protocol-Fit Check Date: 2026-08-30 · Scope: research-only fit check (no code changes) for the UPGRADE ROADMAP Post-2.0 candidate \"MCP approval elicitation via SEP-2322\" (ma"
+  },
+  {
     "title": "Database Schema Reference",
     "url": "/openclaw-project-webos/schema-reference/",
     "section": "Architecture & Internals",
