@@ -348,6 +348,16 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       rollout — recon confirms tailscale is NOT yet installed on the dev
       machine. Rollout (install + serve exposure) awaits OWNER order; see
       Post-2.0 Steady State watch-list below.
+- [ ] **[candidate] Structured handoff briefs over the task↔session binding** —
+      added per market scan 2026-09-05 steal #2 (Mission Control PR #956 proposes a
+      `handoff_briefs` object with producer/consumer semantics + MCP trio, unmerged):
+      a structured handoff payload (from/to session, decisions made, key context,
+      next steps, open questions, consumed_at) written at session end and consumed
+      at session start, riding the existing task↔session binding and session-reader
+      routes instead of inventing a chat store. TRIGGER-GATED: do not build before
+      Mission Control #956 merges to main (design may churn); on merge, the MCP
+      create/get/consume trio maps onto our MCP server slice pattern.
+      See docs/research/market-scan-2026-09-05.md.
 - [ ] **[candidate] MCP approval elicitation via SEP-2322** — added per market
       scan 2026-08-30 steal #3 (FleetQ #148 migrated its approval gate to MRTR
       elicitation, Aug 29): HOLD-tier MCP mutation requests surface a native
