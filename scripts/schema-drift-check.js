@@ -107,6 +107,16 @@ const PROBE_MAP = {
   '20260826_audit_log_task_id_nullable': [
     'column-nullable:audit_log.task_id',
   ],
+  // 027 self-registers a tracking row (Tier 1), but the 2026-09-06 incident
+  // (storage wrote projects.workspace_id with no migration anywhere; the
+  // checker said ok on a DB missing the column) proved Tier 1 alone can
+  // miss a dropped-but-tracked object — probe the columns too.
+  '027_add_workspace_columns_to_projects_tasks': [
+    'column:projects.workspace_id',
+    'column:tasks.workspace_id',
+    'index:idx_projects_workspace_id',
+    'index:idx_tasks_workspace_id',
+  ],
   '020_add_error_details_to_workflow_runs': [
     'column:workflow_runs.error_details',
   ],

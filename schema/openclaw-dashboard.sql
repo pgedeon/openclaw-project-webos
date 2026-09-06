@@ -25,6 +25,7 @@ CREATE TABLE projects (
   default_workflow_id UUID NOT NULL REFERENCES workflows(id),
   metadata JSONB NOT NULL DEFAULT '{}',
   qmd_project_namespace TEXT NOT NULL UNIQUE,
+  workspace_id UUID NULL REFERENCES workspaces(id) ON DELETE SET NULL, -- 027; storage null-coalesces to default workspace when NULL
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -33,6 +34,7 @@ CREATE TABLE projects (
 CREATE TABLE tasks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  workspace_id UUID NULL REFERENCES workspaces(id) ON DELETE SET NULL, -- 027; per-workspace counts + reassign
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'backlog',

@@ -42,10 +42,11 @@ Container for tasks with configuration.
 | `default_workflow_id` | `UUID` | FK → `workflows(id)`, NOT NULL | Default workflow for tasks |
 | `metadata` | `JSONB` | NOT NULL, default `'{}'` | |
 | `qmd_project_namespace` | `TEXT` | NOT NULL, UNIQUE | QMD namespace identifier |
+| `workspace_id` | `UUID` | nullable, FK → `workspaces(id)` ON DELETE SET NULL (027) | Owning workspace; NULL = storage null-coalesces to the `default` workspace |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, default `NOW()` | |
 | `updated_at` | `TIMESTAMPTZ` | NOT NULL, default `NOW()` | Auto-updated via trigger |
 
-**Indexes:** GIN on `tags`, GIN on `metadata`
+**Indexes:** GIN on `tags`, GIN on `metadata`, btree on `workspace_id` (027)
 
 ---
 
@@ -59,6 +60,7 @@ The primary work items.
 |--------|------|-------------|-------------|
 | `id` | `UUID` | PK, default `uuid_generate_v4()` | |
 | `project_id` | `UUID` | FK → `projects(id)` ON DELETE CASCADE, NOT NULL | |
+| `workspace_id` | `UUID` | nullable, FK → `workspaces(id)` ON DELETE SET NULL (027) | Per-workspace counts/reassign; NULL = inherits project's workspace |
 | `title` | `TEXT` | NOT NULL | Task title |
 | `description` | `TEXT` | NOT NULL, default `''` | |
 | `status` | `TEXT` | NOT NULL, default `'backlog'` | See status values below |
@@ -631,7 +633,7 @@ Multi-workspace support with per-space configuration.
 | `created_at` | `TIMESTAMPTZ` | default `NOW()` | |
 | `updated_at` | `TIMESTAMPTZ` | default `NOW()` | Auto-updated via trigger |
 
-**Referenced by:** `tasks.workspace_id`, `cron_jobs.workspace_id`
+**Referenced by:** `projects.workspace_id` (027), `tasks.workspace_id` (027). (An older revision of this line also claimed `cron_jobs.workspace_id` — stale: no code path queries it, no migration defines it, 027 deliberately does not add it.)
 
 ---
 
@@ -672,6 +674,7 @@ Multi-workspace support with per-space configuration.
 | 025 | `025_add_workflow_normalization.sql` | 2026-08-25 | Debt D1 normalization: widen `workflow_steps` status CHECK to step-native ∪ dispatcher-vocabulary (14 values); lift string-only `workflow_templates.steps` into `{name, display_name, required}` objects (idempotent, order-preserving) |
 | 20260826a | `20260826_audit_log_task_id_nullable.sql` | 2026-08-26 | Make `audit_log.task_id` nullable — task-less system events (MCP adoption telemetry, workflow-graph events) append rows with `task_id NULL`; aligns canonical DDL with prod reality + docs (drift fix) |
 | 026 | `026_add_workspaces_base.sql` | 2026-08-29 | Add the missing base `workspaces` CREATE TABLE (P3 Spaces shipped the ALTER migrations but never the base DDL — fresh DBs had `/api/spaces` fail with `relation "workspaces" does not exist`); seeds the `default` workspace idempotently |
+| 027 | `027_add_workspace_columns_to_projects_tasks.sql` | 2026-09-06 | Add `projects.workspace_id` + `tasks.workspace_id` (FK → `workspaces`, ON DELETE SET NULL, btree indexes) — the P3 Spaces storage layer (create/update/list/copy/reassign, per-workspace counts) referenced columns no migration or canonical DDL ever defined; staging 400'd `POST /api/projects` (`column "workspace_id" does not exist`). cron_jobs deliberately untouched (no code queries it). Existing rows stay NULL — storage null-coalesces to the default workspace |
 
 ---
 
