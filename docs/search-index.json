@@ -147,7 +147,7 @@
     "title": "Changelog",
     "url": "/openclaw-project-webos/changelog/",
     "section": "Release Notes & Changelog",
-    "excerpt": "Changelog All notable changes to the Project Dashboard will be documented in this file. The format is based on Keep a Changelog, and this project adheres to Semantic Versioning. [Unreleased] Fixed - n"
+    "excerpt": "Changelog All notable changes to the Project Dashboard will be documented in this file. The format is based on Keep a Changelog, and this project adheres to Semantic Versioning. [Unreleased] [2.2.0] -"
   },
   {
     "title": "Configuration Reference",

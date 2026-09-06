@@ -1,34 +1,31 @@
-# v2.1.0 — 2026-08-29
+# v2.2.0 — 2026-09-06
 
-**The platform turns outward: proven adoption, honest assurance, full accessibility.** v2.1.0 makes the v2.0.0 platform's claims provable: agents actually call the MCP tools (with telemetry), the failure classes that slipped through get caught by DB-free end-to-end coverage, schema drift can never silently accumulate again, performance is measured honestly, and the widget panel is fully keyboard/touch operable. Shipped ~4 days / 12 commits after v2.0.0 (2026-08-25).
+**Capability honesty and operational truth.** v2.2.0 makes the platform's failure stories provable and legible: every degrade surface now speaks one vocabulary, MCP consumers can tell WHY a section went missing, and the operational validator works again after silently 401-ing for weeks. Shipped ~8 days / 19 commits after v2.1.0 (2026-08-29).
 
 ## Highlights
 
-1. **MCP server registered with OpenClaw + organic agent adoption** — `openclaw mcp add webos-dashboard` (stdio); pilot agent coder, then `main` + `dashboard-manager`, answered live fleet/budget questions through the tool surface with zero hints. Adoption telemetry (`npm run mcp:telemetry`) counts every executed tools/call from the audit log: 21 calls, 6 of 13 tools used, all reads.
-2. **Budget breach alerts deliver to chat** (slice 5) — latched breach events page the operator over the authenticated gateway WebSocket; Zulip delivery PROVEN live on staging (latch-exact, exactly-one-message). WhatsApp channel escalated to owner review after 3 infra timeouts.
-3. **Conversation tab in task detail** — bound gateway-session transcripts render inline as chat bubbles with tool badges, cursor-paginated, read-only, deep-linking to full Session Replay.
-4. **NL command bar creates tasks** — "spawn agent for X" executes end-to-end through the governed action registry (receipted, audited) instead of refusing with task_create_unavailable.
-5. **Budgets management window** (36th app) — create/edit/deactivate budgets with per-budget ledger drawer; the cost-governance loop is fully manageable from the dashboard.
-6. **Schema drift checker** (`npm run db:drift-check`) — two-tier: tracking-table comparison for numbered migrations + object probes for the date-prefixed ones that never get tracking rows; a CI guard test fails if any future migration lacks probe coverage. Born from the real incident where staging silently missed 8 migrations and 500'd `/api/tasks/all` + `/api/spaces` for days. Migration `026_add_workspaces_base.sql` adds the missing workspaces base DDL.
-7. **D5 perf harness** (`npm run perf`) — manual, never CI-blocking: boot-to-interactive ~366ms median, tasks-view first render ~65ms, capped-list "load more" +100 rows ~7ms.
-8. **Widget panel keyboard + touch reorder** (a11y) — the drag-handle button opens an accessible Before/After move menu (role=menu, Escape-closable, focus-managed); closed the repo's last code TODO.
-9. **DB-free e2e coverage** — MCP adapter with fake fetch (including the shipped-bug shape), snapshot flow through the real action-routes pipeline, the one-click actions flow, and the MCP/snapshot flows suite; suite grew to 68 files, all green.
-10. **Dependencies fully current + double-layered alerting** — pg 8.23.0, playwright 1.62.1, puppeteer/puppeteer-core moved to devDependencies; npm audit 0 vulnerabilities; GitHub Dependabot + vulnerability alerts enabled on the repo (CI npm audit + continuous Dependabot).
-11. **Docs site search** — client-side search over the GitHub Pages corpus, zero-build generated index.
+1. **Capability resolver** — new pure `lib/capability-status.js`: `resolveCapability` takes declared / verified / configured legs (each boolean or null), fails closed, names the first failed leg; `toDegradedBody()` mints the house `{available:false, reason}` shape with the existing reason vocabulary byte-identical; `describeForUi()` renders one honest human string per status. Piloted on budget-routes (wire shapes test-pinned byte-identical), then migrated: all six snapshot-route 503 degrade bodies, Mission Control runs/cron/fleet/cost panel strings (the last hand-strings — "Cost unavailable — no database" was dropped because a failed fetch cannot claim which backend is down).
+2. **MCP unavailable sections carry a failure-cause `reason` sibling** — `{section:'unavailable', reason}` from `settledSection` and the `get_mission_control_summary` assembly: classes `task_server_unreachable` / `auth_failed` / `not_found` / `upstream_error` (with status) / `empty_payload`. Additive only — the pinned marker key is unchanged, no capability-status import, AC8 intact.
+3. **`npm run validate` un-broken** — dashboard-validation.js's `request()` predates the auth layer and sent no headers: every API check 401'd and the run failed since bearer auth landed (CI never runs validate, so the rot survived). Now sends `Authorization: Bearer $DASHBOARD_AUTH_TOKEN`; a 401 without the token logs an operator hint. Live-verified against staging.
+4. **Docs-drift checker normalized** — template-string routes (`/api/memory/file/${params.name}`) false-positive-warned on six documented memory routes for weeks; the matcher is now an exported pure `isRouteDocumented()` resolving all candidate forms with a greedy-prefix guard. The four genuinely-undocumented routes got handler-accurate reference docs. Warnings 10 → 0.
+5. **Suite green on Windows too** — pathToFileURL for ESM dynamic import, and the libuv win/async.c clean-shutdown exit code is tolerated only under an exact four-condition match. Plus the date-rot fixes: budget-enforcement week/month key assertions now derive from `periodKey()` instead of hardcoded literals that broke at each rollover.
+6. **Public changelog page** — CHANGELOG.md mirrors verbatim to `docs/changelog.md` (generated, committed, drift-gated) so the docs site always matches repo truth.
+7. **CI audit gate hardened** — retries npm audit ONLY on registry transport errors (exact marker, max 3, backoff); real findings never retried. Born from the npm audit-endpoint deprecation flapping.
+8. **Staging fs API root fixed** (staging config, not code) — `OPENCLAW_FS_ROOT` now points at the staging workspace; the code default `/root/.openclaw` stays correct for the real deployment beside the gateway.
 
 ## Migration notes
 
-- **Migration 026** (`026_add_workspaces_base.sql`) — only needed on databases provisioned without the P3 Spaces table; idempotent, seeds the `default` workspace.
-- No new required env vars. `BUDGET_ALERT_CHANNEL`/`BUDGET_ALERT_TARGET` remain optional (default off).
+- None. No schema changes since v2.1.0.
+- New optional env in practice: `DASHBOARD_AUTH_TOKEN` is now REQUIRED for `npm run validate`'s API checks (it always was for the API itself — the validator just never sent it).
 
 ## Validation
 
-- DB-free test suite green, 68/68 (`node scripts/ci-db-free-tests.js`)
+- DB-free test suite green, 70/70 (`node scripts/ci-db-free-tests.js`), Windows Node 24 + WSL
 - Docs drift check green (`node scripts/docs-drift-check.js`)
 - Schema drift check `ok` on staging (`npm run db:drift-check` against staging DB)
-- CI green on verify + e2e jobs
+- CI green on verify + e2e + docs-pages jobs
 
 ## Artifacts
 
-- Tag: [`v2.1.0`](https://github.com/pgedeon/openclaw-project-webos/releases/tag/v2.1.0)
+- Tag: [`v2.2.0`](https://github.com/pgedeon/openclaw-project-webos/releases/tag/v2.2.0)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
