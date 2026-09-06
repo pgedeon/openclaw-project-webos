@@ -166,8 +166,8 @@ Both generated files are committed, so the Pages workflow stays pure-Jekyll.
 ## Testing
 
 ```bash
-# API validation (server must be running)
-node scripts/dashboard-validation.js
+# API validation (server must be running; API checks need the bearer token)
+DASHBOARD_AUTH_TOKEN=<token> node scripts/dashboard-validation.js
 
 # Comprehensive test suite
 node tests/comprehensive-test.mjs

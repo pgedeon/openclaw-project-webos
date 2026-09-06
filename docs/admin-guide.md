@@ -31,7 +31,7 @@ bash scripts/dashboard-health.sh check
 ### Validate API
 
 ```bash
-node scripts/dashboard-validation.js
+DASHBOARD_AUTH_TOKEN=<token> node scripts/dashboard-validation.js
 ```
 
 ## Database Management
