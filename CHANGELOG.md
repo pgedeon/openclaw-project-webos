@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- D2 `Assisted-by:` attribution trailer adopted (2026-09-06): roadmap working rule 6 now requires an `Assisted-by: <who>` trailer in the commit body whenever the committing identity doesn't name the actual author — the WSL clone shares one git identity across all agent lanes, so most commits show as one shared author and git blame/history cannot distinguish coder-built from qa-auditor-built from orchestrator-finished work (CHANGELOG bullets carried the attribution prose; the commits didn't). Review #4 recommended this convention on 2026-08-25 after fixing real `[Unreleased]` lane-collision duplication; adoption closes debt D2's last open recommendation. One trailer, plain text, greppable, no sign-off ceremony. The staging deploy-script watch item also closed the same day (~12 days healthy, no recurrence). This commit carries the first trailer.
+
 ## [2.2.0] - 2026-09-06
 
 **Capability honesty and operational truth.** v2.2.0 closes the loop on telling the truth when things are down: a formal capability resolver (declared ∩ verified ∩ configured, fail-closed) now names degrade bodies and Mission Control panel states from one vocabulary, and MCP flagship-tool sections that go missing carry an additive `reason` sibling so operators can tell transport-down from auth-rejected from upstream 5xx. `npm run validate` is un-broken after silently 401-ing since the auth layer landed (CI never ran it, so the rot survived), the docs-drift checker stopped false-positive-warned on six documented memory routes, and date-rotten test assertions plus Windows-specific suite failures are fixed so the 70-check suite runs green on both platforms. Also: audit-relevant routes previously undocumented got handler-accurate reference docs, the changelog mirrors to a public docs-site page, and README stale claims are synced.

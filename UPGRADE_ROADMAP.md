@@ -276,6 +276,14 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 5. Verify before push: `npm run validate` + relevant tests. Never push red (CI now
    enforces).
 6. Commit format: `feat|fix|chore|ci|docs: <area> — <what>`. Push straight to `main`.
+   Attribution trailer (D2 convention, adopted 2026-09-06): when the commit
+   author identity does not name the human or agent who did the work (the WSL
+   clone shares one git identity across lanes), append an `Assisted-by: <who>`
+   trailer to the commit body — e.g. `Assisted-by: coder` for agent-built work
+   pushed by the CEO, `Assisted-by: qa-auditor`, or `Assisted-by: CEO` for
+   orchestrator-finished items. Agent sessions committing their own work
+   append their own agent id. One trailer, plain text, no sign-off syntax —
+   the goal is greppable attribution, not ceremony.
 7. Tick the box here when done, note anything learned in CHANGELOG `## Unreleased`.
 8. If blocked (no DB locally, gateway unreachable, streaming not exposed): do the
    offline-safe part (tests, docs, frontend with mocks) and note the blocker.
@@ -418,9 +426,12 @@ DAG decision; budget slice 5 does not exist (all four brief slices shipped).
   exposure is an owner hardware/network call.
 - **D5 benchmarks deferred-by-design** — CLOSED 2026-08-29: `scripts/perf-benchmark.mjs` (`npm run perf`) ships the scripted Playwright timing harness per review #3's fix shape — boot-to-interactive, tasks-view first meaningful render, capped-list "load more" growth, median of 3 cold runs, JSON output to gitignored `perf-results.json`. Manual per release, never CI-blocking, not registered in ci-db-free-tests; numbers live only in harness output, never in docs (they rot).
 - **Staging deploy-script observation** — restart robustness fixed 2026-08-25
-  (5301ce5 detached successor + health gate) after instability; healthy since,
-  but observation window ~1 day. Keep on watch one week.
+  (5301ce5 detached successor + health gate) after instability; healthy since
+  (watch window closed 2026-09-06, no recurrence across ~12 days and many
+  redeploys; removed from watch).
 - **CHANGELOG `[Unreleased]` lane-collision repair** — duplicated sections
-  deduplicated 2026-08-25 (review #4 R1); if duplication reappears under
-  reduced cadence, adopt the D2 `Assisted-by:` trailer convention before
-  anything else.
+  deduplicated 2026-08-25 (review #4 R1); no duplication recurrence since.
+  The D2 `Assisted-by:` trailer convention was ADOPTED 2026-09-06 as
+  working rule 6's attribution trailer (see above) — commit-level attribution
+  is now greppable even though the WSL clone shares one git identity across
+  agent lanes.
