@@ -1,6 +1,6 @@
 # OpenClaw Project WebOS
 
-`2.1.0`
+`2.2.0`
 
 A Windows 11-style desktop environment for managing OpenClaw agent workflows — served entirely in the browser with vanilla JS, no frameworks, no build step. Each feature is a windowed application launched from the taskbar or start menu.
 
@@ -326,19 +326,22 @@ Key variables:
 
 ```bash
 npm install
-npm run validate
+DASHBOARD_AUTH_TOKEN=<token> npm run validate
 ```
+
+The token is required for the API checks (the server enforces bearer auth; the
+validator sends `Authorization: Bearer $DASHBOARD_AUTH_TOKEN` when set).
 
 Point validation at a custom port:
 ```bash
-DASHBOARD_API_BASE=http://localhost:3887 node scripts/dashboard-validation.js
+DASHBOARD_API_BASE=http://localhost:3887 DASHBOARD_AUTH_TOKEN=<token> node scripts/dashboard-validation.js
 ```
 
 ---
 
 ## Release
 
-Tagged as `v2.1.0` on [github.com/pgedeon/openclaw-project-webos](https://github.com/pgedeon/openclaw-project-webos).
+Tagged as `v2.2.0` on [github.com/pgedeon/openclaw-project-webos](https://github.com/pgedeon/openclaw-project-webos).
 
 - Release notes: [RELEASE.md](RELEASE.md)
 - Change history: [CHANGELOG.md](CHANGELOG.md)
