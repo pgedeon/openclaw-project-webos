@@ -95,6 +95,21 @@ test.describe('Desktop shell smoke (DB-free)', () => {
     await expect(page.locator('.win11-taskbar [data-action="start"]')).toBeVisible({ timeout: 20000 });
   });
 
+  // Regression (2026-09-09): the success path never removed the gate overlay —
+  // the desktop booted BEHIND an opaque fullscreen layer, so a VALID token +
+  // Connect appeared to do nothing. Stored-token tests never exercised the
+  // overlay because it is only created by promptForToken.
+  test('typing a valid token into the gate boots the desktop and removes the overlay', async ({ page }) => {
+    test.skip(!AUTH_TOKEN, 'E2E_AUTH_TOKEN not set');
+    await page.goto(`${BASE_URL}/index.html`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    const overlay = page.locator('#auth-bootstrap-overlay');
+    await expect(overlay).toHaveCount(1, { timeout: 15000 });
+    await overlay.locator('#auth-bootstrap-token').fill(AUTH_TOKEN);
+    await overlay.locator('#auth-bootstrap-connect').click();
+    await expect(overlay).toHaveCount(0, { timeout: 20000 });
+    await expect(page.locator('.win11-taskbar [data-action="start"]')).toBeVisible({ timeout: 20000 });
+  });
+
 });
 
 // ─────────────────────────────────────────────────────────────────────

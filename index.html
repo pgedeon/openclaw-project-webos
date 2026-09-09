@@ -105,6 +105,11 @@
             token = await promptForToken(message);
             check = await checkAuth(token);
         }
+        // The gate overlay only removes itself when promptForToken rebuilds it;
+        // on the success path nothing else removes it, and it is an opaque
+        // fullscreen layer that would hide the booted desktop (fixed 2026-09-09:
+        // valid token + Connect appeared to "do nothing").
+        document.getElementById('auth-bootstrap-overlay')?.remove();
         if (token) storeToken(token);
         globalThis.__DASHBOARD_AUTH_TOKEN__ = token;
 
