@@ -299,6 +299,21 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
 > 2026-08-25): top-3 of five scored candidates. `[candidate]` items are
 > proposals, not commitments — CEO picks before any build starts.
 
+- [ ] **[proposal] OpenClaw-native integration — the desktop as part of the
+      OpenClaw web app** (owner request 2026-09-09; brief
+      `docs/briefs/openclaw-native-integration.md`, commit 865b87f): make the
+      desktop a Control UI tab next to Workboard — same gateway token, same
+      origin, reachable at home.3dput.com/openclaw/desktop. Phases: 0 protocol
+      spike (tab-content mechanics + workboard RPC/notify contracts) → 1
+      gateway data layer + read-only Workboard window → 2 desktop-as-tab via
+      an `openclaw-webos` gateway extension (owner-approval note on the card:
+      installs into ~/.openclaw/extensions) → 3 governed write-back via
+      workboard RPC (one registry) → 4 de-dup review (owner checkpoint).
+      STATUS: PROPOSAL — phase cards queue ONLY after the owner marks the
+      brief APPROVED; the bi-hourly review automation carries this same
+      instruction. After Phase 2 lands, the pass's health checks extend to
+      the gateway-tab surface alongside :8120.
+
 - [x] **[candidate] Workflow data normalization migration** — repair the
       `timed_out` CHECK-constraint violation (migration 021) and lift 14/29
       string-only template steps to object steps. Highest leverage debt (review
