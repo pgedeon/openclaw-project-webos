@@ -51,6 +51,7 @@ Looking for something specific? [Search the docs](search) — client-side, power
 - [Design Brief — Mission Control View](briefs/mission-control.md)
 - [Design Brief — Natural-Language Command Bar (NL mode for Ctrl+K)](briefs/nl-command-bar.md)
 - [Design Brief — One-Click Agent Actions (Catalog, Gating Design, Receipts)](briefs/one-click-actions.md)
+- [Brief: OpenClaw-native integration of the WebOS desktop (owner request 2026-09-09)](briefs/openclaw-native-integration.md)
 - [Roadmap Review — 2026-08-24](briefs/roadmap-review-2026-08-24.md)
 - [Roadmap Review 2026-08-24b — Endgame Sequencing](briefs/roadmap-review-2026-08-24b.md)
 - [Roadmap Review 2026-08-25 — Post-2.0 Assessment](briefs/roadmap-review-2026-08-25.md)

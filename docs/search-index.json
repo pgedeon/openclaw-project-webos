@@ -96,6 +96,12 @@
     "excerpt": "Design Brief — One-Click Agent Actions (Catalog, Gating Design, Receipts) Status: Draft for build review · Roadmap: Phase 1 (UPGRADE ROADMAP.md \"One-click agent actions\" — last unchecked Phase 1 inter"
   },
   {
+    "title": "Brief: OpenClaw-native integration of the WebOS desktop (owner request 2026-09-09)",
+    "url": "/openclaw-project-webos/briefs/openclaw-native-integration/",
+    "section": "Design Briefs",
+    "excerpt": "Brief: OpenClaw-native integration of the WebOS desktop (owner request 2026-09-09) Status: PROPOSAL — awaiting owner approval before any card is queued. Author: CEO seat (ZCode), research against Open"
+  },
+  {
     "title": "Roadmap Review — 2026-08-24",
     "url": "/openclaw-project-webos/briefs/roadmap-review-2026-08-24/",
     "section": "Design Briefs",
