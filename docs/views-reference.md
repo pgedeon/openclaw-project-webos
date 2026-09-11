@@ -27,6 +27,7 @@ Views are organized into four categories in the start menu: **Work**, **Operatio
 - [Publish](#publish)
 - [Approvals](#approvals)
 - [Artifacts](#artifacts)
+- [Morning Briefing](#morning-briefing)
 
 ### Operations
 - [Dependencies](#dependencies)
@@ -79,6 +80,12 @@ Owner set/change from the edit form routes through the governed `task.assign` ac
 **Sessions section** (task↔session binding, docs/briefs/task-session-binding.md): task detail lists the gateway sessions bound to the task's workflow runs via `GET /api/tasks/:id/sessions` — one GET per detail render, zero non-GET requests; endpoint failure / 503 / empty list leaves the section absent, silently. Rows carry a liveness glyph + status chip; live runs deep-link to Live Console (`/?view=console&agent=<agentId>&session=<sessionKey>`, auto-attach), everything resolvable deep-links to Session Replay (`/?view=session-replay&agent=<agentId>&session=<sessionId>`); orphaned transcripts (pruned sessions.json entries) render disabled with a "transcript no longer on disk" tooltip and never get a fabricated link. Retry-cycled rows are labeled honestly: "latest attempt shown" (earlier bindings are erased by re-queue per brief R1).
 
 **Conversation tab** (roadmap candidate "Task ↔ session conversation binding"): each resolvable session row gains an inline "Conversation ▸" expand/collapse that embeds a compact read-only chat view of the transcript — assistant text as bubbles, user messages as distinct right-aligned bubbles, tool calls as one-line badges (name + args summary + exitCode tone: green 0 / red non-zero / gray unresolved, mirroring console-view badge styling). Events fetch through the ALREADY-SHIPPED cursor-paginated `GET /api/oc/sessions/:sessionId/events` route (initial cap ~200 events, "load more" continues the line-granular cursor; "⏶ load earlier" reveals items held back by the display cap). Pure event→chat-item mapping lives in lib/task-conversation.js (DB-free tested in tests/test-task-conversation.js). Zero-throw degradation: fetch failure → inline error with Retry + deep-link to full Session Replay; transcript present but chat-less → honest "no events recorded". One conversation open at a time; collapsed state is cached in memory so re-expanding does not refetch.
+
+### Morning Briefing
+
+**Category:** Work · **ID:** `morning-report` · **Default size:** 880×700
+
+Daily morning-briefing reader. Loads the Morning Briefing cron job's runs (`GET /api/cron/jobs/:id/runs`), renders the newest run's summary as safe markdown-style HTML (headings, bold, bullet lists), and shows status / delivery / duration badges plus a history strip for browsing past runs. **Run Now** triggers the job (`POST /api/cron/jobs/:id/run`); Refresh reloads. Degradation: fetch failure renders an inline error — no fabricated content; the job id is fixed to the installed Morning Briefing cron job.
 
 ### Board
 

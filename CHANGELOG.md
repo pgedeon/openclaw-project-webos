@@ -202,6 +202,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Security (SECURITY-AUDIT-2026-08.md F7):** task-server SSE authentication prefers the `Authorization: Bearer` header; `?token=` remains only a documented legacy fallback for `EventSource` clients, and request log lines strip query strings so the token never reaches logs.
 - **Security (SECURITY-AUDIT-2026-08.md F8):** task-server honors the `HOST` environment variable in `listen()` (default `127.0.0.1`, matching the documented default), refuses non-loopback binds when serving without authentication (`REQUIRE_AUTH=false`), reports the real bind address at startup, and `start-server.sh` now uses the same `change-me` placeholder as `.env.example`.
 
+## [Unreleased]
+
+### Added
+- **Morning Briefing window**: desktop window (Work category) that reads the Morning Briefing cron job's runs, renders the latest briefing, exposes run history and delivery state, and can trigger the job on demand ("Run Now").
+
+### Fixed
+- **Notepad file open/save auth**: Notepad now sends the bearer token in fetch headers so the Explorer → Notepad open/save flow works behind dashboard auth.
+
 ## [2.0.0-rc.4] – 2026-03-23
 
 ### Added
