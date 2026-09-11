@@ -26,7 +26,12 @@ async function test(name, fn) {
 function sec(t) { section = t; console.log(`\n${'━'.repeat(60)}\n  ${t}\n${'━'.repeat(60)}`); }
 
 const BASE = 'http://127.0.0.1:3876';
-const envContent = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8');
+const envPath = path.join(__dirname, '..', '.env');
+if (!fs.existsSync(envPath)) {
+  console.log('SKIP: requires repo .env (DASHBOARD_AUTH_TOKEN) + task server on :3876');
+  process.exit(0);
+}
+const envContent = fs.readFileSync(envPath, 'utf8');
 const TOKEN = envContent.match(/DASHBOARD_AUTH_TOKEN=(.+)/)?.[1]?.trim();
 const auth = { 'Authorization': `Bearer ${TOKEN}` };
 const viewsDir = path.join(__dirname, '..', 'src', 'shell', 'native-views');

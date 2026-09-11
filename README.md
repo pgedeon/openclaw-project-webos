@@ -1,6 +1,6 @@
 # OpenClaw Project WebOS
 
-`1.0.0-rc.2`
+`2.2.0`
 
 A Windows 11-style desktop environment for managing OpenClaw agent workflows — served entirely in the browser with vanilla JS, no frameworks, no build step. Each feature is a windowed application launched from the taskbar or start menu.
 
@@ -48,8 +48,8 @@ A Windows 11-style desktop environment for managing OpenClaw agent workflows —
 
 ### Desktop Shell
 - **Windows 11 aesthetic** — frosted glass taskbar, start menu with app grid, draggable/resizable windows
-- **26 windowed apps** — each feature is a self-contained view launched as a desktop window
-- **18 desktop widgets** — always-on data panels (clock, health, task pulse, agent fleet, etc.)
+- **36 windowed apps** — each feature is a self-contained view launched as a desktop window
+- **19 desktop widgets** — always-on data panels (clock, health, task pulse, agent fleet, etc.)
 - **Start menu** — searchable app grid organized by category (Work, Operations, System, Integration)
 - **Taskbar** — live clock, system tray, running app indicators, theme toggle
 - **Offline support** — IndexedDB-backed state management with automatic sync on reconnect
@@ -101,6 +101,10 @@ Lightweight text editor window for viewing and editing files from the Explorer o
 
 ## Documentation Index
 
+> **Read online:** all documentation below is published as a website at **https://pgedeon.github.io/openclaw-project-webos/** (GitHub Pages, deployed automatically from `docs/` on every push to main).
+>
+> **Search the docs:** <https://pgedeon.github.io/openclaw-project-webos/search> — client-side search across every published page.
+
 ### Getting Started
 
 | Document | Description |
@@ -115,8 +119,8 @@ Lightweight text editor window for viewing and editing files from the Explorer o
 | Document | Description |
 |----------|-------------|
 | [User Guide](docs/user-guide.md) | Desktop usage — tasks, board, timeline, agents, audit, cron |
-| [Views Reference](docs/views-reference.md) | All 23 desktop views — features, API calls, UI elements |
-| [Widget Catalog](docs/widget-catalog.md) | All 18 desktop widgets — manifests, sizes, data sources |
+| [Views Reference](docs/views-reference.md) | All 36 desktop views — features, API calls, UI elements |
+| [Widget Catalog](docs/widget-catalog.md) | All 19 desktop widgets — manifests, sizes, data sources |
 | [Admin Guide](docs/admin-guide.md) | Operator guide for administration and monitoring |
 
 ### API Reference
@@ -125,6 +129,7 @@ Lightweight text editor window for viewing and editing files from the Explorer o
 |----------|-------------|
 | [Core API](docs/api.md) | Task CRUD, projects, agents, dependencies |
 | [Complete API Reference](docs/api-reference-complete.md) | All supplementary APIs — services, catalog, org, metrics, diagnostics, governance, filesystem, memory, cron |
+| [Auth Reference](docs/auth-reference.md) | Current bearer-token mode and deferred full-auth policy |
 
 ### Architecture & Internals
 
@@ -152,6 +157,7 @@ Lightweight text editor window for viewing and editing files from the Explorer o
 |----------|-------------|
 | [Scripts Reference](docs/scripts-reference.md) | All operational scripts — health, validation, restart, sync, migration |
 | [Developer Guide](DEVELOPER_GUIDE.md) | Contributing guidelines and architecture notes |
+| [Remote Access](docs/remote-access.md) | Tailnet recipe for off-LAN dashboard access; topology constraints and security notes |
 
 ### Implementation Details
 
@@ -223,8 +229,8 @@ When installed at `~/.openclaw/workspace/dashboard`, the server auto-detects the
 │   │   ├── widgets/                 # Desktop widget system
 │   │   │   ├── widget-registry.mjs  # Widget auto-discovery
 │   │   │   ├── widget-panel.mjs     # Widget panel container
-│   │   │   └── widgets/             # 18 widget implementations
-│   │   └── native-views/            # 23 window view implementations
+│   │   │   └── widgets/             # 19 widget implementations
+│   │   └── native-views/            # 37 window view implementations
 │   │       ├── tasks-view.mjs
 │   │       ├── board-view.mjs
 │   │       ├── agents-view.mjs
@@ -320,19 +326,22 @@ Key variables:
 
 ```bash
 npm install
-npm run validate
+DASHBOARD_AUTH_TOKEN=<token> npm run validate
 ```
+
+The token is required for the API checks (the server enforces bearer auth; the
+validator sends `Authorization: Bearer $DASHBOARD_AUTH_TOKEN` when set).
 
 Point validation at a custom port:
 ```bash
-DASHBOARD_API_BASE=http://localhost:3887 node scripts/dashboard-validation.js
+DASHBOARD_API_BASE=http://localhost:3887 DASHBOARD_AUTH_TOKEN=<token> node scripts/dashboard-validation.js
 ```
 
 ---
 
 ## Release
 
-Tagged as `v1.0.0-rc.2` on [github.com/pgedeon/openclaw-project-webos](https://github.com/pgedeon/openclaw-project-webos).
+Tagged as `v2.2.0` on [github.com/pgedeon/openclaw-project-webos](https://github.com/pgedeon/openclaw-project-webos).
 
 - Release notes: [RELEASE.md](RELEASE.md)
 - Change history: [CHANGELOG.md](CHANGELOG.md)

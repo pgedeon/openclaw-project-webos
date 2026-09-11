@@ -59,11 +59,20 @@ class ValidationRunner {
 
   async request(pathname) {
     const url = new URL(pathname, CONFIG.apiBase);
+    // task-server requires the bearer token on every API route except
+    // /api/health and /api/auth/self — without this header all checks 401.
+    const token = process.env.DASHBOARD_AUTH_TOKEN;
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
     return new Promise((resolve, reject) => {
-      http.get(url, { timeout: 5000 }, (resp) => {
+      http.get(url, { headers, timeout: 5000 }, (resp) => {
         let data = '';
         resp.on('data', chunk => data += chunk);
-        resp.on('end', () => resolve({ status: resp.statusCode, body: data }));
+        resp.on('end', () => {
+          if (resp.statusCode === 401 && !token) {
+            this.warn('API 401 without DASHBOARD_AUTH_TOKEN set — export the token before validating');
+          }
+          resolve({ status: resp.statusCode, body: data });
+        });
         resp.on('error', reject);
       }).on('error', reject);
     });

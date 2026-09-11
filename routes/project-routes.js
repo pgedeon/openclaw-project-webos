@@ -11,11 +11,15 @@ function registerProjectRoutes(router) {
       ctx.sendJSON(res, 503, { error: 'Asana storage not initialized' });
       return true;
     }
-    const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
-    const filters = Object.fromEntries(query);
-    // Pass workspace_id for space-scoped queries (#22)
-    const projects = await ctx.asanaStorage.listProjects(filters);
-    ctx.sendJSON(res, 200, projects);
+    try {
+      const query = new URL(req.url, `http://${req.headers.host}`).searchParams;
+      const filters = Object.fromEntries(query);
+      // Pass workspace_id for space-scoped queries (#22)
+      const projects = await ctx.asanaStorage.listProjects(filters);
+      ctx.sendJSON(res, 200, projects);
+    } catch (err) {
+      ctx.sendJSON(res, 500, { error: err.message });
+    }
     return true;
   });
 

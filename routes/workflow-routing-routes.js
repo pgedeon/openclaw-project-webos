@@ -23,7 +23,10 @@ function registerWorkflowRoutingRoutes(router, deps) {
   // GET /api/workflow-routing — list all routing rules
   router.add('GET', '/api/workflow-routing', async (req, res, ctx) => {
     const pool = ctx.asanaStorage?.pool || getPool();
-    if (!pool) return sendJSON(res, 503, { error: 'DB not available' });
+    if (!pool) {
+      sendJSON(res, 503, { error: 'DB not available' });
+      return true;
+    }
     try {
       const result = await pool.query('SELECT * FROM workflow_agent_routing ORDER BY priority DESC');
       sendJSON(res, 200, { routes: result.rows });
@@ -34,10 +37,16 @@ function registerWorkflowRoutingRoutes(router, deps) {
   // PUT /api/workflow-routing — upsert a routing rule
   router.add('PUT', '/api/workflow-routing', async (req, res, ctx) => {
     const pool = ctx.asanaStorage?.pool || getPool();
-    if (!pool) return sendJSON(res, 503, { error: 'DB not available' });
+    if (!pool) {
+      sendJSON(res, 503, { error: 'DB not available' });
+      return true;
+    }
     try {
       const data = await parseBody(req);
-      if (!data.workflow_type || !data.agent_id) return sendJSON(res, 400, { error: 'workflow_type and agent_id required' });
+      if (!data.workflow_type || !data.agent_id) {
+        sendJSON(res, 400, { error: 'workflow_type and agent_id required' });
+        return true;
+      }
       const result = await pool.query(
         `INSERT INTO workflow_agent_routing (workflow_type, agent_id, priority, max_concurrent, timeout_minutes)
          VALUES ($1, $2, $3, $4, $5)
@@ -53,10 +62,16 @@ function registerWorkflowRoutingRoutes(router, deps) {
   // DELETE /api/workflow-routing/:type — delete a routing rule
   router.add('DELETE', '/api/workflow-routing/:type', async (req, res, ctx, params) => {
     const pool = ctx.asanaStorage?.pool || getPool();
-    if (!pool) return sendJSON(res, 503, { error: 'DB not available' });
+    if (!pool) {
+      sendJSON(res, 503, { error: 'DB not available' });
+      return true;
+    }
     try {
       const result = await pool.query('DELETE FROM workflow_agent_routing WHERE workflow_type = $1 RETURNING *', [params.type]);
-      if (result.rows.length === 0) return sendJSON(res, 404, { error: 'Route not found' });
+      if (result.rows.length === 0) {
+        sendJSON(res, 404, { error: 'Route not found' });
+        return true;
+      }
       sendJSON(res, 200, { deleted: true });
     } catch (err) { sendJSON(res, 500, { error: err.message }); }
     return true;

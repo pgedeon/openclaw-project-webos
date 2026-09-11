@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Shell Architecture Reference
 
 The OpenClaw WebOS desktop shell is a Win11-inspired single-page application built from modular ES modules. This document covers the internal architecture of the shell layer — the window manager, taskbar, start menu, sync system, and view infrastructure.
@@ -18,7 +22,7 @@ The OpenClaw WebOS desktop shell is a Win11-inspired single-page application bui
 │  ├── ViewAdapter (view-to-window bridge)                 │
 │  ├── ViewState (per-view reactive state)                 │
 │  ├── APIClient (HTTP abstraction)                        │
-│  └── RealtimeSync (20s polling, data distribution)       │
+│  └── RealtimeSync (20s polling / opt-in live SSE)        │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -31,6 +35,20 @@ The OpenClaw WebOS desktop shell is a Win11-inspired single-page application bui
 5. Initializes `WidgetRegistry` and `WidgetPanel`
 6. Calls `setShellContext()` to share instances across modules
 7. Performs first data sync and renders the welcome widget
+
+### Lazy View Loading
+
+View modules are **not** statically imported by the shell. `app-registry.mjs`
+stores each app's module as a `viewModule` string path (metadata stays
+static/synchronous); `window-manager.mjs` resolves it with a dynamic
+`import(entry.app.viewModule)` the first time that window mounts. Result:
+the boot graph is ~20 local ES modules regardless of how many views are
+registered, and a view's code is only fetched when its window opens.
+
+Large-list rendering inside views uses the shared virtualization math in
+`src/shell/list-window.mjs`: a fixed-row rail window for session replay,
+and capped-render + "load more" for tasks/board where row heights vary
+(see Performance Notes in docs/development.md).
 
 ---
 
@@ -144,6 +162,17 @@ Unified real-time data synchronization module. Fetches all key data sources in p
 |-----------|---------|-------------|
 | `interval` | 20000ms | Polling interval |
 | Debounce | 2000ms | Minimum time between refreshes |
+| Live mode | off | Opt-in via localStorage flag `openclaw.liveSync=1` |
+
+#### Live Mode (opt-in)
+
+When the operator sets `openclaw.liveSync=1` in localStorage, the sync module opens the
+bridge-fed SSE stream (`GET /api/events/stream`) and reacts to pushed events
+(`task-updated`, `agent-status-changed`, `run-updated` → coalesced refresh via the existing
+debounce; `resync` → one forced refresh). While the stream is connected, 20s polling is
+halted. Any SSE error/close restarts polling immediately; reconnect attempts are capped at 5
+before giving up and staying on polling permanently. Default OFF — zero behavior change
+unless enabled, and every failure path lands back on polling with no thrown errors.
 
 #### Data Sources
 
@@ -181,7 +210,7 @@ sync.getErrors(); // → FetchErrors
 #### Data Flow
 
 ```
-Every 20s:
+Every 20s (or push-fed when live mode is enabled):
   Promise.all([
     fetch /api/stats,
     fetch /api/health-status,
@@ -333,7 +362,7 @@ Browser
   │     │
   │     ├── APIClient ──HTTP──→ task-server:3876
   │     │
-  │     ├── RealtimeSync (20s poll)
+  │     ├── RealtimeSync (20s poll / live SSE fallback)
   │     │     └──→ 7 endpoints in parallel
   │     │     └──→ Cache + Notify subscribers
   │     │
@@ -359,9 +388,18 @@ Browser
 
 Themes are stored in localStorage (`openclaw.win11.theme.v1`). The shell detects the system preference on first load and defaults to `dark`. The taskbar provides a toggle button (moon/sun icon) that persists the choice.
 
-CSS classes applied to the root element:
-- `.theme-dark` — Dark theme (default)
-- `.theme-light` — Light theme
+Attribute applied to the root element:
+- `data-theme="dark"` — Dark theme (default)
+- `data-theme="light"` — Light theme
+
+### Accent packs (Phase 3)
+
+Accent packs are CSS custom-property overrides layered ON TOP of the base theme, so every accent is valid in both dark and light mode (`accent × dark` and `accent × light`).
+
+- Definitions: `src/styles/win11-accents.css` overrides only `--win11-accent`, `--win11-accent-hover`, `--win11-accent-light`, and `--win11-on-accent` via `[data-accent="…"]` blocks; dark-mode variants use the higher-specificity compound selector `[data-theme="dark"][data-accent="…"]`.
+- Catalog + persistence helpers: `src/shell/accent-packs.mjs` exports `ACCENT_PACKS` (default blue, teal, violet, amber, rose), `resolveAccent(storedValue)` (zero-throw: any invalid value resolves to the default pack), plus injectable-storage `readStoredAccent()` / `storeAccent()`.
+- Application: `shell-main.mjs` applies the persisted accent at module evaluation (before any shell render); `index.html` additionally forwards the raw stored id to `<html data-accent>` in a tiny pre-paint inline script. Unknown ids are inert by design — no matching CSS block means base theme variables remain, which is what makes invalid stored preferences fall back silently.
+- UI: the taskbar tray palette icon opens a swatch popover (`win11-taskbar__accent-picker`); selection persists to localStorage key `openclaw.accent`.
 
 ---
 
@@ -370,6 +408,7 @@ CSS classes applied to the root element:
 | Key | Module | Purpose |
 |-----|--------|---------|
 | `openclaw.win11.theme.v1` | shell-main | Theme preference |
+| `openclaw.accent` | accent-packs.mjs | Accent pack preference |
 | `openclaw.win11.windows.v1` | WindowManager | Window positions/sizes |
 | `openclaw.dashboard.widgets.visible` | WidgetPanel | Widget visibility state |
 | `projectDashboardState` | StateManager | Legacy dashboard state (fallback) |

@@ -1,9 +1,13 @@
+---
+layout: default
+---
+
 # Project Dashboard API Reference
 
 Comprehensive documentation for the REST API provided by `task-server.js`.
 
 **Base URL:** `http://localhost:3876` (adjust `PORT` as needed)  
-**Authentication:** None by default; place behind a reverse proxy or VPN in production.  
+**Authentication:** Bearer token when `DASHBOARD_AUTH_TOKEN` is set; `/api/health` and `/api/auth/self` are public. See [Auth Reference](auth-reference.md).  
 **Content‑Type:** JSON for request/response bodies unless noted.  
 **Pagination:** `?page=` and `?limit=` parameters where applicable (defaults: page=1, limit=50).
 
@@ -88,6 +92,33 @@ Returns basic service health.
 }
 ```
 
+### `GET /api/auth/self`
+
+Returns the current auth mode and single-operator policy. This endpoint is public so the shell can detect whether its injected bearer token is valid.
+
+**Response:**
+
+```json
+{
+  "authenticated": true,
+  "mode": "token",
+  "actor": "dashboard-operator",
+  "role": "operator",
+  "tokenRequired": true,
+  "capabilities": {
+    "bearerToken": true,
+    "singleOperator": true,
+    "sessions": false,
+    "rbac": false,
+    "multiOperator": false
+  },
+  "deferred": {
+    "fullAuth": true,
+    "until": "multi-operator requirement exists"
+  }
+}
+```
+
 ---
 
 ## Projects
@@ -98,6 +129,7 @@ List all projects.
 
 **Query:**
 - `status` (optional): filter by `active|paused|archived`
+- `workspace_id` (optional): limit results to a workspace/space
 - `tags` (optional): comma-separated tags to match
 - `search` (optional): case-insensitive name/description filter
 - `include_meta=true` (optional): include task counts and related metadata
@@ -151,15 +183,14 @@ List tasks with optional project filter.
 
 **Query:**
 - `project_id` (optional): limit to a project
-- `status` (optional): comma‑separated statuses
-- `owner` (optional): filter by agent name
-- `due_before`, `due_after` (optional): ISO8601 dates
-- `includeGraph` (optional): `true` to include subtasks and dependencies recursively
+- `include_archived=true` (optional): include archived tasks
+- `include_deleted=true` (optional): include soft-deleted tasks
+- `include_child_projects=true` (optional): include child project tasks when `project_id` is set
 - `depth` (optional): integer limit for recursion depth (default unlimited)
-- `archived` (optional): `true` to include archived tasks; default `false` (active only)
+- `workspace_id` (optional): limit results to a workspace/space
 - `updated_since` (optional): ISO8601 timestamp; return only tasks with `updated_at` greater than this value. Used for incremental sync.
 
-**Response:** array of Task objects. If `includeGraph` is true, each task may have `subtasks` and `dependencies` arrays embedded.
+**Response:** array of Task objects.
 
 ### `GET /api/tasks/:id`
 
@@ -167,6 +198,8 @@ Get a single task.
 
 **Query:**
 - `includeGraph` (optional): `true` to embed subtasks and dependencies.
+- `include_archived=true` (optional): allow archived tasks to be returned.
+- `include_deleted=true` (optional): allow soft-deleted tasks to be returned.
 
 **Response:** Task object.
 
@@ -174,7 +207,7 @@ Get a single task.
 
 Create a task.
 
-**Body:** Partial Task (omit `id`, `created_at`, `updated_at`, `completed_at`).
+**Body:** Partial Task (omit `id`, `created_at`, `updated_at`, `completed_at`). `project_id` and `title` are required for the storage-backed API.
 
 **Response:** `201 Created` with full Task (including generated UUID).
 
@@ -248,7 +281,7 @@ Add or remove dependencies.
 }
 ```
 
-**Response:** `200 OK` with updated `dependency_ids` array.
+**Response:** `200 OK` with `{ "dependencies": ["uuid"] }`.
 
 ### `POST /api/tasks/:id/subtasks`
 
@@ -258,11 +291,17 @@ Link an existing task as a subtask.
 
 ```json
 {
-  "subtask_id": "uuid"
+  "task_id": "uuid"
 }
 ```
 
 **Response:** `200 OK` with updated Task.
+
+### `GET /api/tasks/:id/history`
+
+Return the latest audit history for a task.
+
+**Response:** `200 OK` with `{ "task_id": "uuid", "history": [ /* audit records */ ] }`.
 
 ---
 
@@ -493,22 +532,28 @@ Increment the retry count for a task and reset its status to `ready`, clearing a
 
 ### `GET /api/cron/jobs`
 
-List all cron jobs defined in the `crontab/` directory.
+List all cron jobs from the OpenClaw gateway scheduler.
 
 **Response:**
 
 ```json
-[
-  {
-    "id": "string (filename without .cron)",
-    "name": "string (optional job name from file comment)",
-    "schedule": "string (cron expression or description)",
-    "enabled": true,
-    "lastRun": "ISO8601|null",
-    "nextRun": "ISO8601|null",
-    "lastExitCode": number|null
-  }
-]
+{
+  "jobs": [
+    {
+      "id": "string",
+      "name": "string",
+      "description": "string",
+      "schedule": "string",
+      "enabled": true,
+      "status": "success|failed|unknown",
+      "lastRun": "ISO8601|null",
+      "nextRun": "ISO8601|null",
+      "agentId": "string|null",
+      "model": "string|null",
+      "_raw": {}
+    }
+  ]
+}
 ```
 
 ### `GET /api/cron/jobs/:id/runs`
@@ -521,31 +566,75 @@ Get execution history for a specific cron job.
 **Response:**
 
 ```json
-[
-  {
-    "timestamp": "ISO8601",
-    "exitCode": number,
-    "durationMs": number,
-    "output": "string (last 4KB of stdout/stderr)"
-  }
-]
+{
+  "runs": [
+    {
+      "id": "string",
+      "status": "success|failed|running",
+      "startedAt": "ISO8601"
+    }
+  ]
+}
 ```
 
 ### `POST /api/cron/jobs/:id/run`
 
 Manually trigger a cron job execution now (bypasses schedule).
 
-**Response:** `200 OK` with:
+**Response:** `202 Accepted` with:
 
 ```json
 {
-  "triggered": true,
-  "jobId": "string",
-  "timestamp": "ISO8601"
+  "success": true,
+  "message": "Job triggered",
+  "data": {}
 }
 ```
 
-**Error:** `404` if job not found; `500` if job execution fails.
+**Error:** `500` if the OpenClaw CLI dependency fails or job execution cannot start.
+
+### `POST /api/cron/jobs/:id/enable`
+
+Enable a disabled cron job through the OpenClaw CLI.
+
+**Response:** `200 OK` with `{ "success": true, "data": {} }`.
+
+### `POST /api/cron/jobs/:id/disable`
+
+Disable an enabled cron job through the OpenClaw CLI.
+
+**Response:** `200 OK` with `{ "success": true, "data": {} }`.
+
+### `POST /api/cron/jobs`
+
+Create a legacy `.cron` file in `${WORKSPACE_ROOT}/.cron` for backward compatibility.
+
+**Body:**
+
+```json
+{
+  "id": "string",
+  "description": "string optional",
+  "minute": "*",
+  "hour": "*",
+  "dom": "*",
+  "month": "*",
+  "dow": "*",
+  "command": "string"
+}
+```
+
+**Response:** `201 Created` with `{ "success": true, "id": "string" }`.
+
+**Error:** `400` when `id` or `command` is missing; `500` if the file cannot be written.
+
+### `DELETE /api/cron/jobs/:id`
+
+Delete a legacy `.cron` file from `${WORKSPACE_ROOT}/.cron`.
+
+**Response:** `200 OK` with `{ "success": true }`.
+
+**Error:** `404` if no matching file exists; `500` if deletion fails.
 
 ---
 
@@ -573,24 +662,29 @@ These are still supported but will be deprecated in favor of the Asana‑style A
 
 ### `GET /api/tasks`
 
-Reads `tasks.md` (legacy format). Returns array of simple tasks:
+Reads `tasks.md` (legacy markdown format).
 
 ```json
-[
-  {
-    "id": "number",
-    "text": "string",
-    "category": "string",
-    "completed": boolean,
-    "createdAt": "ISO",
-    "updatedAt": "ISO|null"
-  }
-]
+{
+  "content": "- [ ] legacy task",
+  "path": "/path/to/tasks.md",
+  "format": "markdown"
+}
 ```
 
 ### `POST /api/tasks`
 
-Writes to `tasks.md`. Body is an array of the above simple tasks. Not recommended for new integrations.
+Writes markdown content to `tasks.md` when storage-backed task creation is unavailable. Not recommended for new integrations.
+
+**Body:**
+
+```json
+{
+  "content": "- [ ] legacy task"
+}
+```
+
+**Response:** `200 OK` with `{ "success": true, "path": "/path/to/tasks.md" }`.
 
 ---
 

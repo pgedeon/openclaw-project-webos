@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # OpenClaw WebOS Improvement Plan — Progress Tracker
 
 **Updated:** 2026-04-28
@@ -194,7 +198,7 @@ This plan was refined by Codex against the actual WebOS codebase. Each item has 
 
 ### Multi-User Auth (P3)
 - [x] Token-mode hardening: document auth env vars, add `/api/auth/self`
-- [ ] Full auth deferred until multi-operator requirement exists
+- [x] Full auth deferred until multi-operator requirement exists
 - **Complexity:** L for full auth | S for token hardening
 
 ### Desktop App Packaging (P3)

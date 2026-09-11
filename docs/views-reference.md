@@ -1,8 +1,14 @@
+---
+layout: default
+---
+
 # Views Reference — All Desktop Windows
 
-The OpenClaw Project WebOS exposes **23 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
+The OpenClaw Project WebOS exposes **36 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
 
-Views are organized into three categories in the start menu: **Work**, **Operations**, and **Admin**.
+Views are organized into four categories in the start menu: **Work**, **Operations**, **System**, and **Admin**.
+
+> **Shell chrome, not windows:** the Recent-actions tray (⚡ in the taskbar, one-click actions slice 2) is a taskbar popover sibling of the notification center — deliberately NOT a windowed app, so the app count above stays frozen. The same goes for the command palette (`Ctrl+K`): its Search mode navigates, and its Ask mode (press `Tab`) parses plain-language intents into governed one-click actions with a mandatory interpretation card before anything executes — see [user-guide.md — Ask Bar](user-guide.md#ask-bar-nl-commands). See also [user-guide.md — One-Click Actions](user-guide.md#one-click-actions--confirmations). The taskbar's accent picker (palette icon in the tray) is the same kind of shell chrome: a small swatch popover for the five built-in accent packs layered over dark/light — see [user-guide.md — Appearance](user-guide.md#appearance-themes--accent-packs).
 
 > **Already documented in detail** in [user-guide.md](user-guide.md): Tasks, Board, Timeline, Agent, Audit, and Cron views. These are briefly cross-referenced below but not re-documented.
 
@@ -15,6 +21,8 @@ Views are organized into three categories in the start menu: **Work**, **Operati
 - [Board](#board) ✓ (see user-guide.md)
 - [Timeline](#timeline) ✓ (see user-guide.md)
 - [Agents](#agents) ✓ (see user-guide.md)
+- [Sessions](#sessions)
+- [Session Replay](#session-replay)
 - [Requests](#requests)
 - [Publish](#publish)
 - [Approvals](#approvals)
@@ -26,10 +34,20 @@ Views are organized into three categories in the start menu: **Work**, **Operati
 - [Metrics](#metrics)
 - [Runbooks](#runbooks)
 - [Memory](#memory)
+- [Memory Browser](#memory-browser)
 - [Handoffs](#handoffs)
+- [History](#history)
 - [Audit](#audit) ✓ (see user-guide.md)
 - [Cron](#cron) ✓ (see user-guide.md)
 - [Diagnostics](#diagnostics)
+- [Mission Control](#mission-control)
+- [Budgets](#budgets)
+
+### System
+- [Spaces](#spaces)
+- [Route Catalog](#route-catalog)
+- [Workflow Routing](#workflow-routing)
+- [Docs Drift](#docs-drift)
 
 ### Admin
 - [Departments](#departments)
@@ -38,6 +56,8 @@ Views are organized into three categories in the start menu: **Work**, **Operati
 - [Skills & Tools](#skills--tools)
 - [Workflows](#workflows)
 - [Operations](#operations)
+- [Bing Webmaster](#bing-webmaster)
+- [Settings](#settings)
 
 ### Internal
 - [Agent Queue](#agent-queue)
@@ -53,6 +73,12 @@ Views are organized into three categories in the start menu: **Work**, **Operati
 **Category:** Work · **ID:** `tasks` · **Default size:** 1080×720
 
 The primary task list view. Fully documented in the [User Guide — List View](user-guide.md#list-view-default).
+
+Owner set/change from the edit form routes through the governed `task.assign` action (`POST /api/actions/execute`, LOW severity → fires immediately with a receipt); unassigning stays on the raw PATCH. See [user-guide.md — One-Click Actions](user-guide.md#one-click-actions--confirmations).
+
+**Sessions section** (task↔session binding, docs/briefs/task-session-binding.md): task detail lists the gateway sessions bound to the task's workflow runs via `GET /api/tasks/:id/sessions` — one GET per detail render, zero non-GET requests; endpoint failure / 503 / empty list leaves the section absent, silently. Rows carry a liveness glyph + status chip; live runs deep-link to Live Console (`/?view=console&agent=<agentId>&session=<sessionKey>`, auto-attach), everything resolvable deep-links to Session Replay (`/?view=session-replay&agent=<agentId>&session=<sessionId>`); orphaned transcripts (pruned sessions.json entries) render disabled with a "transcript no longer on disk" tooltip and never get a fabricated link. Retry-cycled rows are labeled honestly: "latest attempt shown" (earlier bindings are erased by re-queue per brief R1).
+
+**Conversation tab** (roadmap candidate "Task ↔ session conversation binding"): each resolvable session row gains an inline "Conversation ▸" expand/collapse that embeds a compact read-only chat view of the transcript — assistant text as bubbles, user messages as distinct right-aligned bubbles, tool calls as one-line badges (name + args summary + exitCode tone: green 0 / red non-zero / gray unresolved, mirroring console-view badge styling). Events fetch through the ALREADY-SHIPPED cursor-paginated `GET /api/oc/sessions/:sessionId/events` route (initial cap ~200 events, "load more" continues the line-granular cursor; "⏶ load earlier" reveals items held back by the display cap). Pure event→chat-item mapping lives in lib/task-conversation.js (DB-free tested in tests/test-task-conversation.js). Zero-throw degradation: fetch failure → inline error with Retry + deep-link to full Session Replay; transcript present but chat-less → honest "no events recorded". One conversation open at a time; collapsed state is cached in memory so re-expanding does not refetch.
 
 ### Board
 
@@ -118,16 +144,19 @@ Approval management view for workflow gates and quality checkpoints.
 **Features:**
 - **Pending approvals queue** — lists all workflow runs awaiting approval
 - **Approval detail panel** — shows run details, input payload, and context for each approval
-- **Approve/Reject actions** — operators can approve or reject with optional comments
-- **Governance-aware** — only agents with `approve`/`reject` capabilities (per governance rules) see action buttons
+- **Approve/Reject actions** — routed through the governed `approval.decide` action (one-click actions slice 2): a typed preview modal shows decision + note + rollback hint before anything fires; outcome toasts and receipts land in the Recent-actions tray
+- **Delete relabeled (R2)** — the button that DELETEs a run is labeled "Delete" everywhere (it was previously mislabeled "Cancel", colliding with the distinct `run.cancel` status transition)
+- **Governance-aware** — only agents with `approve`/`reject` capabilities (per governance rules) see action buttons; denials surface as typed `rejected_governance` receipts
 - **Escalation** — escalate approvals to higher-authority agents
 - **System scan follow-up** — integration with `GET /api/system-scan/followup` for improvement suggestion approvals
 - **Run binding** — shows linked workflow run ID and gateway session for each approval
 
 **API endpoints used:**
 - `GET /api/approvals/pending`
+- `POST /api/actions/execute` (kind `approval.decide` → existing approve/reject logic in-process)
 - `POST /api/workflow-runs/:id/approve`
 - `POST /api/workflow-runs/:id/reject`
+- `DELETE /api/workflow-runs/:id` (the "Delete" button)
 - `GET /api/system-scan/followup`
 
 ---
@@ -259,6 +288,45 @@ Memory system browser for viewing and editing OpenClaw workspace memory files.
 
 ---
 
+### Memory Browser
+
+**Category:** Operations · **ID:** `memory-browser` · **Default size:** 1120×740
+
+Memory Browser 2.0 — the read/analyze companion to the Memory view: a chronological
+timeline over memory entries with cross-agent link chips and the existing semantic
+search kept prominent. Registered beside (not replacing) the v1 Memory view, which
+keeps the write surface (file editing, facts CRUD, reindex/promote).
+
+**Features:**
+- **Timeline mode** — memory files are parsed into dated entries client-side
+  (headings and dated bullets become blocks; daily files date from their name,
+  undated files from their modified time) and laid out newest-first
+- **Agent + date-range filters** — filter the timeline by referenced agent and
+  inclusive from/to dates; undated entries are excluded once a range is set
+  (honest omission beats wrong placement)
+- **Cross-agent links** — an entry references another agent when it @mentions a
+  name, names a roster agent on a word boundary, or cites a shared
+  run/task/session/wf identifier; rendered as chips on rows and in the detail pane,
+  clicking one filters the timeline to that agent
+- **Semantic search** — the existing `GET /api/memory/search` stays primary in the
+  header; results render in a Search results tab with relevance scores
+- **Detail pane** — click an entry for full content plus an "Open full file" reader;
+  editing remains in the v1 Memory view
+- **Virtualized rail** — fixed-row virtualization reused from Session Replay:
+  DOM stays ~50 rows regardless of entry count; content parsing is capped at the
+  newest 150 files with an honest amber banner when hit
+- **Zero-throw degradation** — memory API unreachable → named unavailable state
+  with retry; empty directory → empty state; partial content-fetch failures →
+  amber banner while showing what loaded
+
+**API endpoints used:**
+- `GET /api/memory/list`
+- `GET /api/memory/file/:name`
+- `GET /api/memory/search`
+- `GET /api/agents`
+
+---
+
 ### Handoffs
 
 **Category:** Operations · **ID:** `handoffs` · **Default size:** 1040×700
@@ -289,8 +357,6 @@ Full audit trail. Documented in the [User Guide — Audit View](user-guide.md#au
 
 Cron job management. Documented in the [User Guide — Cron View](user-guide.md#cron-view).
 
-### Diagnostics
-
 ### History
 
 **File:** `src/shell/native-views/history-view.mjs`
@@ -303,7 +369,9 @@ Two-pane history/diff UI for browsing audit log entries and state snapshots.
 - Filter by actor, action type
 - Per-task history drilling
 - Snapshot preview and revert
-- API: `GET /api/history`, `GET /api/snapshots/:type/:id`
+- API: `GET /api/history`, `GET /api/state-snapshots` (Time Travel listing alias — bare `GET /api/snapshots` serves the snapshot/restore artifact registry), `GET /api/snapshots/:type/:id`
+
+---
 
 ### Spaces
 
@@ -319,6 +387,58 @@ Multi-workspace management UI. Create, edit, duplicate, and delete workspaces.
 - Taskbar space switcher integration
 - API: `GET/POST/PUT/DELETE /api/spaces`
 
+### Route Catalog
+
+**Category:** System · **ID:** `route-catalog` · **Default size:** 1080×720
+
+Operator-facing API inventory generated from registered task-server routes.
+
+**Features:**
+- **Route list** — displays registered route method/path pairs from `GET /api/routes`
+- **Search and filtering** — narrow routes by method, path, or API area
+- **Coverage hints** — helps compare implemented routes with API documentation
+
+**API endpoints used:**
+- `GET /api/routes`
+
+---
+
+### Workflow Routing
+
+**Category:** System · **ID:** `workflow-routing` · **Default size:** 1120×720
+
+Administration view for workflow-to-agent routing policy.
+
+**Features:**
+- **Routing table** — lists workflow routing rules and target agents
+- **Rule editing** — update routing priority, agent assignment, and activation status
+- **Operational visibility** — inspect routing metadata used by workflow dispatch
+
+**API endpoints used:**
+- `GET /api/workflow-routing`
+- `PUT /api/workflow-routing`
+- `DELETE /api/workflow-routing/:workflow_type`
+
+---
+
+### Docs Drift
+
+**Category:** System · **ID:** `docs-drift` · **Default size:** 1080×720
+
+Documentation drift monitor for route, view, widget, and schema coverage checks.
+
+**Features:**
+- **Drift summary** — shows current docs drift status and recent check output
+- **Route coverage view** — highlights routes that may need API reference entries
+- **Registry coverage view** — compares app and widget registries against docs
+
+**API endpoints used:**
+- `GET /api/routes`
+- `GET /api/stats`
+
+---
+
+### Diagnostics
 
 **Category:** Operations · **ID:** `diagnostics` · **Default size:** 1080×720
 
@@ -342,6 +462,60 @@ System Operations Center for monitoring, diagnosing, and repairing failing compo
 - `GET /api/diagnostics/jobs/:id/logs`
 - `POST /api/diagnostics/jobs/:id/repair`
 - `POST /api/diagnostics/jobs/:id/silence`
+
+---
+
+### Mission Control
+
+**Category:** Operations · **ID:** `mission-control` · **Default size:** 1180×780
+
+Read-only command-center aggregation — one window answering "is anything broken, blocked, or burning money?" in under five seconds. Per the design brief (`docs/briefs/mission-control.md`).
+
+**Features:**
+- **Fleet status panel** — overall/gateway/database health, agent counts with active/idle/offline breakdown, queue depth (30 s poll)
+- **Blocked / stale runs panel** — running/blocked/failed counts plus live run ages with staleness warning at 15 min (20 s poll, aligned with realtime-sync)
+- **Cron health panel** — enabled/failing job counts, next scheduled job, consecutive-failure detection via lazy per-job run lookups (max 3 per sweep), file-based diagnostics health summary (60 s poll)
+- **Cost panel** — today's spend, 7-day total and daily average, top run by cost, spike badge when today exceeds 2× the trailing mean (120 s poll); budget bars (budget-ledger slice 3) render under the today/7d block when GET /api/budgets returns active budgets — per-budget track+fill colored green below 75% of cap, amber above it, red at/over cap, with name, action badge (pause_new_runs/hard_stop), spend-vs-cap line and period key; budgets-absent or unavailable payloads render no section and a budgets fetch failure never blanks the cost rows (degraded independently via Promise.allSettled); token-capped budgets still render when cost history is empty
+- **Anomaly flags panel** — client-side heuristics over polled data, max 6 flag types: stale run, zero-token loop, crash-looping cron, cost burn spike, idle-agent-with-queued-task, budget breach; recomputed on every runs poll
+- **Thresholds** — anomaly heuristics are named exported constants in `src/shell/native-views/mission-control-view.mjs`, each with a justification comment at its definition: `STALE_RUN_MINUTES = 15` (stale-run flag), `ZERO_TOKEN_MINUTES = 10` (zero-token loop), `CRASH_LOOP_CONSECUTIVE_FAILURES = 2` (crash-loop flag, also gates the diagnostics classification path), `COST_SPIKE_MULTIPLIER = 2` (spike badge/flag, strictly greater-than — exactly 2× is not a spike), `COST_SPIKE_MIN_HISTORY_DAYS = 3` (minimum trailing history before spike evaluation), `BUDGET_WARN_FRACTION = 0.75` (budget bars turn amber at >75% of cap — bar color only, never a flag), `BUDGET_BREACH_FRACTION = 1` (bar red AND the `budget_breach` error flag fires at ≥100% of cap — exactly-at-cap IS a breach, matching the >= boundary in lib/budget-eval.js), `MAX_ANOMALY_FLAGS = 25` (render cap). Boundary behavior is pinned by fixtures in `tests/test-cost-routes.js`; retuning a value requires updating this note in the same commit
+- **Quick links panel** — static grid opening Health, Diagnostics, Cron, Workflows, Agents, Sessions, Approvals, and Audit via shell navigation
+- **Independent degradation** — every panel has its own load/render/error path with three visually distinct states (loading pulses, empty is muted italic, error is red-tinted); DB-backed panels show named "unavailable" states in json_snapshot mode while CLI-backed panels stay fully populated; a poll failure after last-good data keeps the data and flags the panel stale instead of blanking; the cost panel distinguishes "No cost data recorded yet" (endpoint healthy, migration-022 history not accumulated) from "Cost unavailable — no database"; no editing actions (read-only guarantee, GET-only polling)
+
+**API endpoints used:**
+- `GET /api/health-status`
+- `GET /api/openclaw/agents`
+- `GET /api/agents/status` (Postgres only)
+- `GET /api/tasks?status=queued` (Postgres only)
+- `GET /api/workflow-runs` (Postgres only)
+- `GET /api/workflow-runs/stuck` (Postgres only)
+- `GET /api/blockers/summary` (Postgres only)
+- `GET /api/cron/jobs`
+- `GET /api/cron/jobs/:id/runs`
+- `GET /api/diagnostics/summary`
+- `GET /api/diagnostics/failures`
+- `GET /api/costs/summary`
+
+---
+### Budgets
+
+**Category:** Operations · **ID:** `budgets` · **Default size:** 1000×700
+
+Management surface for the budget ledger (budget-ledger brief §6 slice 4, roadmap review #3 candidate 3) — the write half that Mission Control deliberately lacks. Operators define, tune, and retire spending rules; Mission Control keeps rendering the read-only bars.
+
+**Features:**
+- **Budget list** — every defined budget (active and inactive) as a card: name, active badge, derived status badge (`warned`/`breached` from GET /api/budgets), scope line (fleet budgets render "all agents"; project scope is honestly labeled "workflow type" per brief R5), period + current `period_key`, spend-vs-cap bar reusing Mission Control's exact color semantics (green below 75% of cap, amber strictly above it, red at/over cap — exactly-at-cap IS a breach), run count, and the `action_on_exceed` badge (`pause_new_runs`/`hard_stop`; `warn` stays unbadged like MC)
+- **Create form** — name, scope select, scope_id free-text input with an agent-name datalist (best-effort from GET /api/openclaw/agents; any failure leaves plain text entry working — fleet budgets disable the field), period select, cap value + USD/tokens unit toggle, breach-action select. Validation mirrors routes/budget-routes.js `validateCreatePayload()` client-side via the exported pure helper `validateBudgetForm()` (name required, enum membership, non-fleet ⇒ scope_id, exactly-one-cap XOR surfaced through the unit toggle, usd finite > 0 / tokens positive integer); API error `details` arrays render inline verbatim on server-side rejection
+- **Edit form** — caps (unit switch replaces the sibling cap server-side), name, and breach action via PATCH; scope/scope_id/period are shown disabled because they key the active-budget unique index and are immutable after creation
+- **Deactivate / activate** — soft toggle via PATCH `{active}` with a confirm dialog on deactivate (removes a live guardrail); history and ledger rows are preserved, matching the no-DELETE API contract. Pause state stays derived per brief §2.4 — recovery is rollover, cap-raise, or deactivate, never an un-pause endpoint
+- **Ledger drawer** — per-budget expandable section fetching GET /api/budgets/:id/ledger: current window start plus the append-only enforcement events (timestamped, kind-badged warned/paused/hard_stopped/recovered, period key + detail JSON preview); cached per open-drawer until the next mutation or manual refresh
+- **Zero-throw degradation** — first load against `{available:false}` renders the named "Budgets unavailable" panel state with the reason (json_snapshot mode has no database); poll failures after last-good data keep the list and flag it stale instead of blanking; form/API failures render inline messages, never exceptions. A 60 s background poll skips itself while the create/edit form is open so in-progress input is never clobbered
+
+**API endpoints used:**
+- `GET /api/budgets`
+- `POST /api/budgets`
+- `PATCH /api/budgets/:id`
+- `GET /api/budgets/:id/ledger`
+- `GET /api/openclaw/agents` (scope_id datalist, optional)
 
 ---
 
@@ -447,7 +621,8 @@ Workflow engine management and monitoring.
 - **Workflow runs list** — displays all workflow runs with status, type, owner, and timestamps
 - **Tabbed navigation** — switch between active, completed, failed, and all runs
 - **Run detail panel** — expandable panel showing run input, output, steps, and agent routing
-- **Action buttons** — start, pause, resume, cancel, and retry workflow runs
+- **Run row actions (one-click actions slice 2)** — non-terminal rows expose ⛔ Cancel behind hold-to-confirm (HIGH severity gate, keyboard parity via held Enter); failed rows expose ↻ Re-dispatch behind a typed preview modal (resets to `queued`, dispatcher picks it up); both fire through `POST /api/actions/execute` and record receipts
+- **Graph toggle (visual editor Stage 1, read-only)** — the trigger panel gains a Graph button rendering the template's step chain as a vertical SVG (nodes = steps with type icon + display name + required dot; edges = connectors). Nodes colorize from the latest run's `workflow_steps` rows (green completed / blue in-progress / red failed / gray pending / unknown status strings shown verbatim, e.g. `timed_out`); without runs nodes stay neutral. Click a node for a detail card (config summary; run mode adds status, timestamps, error message, truncated output preview). Render caps at 32 steps with an honest truncation banner; layout comes from the pure `layoutLayered()` helper in `lib/workflow-graph-layout.js` (longest-path layering — linear chains degenerate to a single column; cyclic `depends_on` input throws and renders a named error state). Read-only invariant: nothing in the graph mutates workflow state — the only POST is fire-and-forget earn-use telemetry (`POST /api/workflow-graph/events`: one `open` event per view-session on first render plus an explicit 👍/👎 feedback chip feeding the Stage-2 GO/NO-GO metric)
 - **Step timeline** — visual step progression for active runs
 - **Template reference** — link to workflow template definition
 - **Claim integration** — shows claim status and agent session binding
@@ -457,10 +632,13 @@ Workflow engine management and monitoring.
 - `GET /api/workflow-runs`
 - `GET /api/workflow-runs/active`
 - `GET /api/workflow-runs/:id`
+- `GET /api/workflow-runs?workflow_type=<name>&limit=1` (latest run for graph status colors)
 - `POST /api/workflow-runs/:id/start`
 - `POST /api/workflow-runs/:id/complete`
+- `POST /api/actions/execute` (kinds `run.cancel` / `run.redispatch` → existing cancel / override-failure logic in-process)
 - `GET /api/workflow-templates`
 - `GET /api/projects`
+- `POST /api/workflow-graph/events` (graph earn-use telemetry — see Workflow Graph API)
 
 ---
 
@@ -485,8 +663,8 @@ Comprehensive operations console combining multiple operational views in a tabbe
 **API endpoints used:**
 - `GET /api/health-status`
 - `GET /api/agents/status`
-- `GET/POST /api/cron-admin/jobs` (via cron-manager on port 3878)
-- `POST /api/cron-admin/jobs/:id/run`
+- `GET/POST /api/cron-admin/jobs` (via cron-manager on port 3878; requires `Authorization: Bearer $DASHBOARD_AUTH_TOKEN`)
+- `POST /api/cron-admin/jobs/:id/run` (same auth; `Content-Type: application/json` required)
 
 ---
 
@@ -501,6 +679,7 @@ Lightweight agent queue view used by the Agents view to show per-agent task queu
 **Features:**
 - Displays the assigned tasks for a selected agent
 - Delegates rendering to the view adapter
+- **⚡ Run workflow… row action** (one-click actions slice 2) — every task card opens a template picker, then the typed preview modal, then dispatches through the governed `run.dispatch` action (create+start composed server-side); receipts land in the Recent-actions tray
 
 ### Support Wrapper
 
@@ -533,6 +712,27 @@ Live session browser and chat interface for interacting with OpenClaw agents. Sh
 
 **API:** Uses `/api/oc/chat/send`, `/api/oc/chat/status`, `/api/oc/chat/abort`, `/api/oc/sessions` routes.
 
+### Session Replay
+
+**Category:** Work · **ID:** `session-replay` · **Default size:** 1000×700
+
+Time-travel stepper over a persisted session transcript (docs/briefs/session-replay.md). Pick an agent → pick a session → the transcript is fetched once through the read-only `/events` endpoint, then scrubbed entirely offline in memory.
+
+**Features:**
+- **Agent + session pickers** — mirror the Sessions view (`GET /api/oc/agents`, `GET /api/oc/sessions?agent=`); deep-linkable via `/?view=session-replay&agent=<id>&session=<sessionId>`
+- **Timeline scrubber + stepper** — horizontal slider proportional to event index; `←`/`→` step one event, `Home`/`End` jump to start/end (buttons too)
+- **As-of-t pane** — cumulative chat transcript rendered as of the current step: user/assistant bubbles plus collapsed thinking blocks; newest text appears as the stepper crosses its event
+- **Current-step detail card** — tool calls show args (IN) and result (OUT) previews, expandable inline; exitCode badge green (0) / red (non-zero) / gray status word for non-process tools from persisted `toolResult.details`; unpaired calls honestly show "no result recorded"
+- **Load full output** — on-demand single GET to `/api/oc/sessions/:sessionId/events/:line` replaces truncated previews with full bodies; cached per line (LRU cap 50)
+- **Virtualized event rail** — fixed-row-height windowed renderer: only visible rows (+overscan) exist in the DOM regardless of transcript size; chat pane renders a bounded 60-message tail
+
+**Graceful degradation:** missing transcript → named empty state; API errors → error state with retry; crash-truncated transcripts → amber banner (`partial`); over-size-cap files → banner (`truncated`); sessions beyond the client guardrail stop at 20,000 events with a banner. Read-only: replay emits zero non-GET requests.
+
+**API endpoints used:**
+- `GET /api/oc/sessions/:sessionId/events?agent=&afterLine=&limit=` — cursor-paginated normalized events
+- `GET /api/oc/sessions/:sessionId/events/:line?agent=` — full-fidelity single event
+- `GET /api/oc/agents`, `GET /api/oc/sessions` — pickers
+
 ### Bing Webmaster
 
 **Category:** Admin · **ID:** `bing`
@@ -555,3 +755,4 @@ Configuration panel for OpenClaw Desktop settings and preferences.
 - Import/export configuration bundles
 - View settings changelog
 - Persist settings across sessions
+- **Snapshots & Restore** tab (snapshot/restore slice 3, brief §3): one-click full-state snapshot creation with a default `snapshot-YYYYMMDD-HHmm` name; newest-first server-side registry listing name/id, created_at, honest on-disk size and total rows plus the last-previewed schema-compat verdict badge (`not checked` until a preview runs); per-row artifact download (Bearer stays in headers, never the URL) and restore entry points for server-side snapshots or uploaded artifacts. The restore flow is preview-first: dry-run diff grid per table (added / updated / conflicts / unchanged with expandable PK samples), schema verdict + warnings (`target_newer`, `active_runs`, dropped settings section) and the rollback hint to re-create a snapshot BEFORE confirming. Merge confirms plainly; Replace flips to the HOLD_CONFIRM gate — press-and-hold ≥1.2 s conic-gradient ring with Enter-hold keyboard parity and a typed-confirm fallback (type REPLACE), early release fires nothing (AC12). Apply POSTs with a client-minted `restoreId` minted once per confirmed intent, drives a determinate progress bar from `restore-progress` SSE frames on `/api/events/stream`, survives page closes via a localStorage reattach record, retries failures by resuming at the first incomplete table under the same `restoreId`, and ends in a completion summary distinguishing fresh vs resumed vs duplicate replays. Zero-throw degradation throughout: loading / empty / unavailable / error-retry list states, and without PostgreSQL create/preview/apply surface the server's 503 `{available:false}` while the disk-only registry and downloads keep working (AC7).

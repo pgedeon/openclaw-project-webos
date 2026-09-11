@@ -22,7 +22,7 @@ function parseBody(req) {
   });
 }
 
-function registerSettingsRoutes(router, settingsStore, deps) {
+function registerSettingsRoutes(router, settingsStore, deps = {}) {
 
   // ── Rate limiter: 10 write operations per 60 seconds ──
   const writeTimestamps = [];
@@ -43,9 +43,16 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     writeTimestamps.push(now);
   }
 
+  function addRoute(method, path, handler) {
+    router.add(method, path, async (...args) => {
+      await handler(...args);
+      return true;
+    });
+  }
+
   // ── Specific routes FIRST ──
 
-  router.add('GET', '/api/settings', async (req, res) => {
+  addRoute('GET', '/api/settings', async (req, res) => {
     try {
       sendJSON(res, 200, { ok: true, settings: settingsStore.getAll() });
     } catch (err) {
@@ -53,7 +60,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
-  router.add('GET', '/api/settings/schema', async (req, res) => {
+  addRoute('GET', '/api/settings/schema', async (req, res) => {
     try {
       sendJSON(res, 200, { ok: true, schema: settingsStore.getSchema() });
     } catch (err) {
@@ -61,7 +68,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
-  router.add('GET', '/api/settings/system-info', async (req, res) => {
+  addRoute('GET', '/api/settings/system-info', async (req, res) => {
     try {
       const info = settingsStore.getSystemInfo({
         startedAt: deps.startedAt,
@@ -74,11 +81,11 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
-  router.add('GET', '/api/settings/restart-required', async (req, res) => {
+  addRoute('GET', '/api/settings/restart-required', async (req, res) => {
     sendJSON(res, 200, settingsStore.isRestartRequired());
   });
 
-  router.add('GET', '/api/settings/changelog', async (req, res) => {
+  addRoute('GET', '/api/settings/changelog', async (req, res) => {
     try {
       const log = settingsStore.getChangeLog();
       sendJSON(res, 200, { ok: true, changelog: log });
@@ -87,7 +94,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
-  router.add('POST', '/api/settings/test-db', async (req, res) => {
+  addRoute('POST', '/api/settings/test-db', async (req, res) => {
     const pool = deps.pool;
     if (!pool) {
       return sendJSON(res, 200, { ok: false, error: 'No database pool configured' });
@@ -103,7 +110,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
-  router.add('POST', '/api/settings/test-gateway', async (req, res) => {
+  addRoute('POST', '/api/settings/test-gateway', async (req, res) => {
     const gc = deps.gatewayClient;
     sendJSON(res, 200, {
       ok: gc ? gc.connected : false,
@@ -112,7 +119,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     });
   });
 
-  router.add('POST', '/api/settings/export', async (req, res) => {
+  addRoute('POST', '/api/settings/export', async (req, res) => {
     try {
       sendJSON(res, 200, {
         ok: true,
@@ -124,7 +131,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
-  router.add('POST', '/api/settings/import', async (req, res) => {
+  addRoute('POST', '/api/settings/import', async (req, res) => {
     try {
       checkRateLimit();
       const body = await parseBody(req);
@@ -139,7 +146,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
-  router.add('POST', '/api/settings/reload', async (req, res) => {
+  addRoute('POST', '/api/settings/reload', async (req, res) => {
     try {
       settingsStore.load();
       sendJSON(res, 200, { ok: true, message: 'Settings reloaded from disk' });
@@ -148,7 +155,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
-  router.add('POST', '/api/settings/restart', async (req, res) => {
+  addRoute('POST', '/api/settings/restart', async (req, res) => {
     try {
       const body = await parseBody(req);
       const confirm = body.confirm;
@@ -169,7 +176,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
 
   // ── Parameterized routes AFTER specific routes ──
 
-  router.add('PUT', '/api/settings/key/:key', async (req, res, ctx, params) => {
+  addRoute('PUT', '/api/settings/key/:key', async (req, res, ctx, params) => {
     try {
       checkRateLimit();
       const body = await parseBody(req);
@@ -182,7 +189,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
-  router.add('GET', '/api/settings/:category', async (req, res, ctx, params) => {
+  addRoute('GET', '/api/settings/:category', async (req, res, ctx, params) => {
     try {
       const all = settingsStore.getAll();
       if (!all[params.category]) {
@@ -194,7 +201,7 @@ function registerSettingsRoutes(router, settingsStore, deps) {
     }
   });
 
-  router.add('PUT', '/api/settings/:category', async (req, res, ctx, params) => {
+  addRoute('PUT', '/api/settings/:category', async (req, res, ctx, params) => {
     try {
       checkRateLimit();
       const body = await parseBody(req);

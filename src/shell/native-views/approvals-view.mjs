@@ -1,6 +1,7 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
 import { mutate } from '../mutation-manager.mjs';
+import { executeAction } from '../action-client.mjs';
 
 export async function renderApprovalsView({ mountNode, api, adapter, stateStore, sync }) {
   ensureNativeRoot(mountNode);
@@ -195,11 +196,14 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
       h += '</div></div>';
     }
 
-    // ── Approved: Cancel / Execute ──
+    // ── Approved: Delete / Execute ──
     if (isApproved && !a.runSessionActive) {
       h += '<hr class="apv-divider">';
       h += '<div style="display:flex;justify-content:space-between;align-items:center;">';
-      h += '<button class="apv-btn ghost apv-delete-trigger" data-run-id="' + esc(runId) + '" aria-label="Cancel" >Cancel</button>';
+      // R2 relabel (one-click actions brief §8): this button DELETEs the run
+      // (DELETE /api/workflow-runs/:id) — it must never read as "Cancel",
+      // which collides with the distinct run.cancel status transition.
+      h += '<button class="apv-btn ghost apv-delete-trigger" data-run-id="' + esc(runId) + '" aria-label="Delete run">Delete</button>';
       h += '<button class="apv-btn primary apv-execute" data-run-id="' + esc(runId) + '">\u25b6 Execute</button>';
       h += '</div>';
     }
@@ -267,11 +271,12 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
         const id = btn.dataset.id;
         const note = grid.querySelector('.apv-note[data-id="' + id + '"]')?.value?.trim() || 'Approved';
         btn.disabled = true;
-        try {
-          await api.approvals.act(id, '', { decision: 'approved', notes: note, decided_by: 'dashboard-operator' });
-          showNotice('Approved.', 'success');
-          await loadApprovals();
-        } catch (e) { showNotice(e.message || 'Failed.', 'error'); btn.disabled = false; }
+        // Gated path (slice 2): PREVIEW_MODAL shows decision + note + rollback
+        // hint before POST /api/actions/execute; outcome toast is surfaced by
+        // the action client and the receipt lands in the Recent-actions tray.
+        const result = await executeAction({ kind: 'approval.decide', targetId: id, params: { decision: 'approved', notes: note }, api });
+        btn.disabled = false;
+        if (result.ok) await loadApprovals();
       };
       btn.addEventListener('click', handler);
       cleanupFns.push(() => btn.removeEventListener('click', handler));
@@ -282,11 +287,9 @@ export async function renderApprovalsView({ mountNode, api, adapter, stateStore,
         const id = btn.dataset.id;
         const note = grid.querySelector('.apv-note[data-id="' + id + '"]')?.value?.trim() || 'Rejected';
         btn.disabled = true;
-        try {
-          await api.approvals.act(id, '', { decision: 'rejected', notes: note, decided_by: 'dashboard-operator' });
-          showNotice('Rejected.', 'success');
-          await loadApprovals();
-        } catch (e) { showNotice(e.message || 'Failed.', 'error'); btn.disabled = false; }
+        const result = await executeAction({ kind: 'approval.decide', targetId: id, params: { decision: 'rejected', notes: note }, api });
+        btn.disabled = false;
+        if (result.ok) await loadApprovals();
       };
       btn.addEventListener('click', handler);
       cleanupFns.push(() => btn.removeEventListener('click', handler));

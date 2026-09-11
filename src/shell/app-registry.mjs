@@ -131,9 +131,31 @@ const appIcon = {
     <path d="M12 10a4 4 0 0 0-4 4" />
     <path d="M2 20h20" />
     <path d="m8 14 2-2 2 2 2-2 2 2" />
-  `),};
+  `),
+  satellite: iconTemplate(`
+    <path d="m10.5 13.5-3-3 2.5-2.5a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L10.5 13.5Z" />
+    <path d="m13.5 10.5 3 3 2.5-2.5a2 2 0 0 0 0-2.8l-.2-.2a2 2 0 0 0-2.8 0L13.5 10.5Z" />
+    <path d="m11.5 12.5 3-3" />
+    <path d="M8 16c-1.5 1.5-4 2-6 1 1 2 .5 4.5-1 6" transform="translate(14 -4) scale(.55)" />
+    <path d="M12 15v3M12 18c0 1.5-1 2.5-2.5 3" />
+    <circle cx="12" cy="12" r="1.6" />
+  `),
+  terminal: iconTemplate(`
+    <polyline points="4 17 10 11 4 5" />
+    <line x1="12" y1="19" x2="20" y2="19" />
+  `),
+  rewind: iconTemplate(`
+    <path d="m11 18-6-6 6-6" />
+    <path d="m19 18-6-6 6-6" />
+  `),
+  coins: iconTemplate(`
+    <ellipse cx="12" cy="6.5" rx="7" ry="3" />
+    <path d="M5 6.5v5c0 1.66 3.13 3 7 3s7-1.34 7-3v-5" />
+    <path d="M5 11.5v5c0 1.66 3.13 3 7 3s7-1.34 7-3v-5" />
+  `),
+};
 
-export const APP_CATEGORY_ORDER = ['Work', 'Operations', 'Admin'];
+export const APP_CATEGORY_ORDER = ['Work', 'Operations', 'Integration', 'Admin'];
 
 export const APP_REGISTRY = Object.freeze([
   {
@@ -195,6 +217,16 @@ export const APP_REGISTRY = Object.freeze([
     category: 'Work',
     defaultWidth: 1120,
     defaultHeight: 740,
+  },
+  {
+    id: 'session-replay',
+    label: 'Session Replay',
+    icon: appIcon.rewind,
+    url: '/?view=session-replay',
+    viewModule: './native-views/session-replay-view.mjs',
+    category: 'Work',
+    defaultWidth: 1000,
+    defaultHeight: 700,
   },
   {
     id: 'requests',
@@ -287,6 +319,16 @@ export const APP_REGISTRY = Object.freeze([
     defaultHeight: 720,
   },
   {
+    id: 'memory-browser',
+    label: 'Memory Browser',
+    icon: appIcon.clock,
+    url: '/?view=memory-browser',
+    viewModule: './native-views/memory-browser-view.mjs',
+    category: 'Operations',
+    defaultWidth: 1120,
+    defaultHeight: 740,
+  },
+  {
     id: 'spaces',
     label: 'Spaces',
     icon: appIcon.folder,
@@ -377,6 +419,26 @@ export const APP_REGISTRY = Object.freeze([
     defaultHeight: 720,
   },
   {
+    id: 'mission-control',
+    label: 'Mission Control',
+    icon: appIcon.satellite,
+    url: '/?view=mission-control',
+    viewModule: './native-views/mission-control-view.mjs',
+    category: 'Operations',
+    defaultWidth: 1180,
+    defaultHeight: 780,
+  },
+  {
+    id: 'budgets',
+    label: 'Budgets',
+    icon: appIcon.coins,
+    url: '/?view=budgets',
+    viewModule: './native-views/budgets-view.mjs',
+    category: 'Operations',
+    defaultWidth: 1000,
+    defaultHeight: 700,
+  },
+  {
     id: 'departments',
     label: 'Departments',
     icon: appIcon.building,
@@ -452,6 +514,17 @@ export const APP_REGISTRY = Object.freeze([
     description: 'Configure OpenClaw Desktop',
     viewModule: './native-views/settings-view.mjs',
   },
+  {
+    id: 'console',
+    label: 'Live Console',
+    icon: appIcon.terminal,
+    url: '/?view=console',
+    category: 'Integration',
+    description: 'Terminal-style live stream of a running agent session',
+    defaultWidth: 900,
+    defaultHeight: 600,
+    viewModule: './native-views/console-view.mjs',
+  },
 ]);
 
 export const PINNED_APP_IDS = Object.freeze([
@@ -462,7 +535,6 @@ export const PINNED_APP_IDS = Object.freeze([
   'skills-tools',
   'operations',
   'workflows',
-  'morning-report',
 ]);
 
 export const APP_MAP = new Map(APP_REGISTRY.map((app) => [app.id, app]));

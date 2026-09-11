@@ -1,6 +1,6 @@
 {
   "name": "openclaw-project-dashboard",
-  "version": "1.0.0-rc.3",
+  "version": "2.2.0",
   "description": "Operations-first project dashboard for OpenClaw with hierarchical boards, agent-aware task routing, OpenClaw model selection, and audit-friendly task execution.",
   "main": "task-server.js",
   "directories": {
@@ -30,6 +30,10 @@
     "validate": "node scripts/dashboard-validation.js && node scripts/docs-drift-check.js",
     "test:filters": "node tests/test-filter-behavior.js",
     "test:routes": "node tests/test-route-modules.js",
+    "dag:telemetry": "node scripts/dag-telemetry-counter.js",
+    "mcp:telemetry": "node scripts/mcp-adoption-counter.js",
+    "perf": "node scripts/perf-benchmark.mjs",
+    "db:drift-check": "node scripts/schema-drift-check.js",
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",
     "test:debug": "npx playwright test --debug",
@@ -57,12 +61,17 @@
   },
   "dependencies": {
     "busboy": "^1.6.0",
-    "pg": "^8.16.3",
-    "puppeteer": "^24.42.0",
-    "puppeteer-core": "^24.42.0",
+    "pg": "^8.23.0",
     "ws": "^8.20.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1"
+    "@playwright/test": "^1.62.1",
+    "puppeteer": "^25.10.0",
+    "puppeteer-core": "^25.10.0"
+  },
+  "overrides": {
+    "basic-ftp": "5.3.1",
+    "js-yaml": "4.3.1",
+    "ip-address": "10.3.1"
   }
 }

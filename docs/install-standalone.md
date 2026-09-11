@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Install — Standalone
 
 Install the dashboard as a standalone service, independent of OpenClaw.

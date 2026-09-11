@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Scripts Reference
 
 ## Overview
@@ -19,6 +23,10 @@ The `scripts/` directory contains operational scripts for the dashboard: health 
 | `sync-openclaw-projects.mjs` | Node.js (ESM) | Seed and synchronize OpenClaw project hierarchy and tasks |
 | `test-incremental-sync.js` | Node.js | Test `updated_since` pagination on task API |
 | `apply-workflow-migration.sh` | Bash | Apply the workflow runs migration (001) |
+| `backfill-run-costs.js` | Node.js | Backfill `workflow_runs` token/cost columns from OpenClaw session JSONL transcripts (dry run by default) |
+| `dag-telemetry-counter.js` | Node.js | DAG GO/NO-GO telemetry counter: workflow-graph audit events → decision inputs + branch verdict |
+| `mcp-adoption-counter.js` | Node.js | MCP tool-call adoption counter: `mcp-tool-call` audit rows → per-tool call counts, ok/error split, days-with-activity, never-called tools |
+| `schema-drift-check.js` | Node.js | Two-tier schema drift guard: `schema_migrations` tracking table (numbered migrations) + `information_schema`/`pg_indexes` object probes (date-prefixed + untracked numbered migrations) |
 | `system-improvement-scan.sh` | Bash | Cron trigger for daily system improvement scan |
 | `system-improvement-engine.py` | Python 3 | Analyze system state and create approval-gated improvement runs |
 
@@ -283,6 +291,121 @@ bash scripts/apply-workflow-migration.sh
 **Environment Variables:** Standard `POSTGRES_*` variables.
 
 **Dependencies:** `psql`
+
+---
+
+### `backfill-run-costs.js`
+
+One-shot backfill of the migration-022 token/cost columns (`input_tokens`, `output_tokens`, `cached_tokens`, `model_id`, `cost_estimate`, `currency`, `reported_at`) on `workflow_runs` from historical OpenClaw gateway session data.
+
+**Usage:**
+
+```bash
+node scripts/backfill-run-costs.js            # dry run (default)
+node scripts/backfill-run-costs.js --apply    # write to PostgreSQL
+node scripts/backfill-run-costs.js --limit 5 --verbose
+node scripts/backfill-run-costs.js --run-id <uuid>
+```
+
+**Data source:** session JSONL transcripts under `<OPENCLAW_HOME|HOME>/.openclaw/agents/<agentId>/sessions/<sessionId>.jsonl` — every assistant message line carries an exact per-message `usage` object (`input`, `output`, `cacheRead`, `cacheWrite`, and a gateway-reported `cost`). Chosen over the `openclaw status` CLI (context-size snapshot only, no input/output split), the state SQLite DB (no token tables), and `sessions.json` (single context snapshot) because it is the only source with exact cumulative token numbers.
+
+**Join key:** `workflow_runs.gateway_session_id` (= `claim_session_id` when set) holds an OpenClaw session key (`agent:<agentId>:<channel>:<id>`), resolved through that agent's `sessions.json` to the current `sessionId` plus its `usageFamilySessionIds` (rotated transcripts). Values written by other components — `spawned-<runId8>-pid<n>` from `workflow-run-monitor.js`, test fixtures — are reported as unmatched.
+
+**Windowing:** a session key can outlive many runs (shared sessions like `agent:main:main`), so usage is summed only from assistant messages timestamped inside the run window `[started_at, finished_at]` (inclusive; open upper bound when `finished_at` is NULL). Runs without `started_at` are skipped rather than attributed a whole shared session.
+
+**Cost policy:** `cost_estimate` is written only from positive gateway-reported per-message cost totals. When no price source exists (the case on this deployment: all recorded costs are 0 and no model catalog carries pricing), `cost_estimate` stays NULL — prices are never invented. `currency` is stamped `USD`; `model_id` gets the dominant `provider/model` among in-window usage messages.
+
+**Idempotency:** only runs whose token/cost columns are ALL NULL are selected, writes go through the slice-1 `storage/asana.js` helper (`updateWorkflowRunUsage`, sets `reported_at = NOW()`), and each row is re-checked before update — re-runs never overwrite non-NULL values.
+
+**Behavior:**
+1. Loads unreported runs with a gateway session binding (PostgreSQL via the shared storage pool).
+2. Resolves each session key to transcript files and aggregates in-window usage.
+3. Dry run prints what would be written; `--apply` performs batched sequential updates.
+4. Prints a summary: considered / matched / unmatched-by-reason / skipped counts.
+
+**Graceful degradation:** exits 0 with an honest summary when PostgreSQL is unreachable, migration 022 has not been applied, or no gateway transcripts survive (transcript retention means sessions older than ~July 2026 may be pruned).
+
+**Environment Variables:** standard `POSTGRES_*` variables; `OPENCLAW_HOME` (default `$HOME`) for the gateway data root.
+
+**Dependencies:** `pg` (via `storage/asana.js`)
+
+---
+
+### `dag-telemetry-counter.js`
+
+Operational counter for the workflow visual editor Stage 1 earn-use rule (docs/briefs/workflow-visual-editor-stage1.md §6): reads the `workflow-graph-open` / `workflow-graph-feedback` audit_log rows written by `POST /api/workflow-graph/events` since the staging deploy date **2026-08-25** and prints the decision inputs plus the current GO/NO-GO branch for the roadmap review landing ~2026-09-14.
+
+**Usage:**
+
+```bash
+node scripts/dag-telemetry-counter.js
+npm run dag:telemetry
+```
+
+**Decision window:** 2026-08-25 → 2026-09-14 inclusive (21 days, UTC calendar days).
+
+**Branch rule (mechanical, per brief §6):**
+
+| Branch | Condition |
+|--------|-----------|
+| `go` | ≥8 distinct render-days AND ≥3 explicit edit asks (👍 feedback rows) |
+| `no_go` | <4 distinct render-days AND zero asks |
+| `middle` | everything else → review with numbers |
+
+**Output:** distinct render-days, total opens, 👍/👎 counts, distinct templates touched, days remaining in the window, a GO pace check, and the branch verdict. Render-days count only `workflow-graph-open` rows (per the brief's metric definition); templates are collected from both event types. An early-window empty result numerically lands `no_go` — the report always prints days remaining so an in-flight window is never mistaken for a final verdict.
+
+**Graceful degradation:** any database-layer failure (unreachable PostgreSQL, missing database, missing `audit_log` table, auth failure) prints an honest unavailable message and exits 0 — the script must work in CI-less, DB-less contexts without failing. Unavailable is never reported as zero.
+
+**Environment Variables:** standard `POSTGRES_*` variables (same as `dashboard-validation.js`; connection timeout 5 s so DB-less contexts fail fast).
+
+**Dependencies:** `pg` (already required by the dashboard; no new dependencies). Pure evaluation lives in `evaluateDagTelemetry(rows, nowMs)` — covered DB-free by `tests/test-dag-telemetry.js`.
+
+---
+
+### `mcp-adoption-counter.js`
+
+Operational counter for MCP tool-call adoption (improvement-loop queue: answers "did anything actually call our tools?" with data): reads the `mcp-tool-call` audit_log rows written by `POST /api/mcp/telemetry` (routes/mcp-telemetry-routes.js, fed by fire-and-forget emission in lib/mcp-server.js) since the MCP slice-1 ship date **2026-08-25** and prints total calls, the ok/error split, days-with-activity, first/last call timestamps, a per-tool breakdown, and which registered tools have NEVER been called this window.
+
+**Usage:**
+
+```bash
+node scripts/mcp-adoption-counter.js
+npm run mcp:telemetry
+```
+
+**Output:** totals + ok/error split (unattributed-outcome rows reported separately), tools-used vs registered count, distinct UTC days with activity, first/last call ISO timestamps, per-tool table sorted by call count, and the never-called list. Distinct client sessions are honestly reported as not derivable — the stdio transport carries no session identity. An empty window prints "adoption has not started" rather than an empty table.
+
+**Graceful degradation:** identical contract to `dag-telemetry-counter.js` — any database-layer failure (unreachable PostgreSQL, missing database, missing `audit_log` table, auth failure) prints an honest unavailable message and exits 0. Unavailable is never reported as zero.
+
+**Environment Variables:** standard `POSTGRES_*` variables (same as `dashboard-validation.js`; connection timeout 5 s so DB-less contexts fail fast).
+
+**Dependencies:** `pg` (already required by the dashboard; no new dependencies). Pure aggregation lives in `evaluateMcpAdoption(rows)` — covered DB-free by `tests/test-mcp-telemetry.js`.
+
+---
+
+### `schema-drift-check.js`
+
+Operational guard for schema drift between `schema/migrations/` and a live PostgreSQL instance — the tool that would have caught the **2026-08-29 incident** (staging DB silently missing 8 migrations: `GET /api/tasks/all` 500'd for days with `column t.deleted_at does not exist`, `/api/spaces` 500'd with `relation "workspaces" does not exist`; nobody noticed until MCP adoption telemetry showed `list_tasks` erroring 8/8).
+
+**Two-tier design** (a tracking-table-only comparison false-positives on every healthy DB — the DATE-prefixed migrations are never inserted into `schema_migrations`):
+
+1. **Tier 1 — tracking table:** `SELECT migration_name FROM schema_migrations` compared against the NUMBERED migration files (`NNN_*.sql`, minus the untracked trio 020/021/022 which predate the self-registration convention). Files present but not applied → **DRIFT**; applied rows with no file (historical/superseded names) → WARN only, never drift.
+2. **Tier 2 — object probes:** every date-prefixed migration (plus 020/021/022) maps to concrete probes — `table:<name>`, `column:<table>.<column>`, `column-nullable:<table>.<column>`, `index:<name>` — resolved via `information_schema.tables`, `information_schema.columns`, and `pg_indexes`. Any missing object → **DRIFT**. `PROBE_MAP` coverage is enforced by a guard test: a new migration without a probe or self-registration fails CI.
+
+**Usage:**
+
+```bash
+node scripts/schema-drift-check.js
+npm run db:drift-check
+```
+
+**Output:** per-tier report (expected vs applied tracking rows, missing objects with the migration file + probe name) and a final `VERDICT: ok | drift | unavailable` line. Exit 1 only on confirmed drift.
+
+**Graceful degradation:** identical contract to `dag-telemetry-counter.js` — any database-layer failure (unreachable PostgreSQL, missing database, missing `schema_migrations` table, auth failure) prints an honest unavailable message and exits 0. Unavailable is never reported as zero drift.
+
+**Environment Variables:** standard `POSTGRES_*` variables (same as `dashboard-validation.js`; connection timeout 5 s so DB-less contexts fail fast).
+
+**Dependencies:** `pg` (already required by the dashboard; no new dependencies). Pure evaluation lives in `evaluateTier1`/`evaluateTier2`/`verdictFor` (plus `parseProbe`/`collectProbes`/`splitTiers`) — covered DB-free by `tests/test-schema-drift-check.js`.
 
 ---
 

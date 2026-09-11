@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Project Dashboard User Guide
 
 A complete walkthrough of the OpenClaw Project Dashboard interface, workflows, and best practices.
@@ -9,10 +13,15 @@ A complete walkthrough of the OpenClaw Project Dashboard interface, workflows, a
 3. [Task Operations](#task-operations)
 4. [Filtering & Search](#filtering--search)
 5. [Archive Workflow](#archive-workflow)
-6. [Keyboard Shortcuts](#keyboard-shortcuts)
-7. [Agent Integration](#agent-integration)
-8. [Import / Export](#import--export)
-9. [Accessibility](#accessibility)
+6. [One-Click Actions & Confirmations](#one-click-actions--confirmations)
+7. [Ask Bar (NL Commands)](#ask-bar-nl-commands)
+8. [Budget Management](#budget-management)
+9. [Install as a Desktop App (PWA)](#install-as-a-desktop-app-pwa)
+10. [Keyboard Shortcuts](#keyboard-shortcuts)
+11. [Appearance: Themes & Accent Packs](#appearance-themes--accent-packs)
+12. [Agent Integration](#agent-integration)
+13. [Import / Export](#import--export)
+14. [Accessibility](#accessibility)
 
 ---
 
@@ -185,6 +194,8 @@ For power users and accessibility:
 
 | Key | Action |
 |-----|--------|
+| `Ctrl+K` / `Cmd+K` | Open the command palette |
+| `Tab` (in the palette) | Toggle between Search and Ask mode |
 | `N` | Focus the new task input |
 | `1` | Switch to List view |
 | `2` | Switch to Board view |
@@ -196,6 +207,152 @@ For power users and accessibility:
 | `Esc` | Clear search input and reset filter to “All” |
 
 Shortcuts are ignored when you are typing inside an input, textarea, or select element.
+
+---
+
+## One-Click Actions & Confirmations
+
+Consequential operator actions (assign a task, dispatch a run, decide an approval, cancel or re-dispatch a run) all travel one governed path: a typed envelope → confirmation matched to severity → idempotent execution → a **receipt**. The raw endpoints stay available to scripts and agents; the buttons below are the operator surface of that gate (design brief: `docs/briefs/one-click-actions.md`).
+
+### Where the actions live
+
+| Action | Where | Confirmation |
+|--------|-------|--------------|
+| Assign task owner | Tasks view — edit form owner select (set/change only; unassign stays a plain save) | Single click |
+| Dispatch workflow run | Agent Queue / Agents view — "⚡ Run workflow…" on each task card | Template picker → preview modal |
+| Approve / Reject approval | Approvals view cards | Preview modal |
+| Cancel run | Workflows view run rows (⛔ on queued/running/blocked/retrying runs) | Hold-to-confirm |
+| Re-dispatch failed run | Workflows view failed rows (↻) | Preview modal |
+
+### Confirmation modes
+
+- **Single click** (low severity, reversible): assigning a task owner fires immediately; the toast tells you the recovery move (re-assign).
+- **Preview modal** (medium severity): exactly what will happen, on which target, with which params, plus the rollback hint — nothing fires until you press **Confirm**. `Esc`, the backdrop, or Cancel dismisses with zero network requests.
+- **Hold-to-confirm** (high severity: cancelling a run destroys paid in-flight work): press and hold the round button for **1.2 s** while the ring fills; release early and nothing happens. Keyboard parity: focus the button (`Tab`), then **press and hold `Enter`** for the same 1.2 s — keydown starts, keyup releases. `Esc` cancels.
+
+### Outcomes, receipts, and the Recent-actions tray
+
+Every executed action writes an immutable receipt (kind, target, actor, outcome, rollback hint) mirrored into the audit log as `action.<kind>` — visible in History → Audit Log like any other entry.
+
+- **Toasts** confirm success (with the recovery hint), replayed duplicates ("already executed — no side effect"), governance rejections, and failures.
+- **Budget blocks** render a distinct amber banner naming the budget, its period, and % of cap — not a generic error. Nothing was dispatched; after a cap raise (Mission Control cost panel) simply retry the action.
+- **Recent-actions tray** (⚡ button in the taskbar): the last 10 receipts, newest first — outcome icon, action label, target, relative time; click a row to expand the rollback hint and jump to the owning view (run → Workflows, task → Tasks, approval → Approvals). The list refreshes when opened; actions you fire while it is open appear immediately.
+
+### Retries vs repeats
+
+Retrying a timed-out action is safe: the same confirmed intent carries the same receipt id, and the server replays the stored receipt instead of executing twice. Deliberately repeating an action (e.g. dispatching the same template again) mints a fresh intent and executes again — both receipts stay in the tray.
+
+---
+
+## Ask Bar (NL Commands)
+
+The command palette (`Ctrl+K` / `Cmd+K`) has two modes. **Search** finds and navigates; **Ask** understands intents in plain language and proposes actions through the exact same governed path the buttons use (design brief: `docs/briefs/nl-command-bar.md`). Press `Tab` inside the palette to toggle — the chip next to the hint bar always shows which mode you're in. There is no implicit switching: typing a search query that happens to contain a verb never turns into an action.
+
+### What Ask understands
+
+| You type | What happens | Confirmation |
+|--------|-------|--------------|
+| "assign checkout bug to kaya" | Assigns the task to agent kaya | Single click |
+| "run nightly backup on task #42" | Dispatches template on the task | Preview modal |
+| "approve the deployment request" / "reject …" | Decides a pending approval | Preview modal |
+| "cancel run 4f2a" / "stop run …" | Cancels a running/queued/waiting run | Hold-to-confirm (1.2 s) |
+| "retry run 4f2a" / "re-dispatch …" | Re-queues a failed run | Preview modal |
+| "spawn agent for checkout bug, report when done" / "create task for invoices" / "add agent for \"nightly sync\"" | Creates a task titled from your sentence (everything after "for", quotes honored) in the default project | Single click |
+| "what's running" / "fleet status" | Inline answer: running runs + busy agents | Read-only |
+| "show failed runs" / "what failed" | Failed runs + re-dispatch chips | Read-only |
+| "pending approvals" / "what needs approval" | Pending approvals + approve chips | Read-only |
+| "budget status" / "am I over budget" | Names breached/amber budgets | Read-only |
+| anything else | Falls back to normal search results | — |
+
+Targets resolve against live data: task titles or `#id` prefixes, run ids (`run_…`, UUID, short id), approval subjects, agent display names, workflow template names. Quoted strings ("checkout bug") force literal title matching. Create intents need a title — the words after "for" become it verbatim; with nothing after the noun (just "spawn agent") Ask degrades to search rather than inventing one. The new task lands in the default project, same as creating from the Tasks view.
+
+### The interpretation card
+
+Before anything executes, Ask shows exactly what it understood: the action, the resolved target, the parameters, and the recovery hint. Nothing has fired yet — no envelope exists, zero requests sent. Confirming the card hands off to the standard confirmation gate, so the table's confirmation column above is the registry's severity tier, applied unchanged:
+
+- **Single click** actions fire on that confirm.
+- **Preview modal** actions open the typed preview next.
+- **Hold-to-confirm** (cancel) opens the 1.2 s ring next.
+
+When several targets match ("3 runs match 'import'"), a pick list appears; Enter does nothing until you pick one. If Ask can't map your sentence to an action, it says so honestly and shows normal search results for the same text instead of guessing.
+
+### What Ask refuses
+
+- **Batch actions** ("cancel all failed runs") — one action, one target, always.
+- **Scheduling** ("every day at 9…") — recurring schedules live in the Cron view.
+- **Config writes** — budgets, settings, snapshot restores are never proposed.
+- **Title-less creation** ("spawn agent") — no title, no task; Ask shows search results instead of guessing.
+- **Unknown agents/templates** — named as such, never guessed.
+
+Query answers ("what's running", "budget status") are read-only — they issue only GET requests and never construct an action. Outcomes, receipts, budget-block banners, and the Recent-actions tray behave identically whether an action came from a button or from Ask.
+
+---
+
+## Budget Management
+
+Budgets are named spending rules with automatic enforcement at dispatch time (design brief: `docs/briefs/budget-ledger.md`). Mission Control shows the read-only bars; the **Budgets** app (Operations category) is where rules are created and managed.
+
+### Reading the list
+
+Every defined budget — active or inactive — renders as a card with its scope (`agent: coder`, `department: …`, `workflow type: …`, or fleet = all agents), period with the current `period_key`, a spend-vs-cap bar, run count, and the breach action badge:
+
+- **Green bar** — under 75% of cap, routine burn.
+- **Amber bar** — strictly above 75% of cap; raise the cap before dispatch holds start.
+- **Red bar + `breached` badge** — at/over cap (exactly-at-cap counts). The action badge shows what enforcement does: `pause_new_runs` holds new runs in the queue, `hard_stop` also cancels in-flight runs.
+- **○ inactive** — rule exists but does not enforce; history is preserved.
+
+Spend derives live from completed-run cost/token data — in-flight spend appears when runs report usage.
+
+### Create a budget
+
+1. Open **Budgets** → **＋ New Budget**.
+2. Name it, pick a scope, and fill the scope ID (agent name free-text with suggestions; fleet budgets need no ID).
+3. Pick a period (daily/weekly/monthly), enter a cap, and choose USD or tokens — exactly one cap per budget (create two budgets if you want both).
+4. Choose what happens on exceed: **warn**, **pause new runs**, or **hard stop**.
+5. Submit. Validation mirrors the API client-side; anything the server rejects renders inline verbatim.
+
+Scope and period are fixed after creation (they key the one-active-budget-per-scope+period rule) — to change them, deactivate the old budget and create a new one.
+
+### Recovering from a breach
+
+There is no un-pause button by design — pause state is recomputed from live spend on every dispatch. Recovery is one of exactly three moves:
+
+1. **Wait for rollover** — a new empty period drops spend below cap automatically and held runs drain in order.
+2. **Raise the cap** — ✎ Edit on the card, enter the new cap (switching USD/tokens replaces the sibling cap), save.
+3. **Deactivate** — ⏸ Deactivate stops enforcement immediately (confirm dialog; ledger history preserved). ▶ Activate re-enables it.
+
+### Ledger drawer
+
+**☰ Ledger** expands a per-budget audit trail: timestamped enforcement events (`warned` / `paused` / `hard_stopped` / `recovered`) with the period key and detail payload — the record of what the system did and when.
+
+### Without a database
+
+Budget rules need PostgreSQL. In json_snapshot mode the view shows a named "Budgets unavailable" panel instead of an error; nothing else breaks.
+
+---
+
+## Snapshots & Restore (Settings)
+
+Full-state insurance lives in **Settings → 💾 Snapshots & Restore** (no separate windowed app). A snapshot is a named, versioned, downloadable JSON artifact of every dashboard table plus non-secret settings; restore is preview-first and never writes anything until you confirm.
+
+### Create a snapshot
+
+1. Open Settings → Snapshots & Restore. The name field defaults to `snapshot-YYYYMMDD-HHmm` — rename it or leave it.
+2. Press **Create snapshot**. The button disables while generating; on success a toast reports the total row count and the list refreshes.
+3. Each row shows name/id, created time, honest on-disk size, total rows, and the schema verdict from your last preview (`not checked` until then).
+4. **⬇ Download** saves the artifact JSON as an attachment — keep copies off-box; that file alone reconstructs the state it captured.
+
+The registry and downloads work even when PostgreSQL is down (they are disk-only). Creating snapshots requires the database.
+
+### Restore in three steps
+
+1. **Pick an artifact**: "↻ Restore…" on any server-side row, or "📥 Restore from file…" for a downloaded artifact (files over 100 MB are refused client-side before upload).
+2. **Read the preview** — nothing is written yet: a per-table diff grid (added / updated / conflicts / unchanged, expandable PK samples), the schema-compat badge, and warnings such as *target newer* (target DB has migrations the artifact predates) or *active runs* (pause the dispatcher before a destructive replace). The rollback hint reminds you to re-create a snapshot of the current state first — that one click is the honest undo.
+3. **Confirm by mode**: **Merge** (default) upserts artifact rows and deletes nothing — a plain Confirm. **Replace** additionally deletes live rows absent from the artifact — destructive, so the confirm flips to hold-to-confirm: press and hold the red ring for **1.2 s** (or focus it and hold `Enter`); release early and nothing fires. A typed fallback (type `REPLACE`) exists for keyboards where holding is awkward.
+
+### While it runs
+
+A determinate progress bar advances as `restore-progress` events arrive per completed table. Closing the panel — or the whole window — does not cancel the apply; when you come back, the panel offers to reattach by its `restoreId`. If a table fails mid-restore, everything committed before it stays committed (that is the resume point, not corruption): press **Retry resume** and the same `restoreId` continues at the first incomplete table. Completed restores end in a summary that says plainly whether it finished fresh, resumed from a checkpoint, or was a duplicate replay of an already-finished restore (executing nothing).
 
 ---
 
@@ -223,6 +380,57 @@ The heartbeat automatically refreshes the agent’s task list every 30 seconds
 
 - Click “Import” and select a previously exported `.json` or `.csv` file.
 - The import merges tasks; existing tasks are matched by `id` if present, otherwise new tasks are created.
+
+---
+
+## Install as a Desktop App (PWA)
+
+The dashboard is an installable Progressive Web App — it runs in its own window with a launcher icon, no browser chrome, like a native desktop app.
+
+### Install
+
+1. Sign in to the dashboard in Chrome or Edge (the service worker registers only after authentication succeeds).
+2. Open the browser address-bar install icon (⊕ / monitor-with-arrow), or the browser menu → **Install OpenClaw Desktop** / **Cast, save and share → Install page as app**.
+3. The app opens in a standalone window and gets its own entry in your OS start menu / dock.
+
+### What gets cached
+
+- **Static assets only** (`/src/`, `/lib/`, `/icons/`, the web manifest) are served cache-first from a versioned cache (`openclaw-desktop-v1`); old versions are deleted automatically on upgrade.
+- **Navigation requests** (the app shell) are network-first with cache fallback, so you get fresh UI whenever the server is reachable and last-known UI when it is not.
+- **`/api/*` is never cached** — tasks, auth, and live data always come from the server. Your bearer token is never stored by the service worker.
+- The app shell itself carries no credentials (the token stays in memory/localStorage via the bootstrap flow), so a cached shell is safe.
+
+### Updating & uninstalling
+
+- Updates land on reload: `sw.js` is served `Cache-Control: no-cache`, so a new deploy is picked up immediately; the worker activates with `skipWaiting` + `clients.claim` and purges stale caches.
+- Uninstall like any app: right-click the launcher icon → uninstall, or edge://apps in Edge / chrome://apps in Chrome.
+
+---
+
+## Appearance: Themes & Accent Packs
+
+The desktop shell ships a dark and a light base theme plus five built-in accent packs layered on top.
+
+### Base theme (dark / light)
+
+- Toggle with the moon/sun button in the taskbar tray, or press the theme toggle in the Start menu area.
+- First load follows your system preference; an explicit toggle persists to localStorage (`openclaw.win11.theme.v1`).
+
+### Accent packs
+
+Accents recolor buttons, highlights, selection rings, and active states on top of either base theme:
+
+| Pack | Light accent | Dark accent |
+|------|--------------|-------------|
+| Blue (default) | `#0067c0` | `#60cdff` |
+| Teal | `#038387` | `#45d1d6` |
+| Violet | `#8661c5` | `#c3a6ff` |
+| Amber | `#ca5010` | `#f7a95d` |
+| Rose | `#c4314b` | `#ff8fa8` |
+
+- Open the palette icon in the taskbar tray and pick a swatch. The choice persists across reloads (`openclaw.accent`) and applies before first paint — no flash of the wrong color.
+- Switching base themes keeps your accent; switching accents keeps your base theme.
+- An invalid or corrupted stored value falls back silently to the default blue pack.
 
 ---
 

@@ -36,7 +36,7 @@ function buildContext() {
       async listDepartments() {
         return [
           {
-            id: 'dept-content',
+            id: '0c0ffee0-0000-4000-8000-00000000cafe',
             slug: 'content-publishing',
             name: 'Content & Publishing',
             description: 'Editorial and publishing',
@@ -45,7 +45,7 @@ function buildContext() {
             metadata: {}
           },
           {
-            id: 'dept-core',
+            id: '0c0ffee0-0000-4000-8000-00000000c0de',
             slug: 'core-platform',
             name: 'Core Platform',
             description: 'Platform engineering',
@@ -59,7 +59,7 @@ function buildContext() {
         return [
           {
             agentId: 'blogger-publisher',
-            departmentId: 'dept-content',
+            departmentId: '0c0ffee0-0000-4000-8000-00000000cafe',
             departmentSlug: 'content-publishing',
             displayName: 'Blogger Publisher',
             role: 'Publishing Lead',
@@ -67,7 +67,7 @@ function buildContext() {
           },
           {
             agentId: 'topic-planner',
-            departmentId: 'dept-content',
+            departmentId: '0c0ffee0-0000-4000-8000-00000000cafe',
             departmentSlug: 'content-publishing',
             displayName: 'Topic Planner',
             role: 'Research Specialist',
@@ -103,7 +103,7 @@ function buildContext() {
             return {
               rows: [
                 {
-                  department_id: 'dept-content',
+                  department_id: '0c0ffee0-0000-4000-8000-00000000cafe',
                   service_requests_opened: 11,
                   service_requests_completed: 7,
                   workflow_runs_started: 9,
@@ -115,7 +115,7 @@ function buildContext() {
                   stale_run_count: 1
                 },
                 {
-                  department_id: 'dept-core',
+                  department_id: '0c0ffee0-0000-4000-8000-00000000c0de',
                   service_requests_opened: 3,
                   service_requests_completed: 2,
                   workflow_runs_started: 3,
@@ -161,7 +161,7 @@ function buildContext() {
                 service_id: 'service-affiliate',
                 service_slug: 'affiliate-article',
                 service_name: 'Affiliate Article',
-                department_id: 'dept-content',
+                department_id: '0c0ffee0-0000-4000-8000-00000000cafe',
                 requests_opened: 11,
                 requests_completed: 7,
                 workflow_runs_started: 9,
@@ -212,7 +212,7 @@ function buildContext() {
                   metric_date: '2026-03-09',
                   metrics: {
                     metricDate: '2026-03-09',
-                    departmentId: 'dept-content',
+                    departmentId: '0c0ffee0-0000-4000-8000-00000000cafe',
                     departmentSlug: 'content-publishing',
                     departmentName: 'Content & Publishing',
                     serviceRequestsOpened: 6,
@@ -231,7 +231,7 @@ function buildContext() {
                   metric_date: '2026-03-10',
                   metrics: {
                     metricDate: '2026-03-10',
-                    departmentId: 'dept-content',
+                    departmentId: '0c0ffee0-0000-4000-8000-00000000cafe',
                     departmentSlug: 'content-publishing',
                     departmentName: 'Content & Publishing',
                     serviceRequestsOpened: 7,
@@ -291,11 +291,11 @@ async function run() {
 
   const departments = await callRoute('/api/metrics/departments?days=30', context);
   assert.strictEqual(departments.departments.length, 2, 'department metrics should list all known departments');
-  const contentDept = departments.departments.find((department) => department.departmentId === 'dept-content');
+  const contentDept = departments.departments.find((department) => department.departmentId === '0c0ffee0-0000-4000-8000-00000000cafe');
   assert.ok(contentDept, 'content department scorecard should be present');
   assert.strictEqual(contentDept.workflowSuccessRate, 88.9, 'department scorecard should compute success rate');
 
-  const departmentDetail = await callRoute('/api/metrics/departments/dept-content?days=30', context);
+  const departmentDetail = await callRoute('/api/metrics/departments/0c0ffee0-0000-4000-8000-00000000cafe?days=30', context);
   assert.strictEqual(departmentDetail.department.name, 'Content & Publishing', 'department detail should resolve department metadata');
   assert.strictEqual(departmentDetail.agents.length, 2, 'department detail should include filtered agent scorecards');
   assert.strictEqual(departmentDetail.services.length, 1, 'department detail should include filtered service scorecards');
@@ -320,7 +320,7 @@ async function run() {
   assert.strictEqual(persisted.departmentsWritten, 2, 'persistence should upsert one snapshot per department');
   assert.strictEqual(context.__savedSnapshots.length, 2, 'persistence should write snapshots through the pool');
   assert.strictEqual(context.__savedSnapshots[0].metricDate, '2026-03-10', 'written snapshots should use the target metric date');
-  assert.strictEqual(context.__savedSnapshots[0].metrics.departmentId, 'dept-content', 'written snapshot should preserve department id');
+  assert.strictEqual(context.__savedSnapshots[0].metrics.departmentId, '0c0ffee0-0000-4000-8000-00000000cafe', 'written snapshot should preserve department id');
 
   console.log('PASS: metrics api');
 }

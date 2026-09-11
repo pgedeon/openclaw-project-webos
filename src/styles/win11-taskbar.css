@@ -184,3 +184,83 @@
     display: none;
   }
 }
+
+/* Accent picker (taskbar tray popover) */
+.win11-taskbar__accent-picker {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  min-width: 208px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--win11-surface-solid);
+  border: 1px solid var(--win11-border-strong);
+  box-shadow: var(--win11-shadow-active);
+  z-index: 1000;
+}
+
+.win11-taskbar__accent-title {
+  margin-bottom: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--win11-text);
+}
+
+.win11-taskbar__swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.win11-taskbar__swatch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.win11-taskbar__swatch:hover {
+  background: var(--win11-surface-hover);
+}
+
+.win11-taskbar__swatch.is-active {
+  border-color: var(--win11-accent);
+  background: var(--win11-accent-light);
+}
+
+.win11-taskbar__swatch-dot {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+}
+
+.win11-taskbar__swatch-check {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--win11-accent);
+  color: var(--win11-on-accent);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.win11-taskbar__swatch.is-active .win11-taskbar__swatch-check {
+  display: flex;
+}

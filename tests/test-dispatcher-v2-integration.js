@@ -89,6 +89,16 @@ async function getRunStatus(id) {
 }
 
 async function runAllTests() {
+  // Graceful skip when PostgreSQL is unreachable (e.g. CI without DB services).
+  try {
+    const probe = new pg.Pool(DB_CONFIG);
+    await probe.query('SELECT 1');
+    await probe.end();
+  } catch (err) {
+    console.log(`SKIP: requires PostgreSQL (${err.message.split('\n')[0]})`);
+    process.exit(0);
+  }
+
   await setup();
 
   const dispatcher = new GatewayWorkflowDispatcherV2(pool, {

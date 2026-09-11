@@ -57,7 +57,7 @@ const { registerProjectRoutes } = require('./routes/project-routes');
 const { registerViewRoutes } = require('./routes/view-routes');
 const { registerCronRoutes } = require('./routes/cron-routes');
 const { registerAgentRoutes } = require('./routes/agent-routes');
-const { registerSSERoutes, broadcast } = require('./routes/sse-routes');
+const { registerSSERoutes, broadcast, broadcastStream } = require('./routes/sse-routes');
 const { registerSessionRoutes } = require('./routes/session-routes');
 const { registerChatRoutes } = require('./routes/chat-routes');
 const { registerBingRoutes } = require('./routes/bing-routes');
@@ -65,8 +65,17 @@ const { registerSettingsRoutes } = require('./routes/settings-routes');
 const { registerMemoryRoutes } = require('./routes/memory-routes');
 const { registerHistoryRoutes } = require('./routes/history-routes');
 const { registerExportRoutes } = require('./routes/export-routes');
+const { registerSnapshotRoutes } = require('./routes/snapshot-routes');
 const { registerSpaceRoutes } = require('./routes/space-routes');
 const { registerWorkflowRoutingRoutes } = require('./routes/workflow-routing-routes');
+const { registerWorkflowGraphRoutes } = require('./routes/workflow-graph-routes');
+const { registerMcpTelemetryRoutes } = require('./routes/mcp-telemetry-routes');
+const { registerCostRoutes } = require('./routes/cost-routes');
+const { registerBudgetRoutes } = require('./routes/budget-routes');
+const { registerActionRoutes } = require('./routes/action-routes');
+const { timingSafeTokenEqual } = require('./routes/auth-policy');
+const { createGatewayBridge } = require('./lib/gateway-bridge');
+const { createGatewayConsoleFeed } = require('./lib/gateway-console-feed');
 const SettingsStore = require('./lib/settings-store');
 
 function loadDashboardEnv() {
@@ -123,7 +132,9 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const PORT = process.env.PORT || 3876;
-const WORKSPACE = '/root/.openclaw/workspace';
+const HOST = process.env.HOST || '127.0.0.1';
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+const WORKSPACE = process.env.OPENCLAW_WORKSPACE || '/root/.openclaw/workspace';
 const TASKS_FILE = path.join(WORKSPACE, 'tasks.md');
 const DASHBOARD_ROOT = path.join(WORKSPACE, 'dashboard');
 const GATEWAY_STATUS_FILE = path.join(DASHBOARD_ROOT, 'gateway-status.json');
@@ -139,6 +150,7 @@ const MIME_TYPES = {
   '.js': 'application/javascript',
   '.mjs': 'application/javascript',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
   '.md': 'text/markdown',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -331,6 +343,9 @@ function sendFile(res, filePath) {
       headers['Clear-Site-Data'] = '"cache"';
       headers['Cache-Control'] = 'no-store, max-age=0';
     } else if (ext === '.css') {
+      headers['Cache-Control'] = 'public, max-age=3600';
+    } else if (ext === '.webmanifest') {
+      // PWA manifest: short cache so install-metadata edits land within an hour.
       headers['Cache-Control'] = 'public, max-age=3600';
     } else if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp'].includes(ext)) {
       headers['Cache-Control'] = 'public, max-age=86400';
@@ -580,7 +595,18 @@ const diagnosticsHandler = createDiagnosticsHandler();
 
 // ── ROUTER SETUP (Phase 4A) ──────────────────────────────
 const router = new Router();
-registerSSERoutes(router);
+
+// Gateway console feed: second gateway subscriber for the Live Agent Console
+// (/api/console/stream). Additive sibling of the bridge — own connection, same
+// v4 handshake; disabled cleanly when no gateway config resolves. Created
+// before route registration so the SSE module gets the started instance.
+let gatewayConsoleFeed = null;
+try {
+  gatewayConsoleFeed = createGatewayConsoleFeed({ logger: console });
+  gatewayConsoleFeed.start();
+} catch (err) { console.error('⚠️  Gateway console feed not available:', err.message); }
+
+registerSSERoutes(router, { consoleFeed: gatewayConsoleFeed });
 registerSessionRoutes(router);
 
 // ── Gateway client for chat ──────────────────────
@@ -638,6 +664,26 @@ try {
   console.error('⚠️  Gateway client not available:', err.message);
 }
 
+// Budget channel alerts (budget-ledger slice 5): publish the shared client so
+// the dispatcher's notifier can page over the EXISTING authenticated gateway
+// WebSocket (sendDelivery → `send` RPC). Null when the client is unavailable —
+// the notifier then degrades silently (log-once) and enforcement/SSE are
+// unaffected. Cleared on stop so a stale socket is never reused.
+try { global.__openclawDashboardGatewayClient = gatewayClient || null; } catch (_) {}
+const __origGatewayClientStop = gatewayClient && typeof gatewayClient.stop === 'function' ? gatewayClient.stop.bind(gatewayClient) : null;
+if (__origGatewayClientStop) {
+  gatewayClient.stop = (...args) => {
+    global.__openclawDashboardGatewayClient = null;
+    return __origGatewayClientStop(...args);
+  };
+}
+
+// Gateway bridge v1: server-side subscriber feeding /api/events/stream. Opt-in
+// via GATEWAY_BRIDGE_URL env or openclaw.json; disabled cleanly when unset;
+// the gateway shared secret never leaves this process.
+try { createGatewayBridge({ broadcastStream }).start(); }
+catch (err) { console.error('⚠️  Gateway bridge not available:', err.message); }
+
 registerChatRoutes(router, gatewayClient);
 
 // ── Bing Webmaster ──────────────────────────────
@@ -663,16 +709,33 @@ registerTaskRoutes(router);
 registerProjectRoutes(router);
 registerViewRoutes(router);
 registerMemoryRoutes(router);
+// Snapshot/restore routes register BEFORE history-routes (slice-3 fix): the
+// first-match router would otherwise let history's DB-gated GET /api/snapshots
+// (Time Travel listing) shadow the disk-only snapshot registry and
+// /api/snapshots/:id/download (docs/briefs/snapshot-restore.md §4.1 pins these
+// five paths). Time Travel's listing moved to the /api/state-snapshots alias.
+registerSnapshotRoutes(router, { settingsStore });
 registerHistoryRoutes(router, settingsDeps);
 registerExportRoutes(router, settingsDeps, settingsStore);
 registerSpaceRoutes(router, settingsDeps);
 registerWorkflowRoutingRoutes(router, settingsDeps);
+// Workflow graph telemetry (visual editor Stage 1 earn-use events, brief §6).
+registerWorkflowGraphRoutes(router, settingsDeps);
+// MCP tool-call adoption telemetry (improvement-loop queue; fire-and-forget
+// POSTs from lib/mcp-server.js land here → audit_log 'mcp-tool-call' rows).
+registerMcpTelemetryRoutes(router, settingsDeps);
+registerCostRoutes(router);
+registerBudgetRoutes(router);
+registerActionRoutes(router, { settingsStore });
 const server = http.createServer(async (req, res) => {
+  // Staging-platform invariant (DEPLOY-POLICY.md): staging instances must never be indexed.
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   const timestamp = new Date().toISOString();
   const url = req.url.split('?')[0];
   const method = req.method;
 
-  // Log request
+  // Log request — query string intentionally stripped so the legacy `?token=`
+  // SSE credential never reaches logs (SECURITY-AUDIT-2026-08.md F7).
   console.log(`[${timestamp}] ${method} ${url}`);
 
   // Handle CORS preflight
@@ -688,23 +751,22 @@ const server = http.createServer(async (req, res) => {
 
 
   // ── AUTH MIDDLEWARE ──────────────────────────────────────
-  // Require Bearer token for all /api/* routes (except /api/health)
-  // when DASHBOARD_AUTH_TOKEN is set in environment
-  // SSE endpoints (/api/events) can also authenticate via ?token= query param
+  // Require Bearer token for all /api/* routes (except /api/health and /api/auth/self)
+  // when DASHBOARD_AUTH_TOKEN is set in environment.
+  // Security (SECURITY-AUDIT-2026-08.md F7): prefer the Authorization header.
+  // The `?token=` query parameter is kept ONLY as a documented legacy fallback
+  // for EventSource clients (which cannot set request headers); it must never
+  // be logged — request logging above strips query strings for this reason.
   if (DASHBOARD_AUTH_TOKEN && url.startsWith('/api/') && url !== '/api/health' && url !== '/api/auth/self') {
     const authHeader = req.headers['authorization'] || '';
-    let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    // SSE fallback: accept token in query string
+    let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+    // Legacy SSE fallback (documented): accept token as ?token= query param.
     if (!token) {
       const qs = (req.url || '').split('?')[1] || '';
       const tokenParam = qs.split('&').find(p => p.startsWith('token='));
       if (tokenParam) token = decodeURIComponent(tokenParam.split('=')[1]);
     }
-    // Constant-time comparison to prevent timing attacks
-    const crypto = require('crypto');
-    const tokenMatch = token && DASHBOARD_AUTH_TOKEN &&
-      token.length === DASHBOARD_AUTH_TOKEN.length &&
-      crypto.timingSafeEqual(Buffer.from(token), Buffer.from(DASHBOARD_AUTH_TOKEN));
+    const tokenMatch = timingSafeTokenEqual(token, DASHBOARD_AUTH_TOKEN);
     if (!tokenMatch) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized', message: 'Valid Bearer token required' }));
@@ -975,21 +1037,48 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Serve webos desktop at root
-    if (url === '/' || url === '/index.html') {
-      // Serve dashboard with auth token injected
-      if (DASHBOARD_AUTH_TOKEN) {
-        const fs = require('fs');
-        const htmlPath = path.join(WORKSPACE, 'dashboard/index.html');
-        fs.readFile(htmlPath, 'utf8', (err, html) => {
-          if (err) { res.writeHead(404); res.end('Not Found'); return; }
-          const injected = html.replace('</head>', `  <script>globalThis.__DASHBOARD_AUTH_TOKEN__="${DASHBOARD_AUTH_TOKEN}";</script>\n</head>`);
-          res.writeHead(200, { 'Content-Type': 'text/html', 'Clear-Site-Data': '"cache"', 'Cache-Control': 'no-store' });
-          res.end(injected);
+    // PWA install (UPGRADE_ROADMAP Phase 3): manifest + service worker + icons.
+    // Explicit branches so headers are exact regardless of extension defaults:
+    //   manifest → application/manifest+json, short cache;
+    //   sw.js    → application/javascript + no-cache so SW updates land
+    //              immediately (never the generic .js Clear-Site-Data branch);
+    //   icons    → immutable-ish long cache (content only changes with a new
+    //              generate-pwa-icons.mjs run, which ships with a deploy).
+    if (url === '/manifest.webmanifest') {
+      sendFile(res, path.join('dashboard', 'manifest.webmanifest'));
+      return;
+    }
+    if (url === '/sw.js') {
+      const swPath = path.join(WORKSPACE, 'dashboard', 'sw.js');
+      fs.readFile(swPath, (err, data) => {
+        if (err) { res.writeHead(404); res.end('Not Found'); return; }
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'no-cache',
+          'Service-Worker-Allowed': '/'
         });
-      } else {
-        sendFile(res, 'dashboard/index.html');
-      }
+        res.end(data);
+      });
+      return;
+    }
+    if (url.startsWith('/icons/')) {
+      sendFile(res, path.join('dashboard', url.slice(1)));
+      return;
+    }
+
+    // Serve webos desktop at root
+    // Security (SECURITY-AUDIT-2026-08.md F1): never embed DASHBOARD_AUTH_TOKEN in
+    // this unauthenticated response. The bootstrap script in index.html verifies
+    // the operator's token against /api/auth/self and attaches it to API calls
+    // as a Bearer header (see src/shell/api-client.mjs).
+    if (url === '/' || url === '/index.html') {
+      const htmlPath = path.join(WORKSPACE, 'dashboard/index.html');
+      fs.readFile(htmlPath, 'utf8', (err, html) => {
+        if (err) { res.writeHead(404); res.end('Not Found'); return; }
+        // Clear-Site-Data evicts any previously cached token-injected page.
+        res.writeHead(200, { 'Content-Type': 'text/html', 'Clear-Site-Data': '"cache"', 'Cache-Control': 'no-store' });
+        res.end(html);
+      });
       return;
     }
 
@@ -1003,14 +1092,19 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// Security: refuse to bind 0.0.0.0 without auth token
+// Security (SECURITY-AUDIT-2026-08.md F8): refuse to serve without a token,
+// and refuse unauthenticated (`REQUIRE_AUTH=false`) binds on non-loopback hosts.
 if (!DASHBOARD_AUTH_TOKEN && process.env.REQUIRE_AUTH !== 'false') {
-  console.error('❌ FATAL: DASHBOARD_AUTH_TOKEN is not set. Server binds to 0.0.0.0 — set a token or export REQUIRE_AUTH=false to override.');
+  console.error(`❌ FATAL: DASHBOARD_AUTH_TOKEN is not set. Server would bind ${HOST} — set a token or export REQUIRE_AUTH=false to override.`);
+  process.exit(1);
+}
+if (!DASHBOARD_AUTH_TOKEN && !LOOPBACK_HOSTS.has(String(HOST).toLowerCase())) {
+  console.error(`❌ FATAL: REQUIRE_AUTH=false serves the dashboard without authentication — refusing to bind non-loopback host "${HOST}". Set HOST=127.0.0.1 (or localhost / ::1), or configure DASHBOARD_AUTH_TOKEN.`);
   process.exit(1);
 }
 
-server.listen(PORT, '0.0.0.0', async () => {
-  console.log(`📋 Task Server running at http://localhost:${PORT}`);
+server.listen(PORT, HOST, async () => {
+  console.log(`📋 Task Server running at http://${LOOPBACK_HOSTS.has(String(HOST).toLowerCase()) ? 'localhost' : HOST}:${PORT}`);
   console.log(`   Dashboard: http://localhost:${PORT}/`);
   console.log(`   Legacy API: http://localhost:${PORT}/api/tasks (markdown)`);
   console.log(`   New API: http://localhost:${PORT}/api/projects`);
@@ -1019,7 +1113,9 @@ server.listen(PORT, '0.0.0.0', async () => {
   console.log(`   Health: http://localhost:${PORT}/api/health`);
   console.log(`   Task file: ${TASKS_FILE}`);
   console.log(`   Storage type: ${STORAGE_TYPE}`);
-  console.log(`   Accessible from local network (auth required)`);
+  console.log(DASHBOARD_AUTH_TOKEN
+    ? `   Bound to ${HOST}:${PORT} (auth required)`
+    : `   Bound to ${HOST}:${PORT} (no auth — loopback only)`);
 
   // Initialize Asana storage
   await initAsanaStorage();

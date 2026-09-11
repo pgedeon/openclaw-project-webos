@@ -47,13 +47,13 @@ const parseErrorPayload = async (response) => {
   try {
     if (contentType.includes('application/json')) {
       const payload = await response.clone().json();
-      return payload?.error || payload?.message || JSON.stringify(payload);
+      return { message: payload?.error || payload?.message || JSON.stringify(payload), payload };
     }
 
     const text = await response.clone().text();
-    return text || response.statusText;
+    return { message: text || response.statusText, payload: null };
   } catch (error) {
-    return response.statusText || `HTTP ${response.status}`;
+    return { message: response.statusText || `HTTP ${response.status}`, payload: null };
   }
 };
 
@@ -259,10 +259,13 @@ export function createAPIClient(baseURL = '/api', options = {}) {
 
     const response = await raw(url, { ...init, headers });
     if (!response.ok) {
-      const message = await parseErrorPayload(response);
+      const { message, payload } = await parseErrorPayload(response);
+      // payload is attached so structured refusal bodies survive the throw
+      // (e.g. budget_blocked verdicts consumed by src/shell/action-client.mjs).
       throw new APIClientError(message || `Request failed with status ${response.status}`, {
         status: response.status,
         url,
+        payload,
       });
     }
 
@@ -285,7 +288,7 @@ export function createAPIClient(baseURL = '/api', options = {}) {
     requestText(path, init = {}) {
       return raw(path, init).then(async (response) => {
         if (!response.ok) {
-          const message = await parseErrorPayload(response);
+          const { message } = await parseErrorPayload(response);
           throw new APIClientError(message || `Request failed with status ${response.status}`, {
             status: response.status,
             url: normalizePath(baseURL, path),
@@ -319,6 +322,15 @@ export function createAPIClient(baseURL = '/api', options = {}) {
       },
       history(id) {
         return request(`/tasks/${encodeURIComponent(id)}/history`);
+      },
+      // Task↔session bindings (read-time join, docs/briefs/task-session-binding.md).
+      sessions(id) {
+        return request(`/tasks/${encodeURIComponent(id)}/sessions`);
+      },
+      // Cursor-paged normalized replay events for the embedded Conversation
+      // tab (same shipped session-reader surface Session Replay uses).
+      sessionEvents(sessionId, params = {}) {
+        return request(pathWithQuery(`/oc/sessions/${encodeURIComponent(sessionId)}/events`, params));
       },
       async dependencies(id) {
         const payload = await request(pathWithQuery(`/tasks/${encodeURIComponent(id)}`, { includeGraph: true }));
@@ -422,6 +434,11 @@ export function createAPIClient(baseURL = '/api', options = {}) {
           body: data,
         });
       },
+      // Workflow graph telemetry (visual editor Stage 1, brief §6). Fire-and-forget
+      // from the view; server degrades to {stored:false} without a database.
+      graphEvent(data) {
+        return jsonRequest('/workflow-graph/events', { method: 'POST', body: data });
+      },
     },
     catalog: {
       all() {
@@ -493,6 +510,15 @@ export function createAPIClient(baseURL = '/api', options = {}) {
           method: action ? 'POST' : 'PATCH',
           body: data,
         });
+      },
+    },
+    // One-click actions gate (slice 1 server core + slice 2 client wiring)
+    actions: {
+      execute(envelope) {
+        return jsonRequest('/actions/execute', { method: 'POST', body: envelope });
+      },
+      recent(params = {}) {
+        return request(pathWithQuery('/actions/recent', params));
       },
     },
     views: {
@@ -611,7 +637,10 @@ export function createAPIClient(baseURL = '/api', options = {}) {
 
     // State Snapshots
     snapshots: {
-      listAll(params = {}) { return request(pathWithQuery('/snapshots', params)); },
+      // Time Travel state_snapshots listing — /api/state-snapshots alias
+      // (slice-3 route-order fix: bare GET /api/snapshots now serves the
+      // full-state artifact registry, docs/briefs/snapshot-restore.md §4.1).
+      listAll(params = {}) { return request(pathWithQuery('/state-snapshots', params)); },
       list(entityType, entityId, params = {}) { return request(pathWithQuery(`/snapshots/${entityType}/${entityId}`, params)); },
       previewRevert(snapshotId) { return jsonRequest(`/snapshots/${snapshotId}/preview-revert`, { method: 'POST', body: {} }); },
       revert(snapshotId, actor = 'dashboard') { return jsonRequest(`/snapshots/${snapshotId}/revert`, { method: 'POST', body: { actor } }); },

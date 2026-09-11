@@ -885,3 +885,88 @@
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* Cost Rollup */
+
+.widget-cost-rollup__body {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.widget-cost-rollup__list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.widget-cost-rollup__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.widget-cost-rollup__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--win11-text);
+}
+
+.widget-cost-rollup__spark {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 18px;
+  overflow: visible;
+}
+
+.widget-cost-rollup__spark-fill {
+  fill: var(--win11-accent-light);
+  opacity: 0.28;
+}
+
+.widget-cost-rollup__spark-line {
+  stroke: var(--win11-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.widget-cost-rollup__cost {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--win11-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.widget-cost-rollup__state {
+  width: 100%;
+  text-align: center;
+  align-self: center;
+  font-size: 0.75rem;
+  color: var(--win11-text-secondary);
+}
+
+.widget-cost-rollup__footer-wrap {
+  margin-top: auto;
+}
+
+.widget-cost-rollup__footer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.68rem;
+  color: var(--win11-text-secondary);
+}
+
+.widget-cost-rollup__total {
+  font-weight: 600;
+  color: var(--win11-text);
+}

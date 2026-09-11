@@ -1,5 +1,7 @@
 const { Pool } = require('pg');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
+const { createBudgetEnforcement, buildBudgetBreachFrame } = require('./lib/budget-enforcement');
+const { createBudgetChannelNotifier } = require('./lib/budget-channel-notifier');
 
 const DEFAULT_OPTIONS = Object.freeze({
   pollIntervalMs: 30_000,
@@ -235,6 +237,18 @@ const SQL = {
       AND ($2::text IS NULL OR claim_session_id = $2)
     RETURNING *
   `,
+  cancelQueuedForBudgetStop: `
+    UPDATE workflow_runs
+    SET status = 'cancelled',
+        finished_at = NOW(),
+        last_error = $2,
+        last_error_at = NOW(),
+        gateway_session_active = FALSE,
+        updated_at = NOW()
+    WHERE id = $1
+      AND status = 'queued'
+    RETURNING id
+  `,
   stats: `
     SELECT
       COUNT(*) FILTER (WHERE status = 'queued')::int AS queued_count,
@@ -467,6 +481,47 @@ class GatewayWorkflowDispatcherV2 {
     this.lastTickAt = null;
     this.lastTickError = null;
     this.lastTickSummary = null;
+    // Budget enforcement gate (slice 2) — created lazily on first candidate.
+    this.budgetGate = null;
+    this.lastBudgetEnforcement = { held: 0, stopped: 0, warned: 0 };
+    // Budget channel alerts (slice 5) — lazy notifier + client resolver.
+    this.budgetChannelNotifier = null;
+    if (this.options.budgetAlertGatewayClient !== undefined) {
+      const injected = this.options.budgetAlertGatewayClient;
+      this.budgetAlertGetClient = typeof injected === 'function' ? injected : () => injected;
+    }
+  }
+
+  /**
+   * Resolve the gateway client for budget channel alerts. Injected
+   * options.budgetAlertGatewayClient (instance or () => client) wins (tests);
+   * otherwise the task-server's shared GatewayClient is required lazily so the
+   * dispatcher can be constructed before the client exists. Null ⇒ notifier
+   * degrades silently (log-once); enforcement and SSE are unaffected.
+   */
+  getBudgetAlertGatewayClient() {
+    if (!this.budgetAlertGetClient) {
+      try {
+        // task-server.js sets this global right after its shared GatewayClient
+        // starts (the same client chat-routes use) — no require cycle.
+        const shared = global.__openclawDashboardGatewayClient || null;
+        if (shared) this.budgetAlertGetClient = () => shared;
+      } catch (_) {
+        this.budgetAlertGetClient = null;
+      }
+    }
+    return this.budgetAlertGetClient ? this.budgetAlertGetClient() : null;
+  }
+
+  /** Lazy singleton beside getBudgetBroadcaster(). */
+  getBudgetChannelNotifier() {
+    if (!this.budgetChannelNotifier) {
+      this.budgetChannelNotifier = createBudgetChannelNotifier({
+        getClient: () => this.getBudgetAlertGatewayClient(),
+        log: this.log,
+      });
+    }
+    return this.budgetChannelNotifier;
   }
 
   start() {
@@ -514,6 +569,7 @@ class GatewayWorkflowDispatcherV2 {
         retriedCount: retryResult.retried.length,
         releasedCount: released.length,
         timedOutCount: retryResult.timedOut.length + timedOutLongRunning.length,
+        budgetEnforcement: this.lastBudgetEnforcement,
         dispatched,
         retried: retryResult.retried,
         released,
@@ -547,8 +603,9 @@ class GatewayWorkflowDispatcherV2 {
     ].join('\n');
 
     try {
-      const result = execSync(
-        'openclaw system event --mode now --json --text ' + JSON.stringify(eventText),
+      const result = execFileSync(
+        'openclaw',
+        ['system', 'event', '--mode', 'now', '--json', '--text', eventText],
         { timeout: 15000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }
       );
       const parsed = JSON.parse(result.trim());
@@ -565,11 +622,166 @@ class GatewayWorkflowDispatcherV2 {
     }
   }
 
+  /**
+   * Budget enforcement gate (slice 2, docs/briefs/budget-ledger.md §3).
+   * Lazily builds lib/budget-enforcement over this pool with a cache TTL of
+   * one poll interval, so evaluation staleness is bounded by one tick.
+   */
+  getBudgetGate() {
+    if (!this.budgetGate) {
+      if (!this.pool || typeof this.pool.query !== 'function') return null;
+      this.budgetGate = createBudgetEnforcement(this.pool, {
+        log: this.log,
+        ttlMs: this.options.pollIntervalMs
+      });
+    }
+    return this.budgetGate;
+  }
+
+  /**
+   * Evaluate a run against ACTIVE budgets covering its scope chain and record
+   * the idempotent budget_events rows for any breach. Returns the verdict, or
+   * null when enforcement is OFF (no pool / evaluation failed — fail open so
+   * dispatch behavior is unchanged; brief degradation matrix).
+   *
+   * Slice 3: when enforcement takes a non-warn action (pause_new_runs or
+   * hard_stop), every latched budget_events row is surfaced as one
+   * `budget:breach` frame on the SSE fan-out. The UNIQUE
+   * (budget_id, period_key, event_kind) latch throttles emission to exactly
+   * one frame per budget+period+kind across repeated ticks.
+   */
+  async enforceBudgets(runRef) {
+    const gate = this.getBudgetGate();
+    if (!gate) return null;
+    try {
+      const verdict = await gate.checkRun(runRef);
+      if (!verdict || !verdict.evaluated || verdict.action === 'ok') return verdict;
+      const runIds = runRef && runRef.runId ? [runRef.runId] : [];
+      const collected = [];
+      if (verdict.action === 'hard_stop') {
+        // hardStopInFlight owns the PRIMARY hard_stopped insert (with
+        // cancelled_run_ids detail); its latched row carries the frame.
+        collected.push(...await gate.hardStopInFlight(verdict.breached));
+      }
+      collected.push(...await gate.collectBreachEventRows(verdict.breached, verdict.action, { run_ids: runIds }));
+      if (collected.length) {
+        // Slice 5 live-fire: surface EVERY latched breach row (warn included).
+        // Channel/kind policy lives in the notifier env config — the default
+        // BUDGET_ALERT_EVENT_KINDS excludes `warned`, so deployments that did
+        // not opt in still never page on warn (behavior unchanged by default).
+        this.emitBudgetBreachFrames(collected);
+      }
+      return verdict;
+    } catch (error) {
+      this.log.error('[DispatcherV2] Budget enforcement error (failing open):', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Resolve the SSE sink for budget breach frames. Injected
+   * options.budgetSseBroadcast wins (tests); otherwise both server channels
+   * are used additively — broadcastStream (/api/events/stream, the bridge-fed
+   * state channel) plus broadcast (legacy /api/events, always connected so
+   * notification-center delivery does not depend on opt-in liveSync).
+   */
+  getBudgetBroadcaster() {
+    if (this._budgetSseBroadcast !== undefined) return this._budgetSseBroadcast;
+    const injected = this.options.budgetSseBroadcast;
+    if (typeof injected === 'function') {
+      this._budgetSseBroadcast = injected;
+      return injected;
+    }
+    try {
+      const sseRoutes = require('./routes/sse-routes');
+      this._budgetSseBroadcast = (event, data) => {
+        if (typeof sseRoutes.broadcastStream === 'function') sseRoutes.broadcastStream(event, data);
+        if (typeof sseRoutes.broadcast === 'function') sseRoutes.broadcast(event, data);
+      };
+    } catch (_) {
+      this._budgetSseBroadcast = null; // surfacing unavailable; enforcement unaffected
+    }
+    return this._budgetSseBroadcast;
+  }
+
+  /**
+   * Fan out one `budget:breach` frame per latched event row. Emission failures
+   * are logged and swallowed — surfacing must never break dispatch.
+   */
+  emitBudgetBreachFrames(collected) {
+    const broadcaster = this.getBudgetBroadcaster();
+    if (!broadcaster) return;
+    const notifier = this.getBudgetChannelNotifier(); // never null; deliverFrame never throws
+    const seen = new Set();
+    for (const item of collected || []) {
+      const frame = buildBudgetBreachFrame(item || {});
+      if (!frame) continue;
+      if (seen.has(frame.id)) continue; // belt-and-braces vs the DB latch
+      seen.add(frame.id);
+      try {
+        broadcaster('budget:breach', frame);
+      } catch (error) {
+        this.log.error('[DispatcherV2] Budget breach SSE emit failed:', error.message);
+      }
+      try {
+        notifier.deliverFrame(frame); // async, self-contained: failures log-once inside
+      } catch (error) {
+        this.log.error('[DispatcherV2] Budget channel alert dispatch failed:', error.message);
+      }
+    }
+  }
+
+  /**
+   * Cancel one queued candidate under a hard_stop breach via the existing
+   * status-guarded cancel path (queued → cancelled only). The in-flight bulk
+   * cancel for the same breach already ran inside enforceBudgets().
+   */
+  async cancelQueuedCandidateForBudgetStop(candidate, verdict) {
+    const stopEntry = ((verdict && verdict.breached) || []).find((b) => b.decision === 'hard_stop');
+    const reason = stopEntry
+      ? `Budget hard stop: ${stopEntry.budget.name} (${stopEntry.key})`
+      : 'Budget hard stop';
+    try {
+      const result = await this.pool.query(SQL.cancelQueuedForBudgetStop, [candidate.id, reason]);
+      if (result.rows[0]) {
+        this.log.log('[DispatcherV2] Budget hard stop: cancelled queued run', candidate.id);
+      }
+    } catch (error) {
+      this.log.error('[DispatcherV2] Budget hard stop cancel failed for run', candidate.id, ':', error.message);
+    }
+  }
+
   async dispatchQueuedRuns(limit = this.options.batchSize) {
     const result = await this.pool.query(SQL.dispatchCandidates, [clampLimit(limit, this.options.batchSize)]);
     const dispatched = [];
+    const budgetStats = { held: 0, stopped: 0, warned: 0 };
 
     for (const candidate of result.rows) {
+      // Budget enforcement gate (slice 2): sits between dispatchCandidates
+      // SELECT and markDispatched (brief §3.1). null/'ok'/'warn' → dispatch;
+      // pause_new_runs holds the row queued; hard_stop cancels it.
+      const verdict = await this.enforceBudgets({
+        runId: candidate.id,
+        agentId: candidate.routed_agent_id || candidate.owner_agent_id || null,
+        workflowType: candidate.workflow_type
+      });
+
+      if (verdict && verdict.action === 'pause_new_runs') {
+        // Held, not failed — queue drains in order when the window resets,
+        // the cap is raised, or the budget is deactivated (derived state,
+        // brief §2.4). No dispatch attempt is marked.
+        budgetStats.held += 1;
+        continue;
+      }
+
+      if (verdict && verdict.action === 'hard_stop') {
+        await this.cancelQueuedCandidateForBudgetStop(candidate, verdict);
+        budgetStats.stopped += 1;
+        continue;
+      }
+
+      if (verdict && verdict.action === 'warn') budgetStats.warned += 1;
+
       const dispatchResult = await this.pool.query(SQL.markDispatched, [candidate.id, candidate.routed_agent_id]);
       if (dispatchResult.rows[0]) {
         const dispatchedRun = normalizeRunRow({
@@ -586,6 +798,7 @@ class GatewayWorkflowDispatcherV2 {
       }
     }
 
+    this.lastBudgetEnforcement = budgetStats;
     return dispatched;
   }
 
@@ -622,6 +835,19 @@ class GatewayWorkflowDispatcherV2 {
             timeout_minutes: normalized.timeoutMinutes
           }));
         }
+        continue;
+      }
+
+      // A stale-dispatch retry is a fresh dispatch attempt: it must not
+      // tunnel past a breached budget (brief §3.1). On hard_stop the same
+      // enforceBudgets call already bulk-cancelled in-flight rows in scope
+      // (status 'dispatched' included), so this row is cancelled too.
+      const budgetVerdict = await this.enforceBudgets({
+        runId: normalized.id,
+        agentId: normalized.targetAgentId || normalized.ownerAgentId || null,
+        workflowType: normalized.workflowType
+      });
+      if (budgetVerdict && (budgetVerdict.action === 'pause_new_runs' || budgetVerdict.action === 'hard_stop')) {
         continue;
       }
 

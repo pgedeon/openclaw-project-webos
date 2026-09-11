@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # OpenClaw Desktop File Explorer + Notepad Implementation Brief
 
 ## Objective

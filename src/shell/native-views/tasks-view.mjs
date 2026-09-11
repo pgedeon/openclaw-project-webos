@@ -1,6 +1,23 @@
 import { ensureNativeRoot, createStatCard, formatCount, escapeHtml } from './helpers.mjs';
 
+// Capped-render virtualization (roadmap perf pass): task rows have VARIABLE
+// height (the chip row wraps on narrow windows), so the session-replay
+// fixed-row rail pattern does not apply — see the pattern split in
+// ../list-window.mjs. We render the first LIST_INITIAL_CAP filtered rows and
+// expose a "load more" control for the remainder.
+import { cappedWindow, growCap } from '../list-window.mjs';
+
+// Conversation tab (roadmap candidate "Task ↔ session conversation binding"):
+// pure event→chat-item mapping for the embedded transcript view.
+import { CONVERSATION_INITIAL_CAP, foldChatPage, capChatItems } from '../../../lib/task-conversation.js';
+
+import { executeAction } from '../action-client.mjs';
+
 const FALLBACK_DEFAULT_MODEL = 'openrouter1/stepfun/step-3.5-flash:free';
+
+// Capped-render sizing: initial window and per-"load more" increment.
+const LIST_INITIAL_CAP = 100;
+const LIST_CAP_STEP = 100;
 
 const STATUS_OPTIONS = [
   { value: 'backlog', label: 'Backlog' },
@@ -155,6 +172,10 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
   let currentAgent = null;
   let isRefreshing = false;
   let syncUnsubscribe = null;
+  // Capped-render state: how many filtered rows are currently rendered.
+  // Reset to LIST_INITIAL_CAP whenever the filter set changes (project,
+  // filter tab, search, category, sort), preserved across selection toggles.
+  let listShownCount = LIST_INITIAL_CAP;
 
   // === Style injection ===
   const styleEl = document.createElement('style');
@@ -186,6 +207,17 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .tv-refresh-spinner { display: inline-block; }
     .tv-live-indicator { display: inline-block; }
+    /* Conversation tab (embedded transcript) — badge tones mirror console-view
+       .cl-badge-* / replay .sr-badge-* styling. */
+    .tv-conv-badge { display:inline-block; border-radius:4px; padding:0 6px; font-size:0.7rem; }
+    .tv-conv-badge-good { background:rgba(34,197,94,0.15); color:#22c55e; }
+    .tv-conv-badge-bad { background:rgba(239,68,68,0.18); color:#ef4444; }
+    .tv-conv-badge-neutral { background:rgba(148,163,184,0.15); color:#94a3b8; }
+    .tv-conv-bubble { max-width:92%; margin:0 0 6px; padding:5px 9px; border-radius:8px;
+      white-space:pre-wrap; word-break:break-word; line-height:1.45; font-size:0.76rem; }
+    .tv-conv-bubble.user { margin-left:auto; background:rgba(96,205,255,0.10); border:1px solid rgba(96,205,255,0.25); }
+    .tv-conv-bubble.assistant { background:rgba(255,255,255,0.04); border:1px solid var(--win11-border); }
+    .tv-conv-who { display:block; font-size:0.64rem; color:var(--win11-text-tertiary,#55607080); margin-bottom:2px; }
   `;
   root.appendChild(styleEl);
 
@@ -434,6 +466,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
 
   async function loadTasks() {
     isLoading = true;
+    listShownCount = LIST_INITIAL_CAP; // fresh data → fresh cap
     renderList();
     try {
       const params = buildScopedTaskParams();
@@ -600,7 +633,16 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       return;
     }
 
-    container.innerHTML = filtered.map(t => renderTaskRow(t)).join('');
+    // Capped render: only the first listShownCount rows reach the DOM
+    // (variable-height rows → capped-render + load-more, not fixed-row rail).
+    const { end, hidden } = cappedWindow({ total: filtered.length, shown: listShownCount });
+    container.innerHTML = filtered.slice(0, end).map(t => renderTaskRow(t)).join('') + (
+      hidden > 0
+        ? `<div style="padding:10px;text-align:center;">
+             <button id="tvLoadMore" class="tv-action-btn" style="padding:5px 14px;">Load ${Math.min(LIST_CAP_STEP, hidden)} more… (${hidden} hidden)</button>
+           </div>`
+        : ''
+    );
 
     // Attach event handlers via delegation
     attachListHandlers(container);
@@ -675,6 +717,18 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       row.addEventListener('mouseleave', hide);
       cleanupFns.push(() => { row.removeEventListener('mouseenter', show); row.removeEventListener('mouseleave', hide); });
     });
+
+    // "Load more" — grow the cap by one step and re-render
+    const loadMore = container.querySelector('#tvLoadMore');
+    if (loadMore) {
+      const handler = () => {
+        const filtered = getFilteredTasks();
+        listShownCount = growCap({ shown: listShownCount, total: filtered.length, step: LIST_CAP_STEP });
+        renderList();
+      };
+      loadMore.addEventListener('click', handler);
+      cleanupFns.push(() => loadMore.removeEventListener('click', handler));
+    }
 
     // Row click -> select
     container.querySelectorAll('.tv-task-row').forEach(row => {
@@ -793,6 +847,9 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
           <button class="tv-nav-btn" data-nav="history" data-task-id="${escapeHtml(task.id)}" title="View task history">📜 History</button>
           <button class="tv-nav-btn" data-nav="memory" data-query="${escapeHtml(title)}" title="Search memory for this task">🧠 Memory</button>
         </div>
+        <!-- Sessions (task↔session binding, docs/briefs/task-session-binding.md §4):
+             filled async by loadTaskSessions(); stays empty (absent) on failure/empty -->
+        <div id="tvSessions" style="margin-top:10px;"></div>
       </div>
     `;
 
@@ -846,6 +903,242 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       btn.addEventListener('click', handler);
       cleanupFns.push(() => btn.removeEventListener('click', handler));
     });
+
+    // Sessions section (brief §4): exactly ONE GET per detail render, zero
+    // non-GET requests ever. Endpoint failure / 503 / empty list → section
+    // stays absent, silent by design (most tasks have no runs).
+    loadTaskSessions(task);
+  }
+
+  // === Sessions section (task↔session binding, docs/briefs/task-session-binding.md) ===
+  function tvRelTime(ms) {
+    if (!ms) return '';
+    const diff = Date.now() - ms;
+    if (diff < 60000) return 'just now';
+    const min = Math.floor(diff / 60000);
+    if (min < 60) return `${min}m`;
+    const hrs = Math.floor(min / 60);
+    if (hrs < 24) return `${hrs}h`;
+    return `${Math.floor(hrs / 24)}d`;
+  }
+
+  function tvSessionRowHtml(b) {
+    const time = b.startedAt ? tvRelTime(b.startedAt) : '';
+    const meta = `${escapeHtml(b.workflowType || 'run')} · ${escapeHtml(b.runStatus || '')}${time ? ` · ${time}` : ''}`;
+    // R1 honesty label: re-queued runs lose earlier gateway_session_id values,
+    // so what is listed is only the latest attempt's session.
+    const retryNote = b.retryCycled
+      ? `<div style="font-size:0.66rem;color:var(--win11-text-tertiary);margin:2px 0 0 20px;">└ retried ${escapeHtml(String(b.retryCount ?? 0))}× · latest attempt shown</div>`
+      : '';
+
+    let main;
+    if (b.deepLink && b.deepLink.params) {
+      // Resolvable transcript: live → Live Console (auto-attach), everything
+      // else → Session Replay (resolves by sessionId).
+      const isLive = b.deepLink.view === 'console';
+      const glyph = isLive ? '▶' : (b.runStatus === 'completed' ? '✔' : '✕');
+      const label = isLive ? 'Live →' : 'Replay →';
+      main = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span style="width:14px;text-align:center;color:${isLive ? '#22c55e' : 'var(--win11-text-secondary)'};">${glyph}</span>
+        <span style="font-family:monospace;font-size:0.74rem;color:var(--win11-text);word-break:break-all;">${escapeHtml(b.sessionKey || '')}</span>
+        <span style="font-size:0.72rem;color:var(--win11-text-tertiary);">· ${meta}</span>
+        <button class="tv-action-btn tv-conv-toggle" data-run-id="${escapeHtml(b.runId || '')}" data-agent="${escapeHtml(b.deepLink.params.agent || '')}" data-session="${escapeHtml(b.deepLink.params.session || '')}" title="Embedded conversation (read-only)">Conversation ▸</button>
+        <button class="tv-action-btn tv-session-nav" data-view="${escapeHtml(b.deepLink.view)}" data-agent="${escapeHtml(b.deepLink.params.agent || '')}" data-session="${escapeHtml(b.deepLink.params.session || '')}">${label}</button>
+      </div>`;
+    } else if (b.sessionKey) {
+      // Orphaned: key retained but transcript pruned/rotated — permanent honest
+      // dead end, never a fabricated link (brief §4 rule 4).
+      main = `<div title="transcript no longer on disk" style="cursor:not-allowed;font-size:0.78rem;color:var(--win11-text-tertiary);">
+        <span style="display:inline-block;width:14px;text-align:center;">∅</span>
+        <span style="font-family:monospace;font-size:0.74rem;word-break:break-all;">${escapeHtml(b.sessionKey)}</span>
+        <span style="font-size:0.72rem;"> · ${meta}</span>
+      </div>`;
+    } else {
+      // Pre-binding / queued run with no session recorded (AC5 legacy rows).
+      main = `<div style="font-size:0.78rem;color:var(--win11-text-tertiary);opacity:0.7;">
+        <span style="display:inline-block;width:14px;text-align:center;">?</span>
+        no session recorded · ${meta}
+      </div>`;
+    }
+
+    const convSlot = (b.deepLink && b.deepLink.params && b.runId)
+      ? `<div class="tv-conv" id="tvConv-${escapeHtml(b.runId)}" style="display:none;margin:4px 0 6px 20px;"></div>`
+      : '';
+    return `<div style="padding:3px 0;border-bottom:1px solid var(--win11-border);">${main}${retryNote}${convSlot}</div>`;
+  }
+
+  async function loadTaskSessions(task) {
+    const holder = root.querySelector('#tvSessions');
+    if (!holder) return;
+    const taskId = task.id;
+    let bindings = [];
+    try {
+      const payload = await api.tasks.sessions(taskId);
+      bindings = Array.isArray(payload?.sessions) ? payload.sessions : [];
+    } catch (_) {
+      return; // 503 / failure → section absent, silent (§4 interaction rules)
+    }
+    if (selectedTaskId !== taskId) return; // selection moved on — drop stale render
+    if (!bindings.length) return;          // empty list → absent
+    holder.innerHTML = `
+      <div style="font-size:0.7rem;font-weight:600;color:var(--win11-text-tertiary);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Sessions</div>
+      ${bindings.map(tvSessionRowHtml).join('')}
+    `;
+    holder.innerHTML = `
+      <div style="font-size:0.7rem;font-weight:600;color:var(--win11-text-tertiary);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Sessions</div>
+      ${bindings.map(tvSessionRowHtml).join('')}
+    `;
+    holder.querySelectorAll('.tv-session-nav').forEach(btn => {
+      const handler = () => {
+        navigateToView?.(btn.dataset.view, { params: { agent: btn.dataset.agent, session: btn.dataset.session } });
+      };
+      btn.addEventListener('click', handler);
+      cleanupFns.push(() => btn.removeEventListener('click', handler));
+    });
+    // Conversation tab (roadmap candidate): inline expand/collapse per bound
+    // session row. Fetches the transcript through the ALREADY-SHIPPED
+    // cursor-paginated GET /api/oc/sessions/:sessionId/events route — read-only,
+    // zero new write paths.
+    holder.querySelectorAll('.tv-conv-toggle').forEach(btn => {
+      const handler = () => toggleConversation(btn);
+      btn.addEventListener('click', handler);
+      cleanupFns.push(() => btn.removeEventListener('click', handler));
+    });
+  }
+
+  // === Conversation tab (embedded transcript, read-only) ===
+  // One open conversation at a time keeps the task-detail DOM bounded; the
+  // state map survives collapse so re-expanding does not refetch.
+  const convStates = new Map(); // runId → {items, nextAfterLine, hasMore, cap, state}
+
+  function tvBadgeTone(exitCode) {
+    if (typeof exitCode === 'number' && Number.isFinite(exitCode)) return exitCode === 0 ? 'good' : 'bad';
+    return 'neutral';
+  }
+
+  function tvConvItemHtml(item) {
+    if (item.type === 'user') {
+      return `<div class="tv-conv-bubble user"><span class="tv-conv-who">user</span>${escapeHtml(item.text || '(empty)')}</div>`;
+    }
+    if (item.type === 'assistant') {
+      return `<div class="tv-conv-bubble assistant"><span class="tv-conv-who">assistant</span>${escapeHtml(item.text || '(empty)')}</div>`;
+    }
+    if (item.type === 'tool') {
+      const tone = tvBadgeTone(item.exitCode);
+      const mark = item.resolved ? (tone === 'good' ? '✔' : '✖') : '⟳';
+      const status = item.resolved
+        ? `exitCode ${item.exitCode}`
+        : 'no result recorded';
+      const args = item.args ? ` <span style="color:var(--win11-text-tertiary,#55607080);">${escapeHtml(item.args)}</span>` : '';
+      return `<div style="margin:0 0 6px;"><span class="tv-conv-badge tv-conv-badge-${tone}">${mark} ${escapeHtml(item.name)} · ${status}</span>${args}</div>`;
+    }
+    return '';
+  }
+
+  function renderConversation(runId) {
+    const holder = root.querySelector('#tvSessions');
+    const slot = holder?.querySelector(`#tvConv-${CSS.escape(runId)}`);
+    const st = convStates.get(runId);
+    if (!slot || !st) return;
+    if (st.state === 'loading') {
+      slot.innerHTML = '<div style="font-size:0.72rem;color:var(--win11-text-tertiary);padding:2px 0;">⏳ loading conversation…</div>';
+      return;
+    }
+    if (st.state === 'error') {
+      // Zero-throw degradation: inline error + retry + link to full replay.
+      const replayParams = st.agentId != null
+        ? `agent=${encodeURIComponent(st.agentId)}&session=${encodeURIComponent(st.sessionId)}`
+        : '';
+      slot.innerHTML = `<div style="font-size:0.72rem;color:#ef4444;padding:2px 0;">⚠ failed to load transcript${st.errorMessage ? ` — ${escapeHtml(st.errorMessage)}` : ''}.
+        <button class="tv-action-btn tv-conv-retry" style="margin:0 4px;">Retry</button>
+        <a href="/?view=session-replay&amp;${replayParams}" class="tv-conv-replay-link" style="color:var(--win11-accent,#60cdff);">open full Replay →</a></div>`;
+      slot.querySelector('.tv-conv-retry').addEventListener('click', () => { void loadConversation(runId, true); });
+      slot.querySelector('.tv-conv-replay-link').addEventListener('click', (e) => {
+        e.preventDefault();
+        navigateToView?.('session-replay', { params: { agent: st.agentId, session: st.sessionId } });
+      });
+      return;
+    }
+    const { visible, hiddenOlder } = capChatItems(st.items, st.cap);
+    if (!visible.length) {
+      // Honest empty state — the transcript exists but recorded no chat events.
+      slot.innerHTML = '<div style="font-size:0.72rem;color:var(--win11-text-tertiary);padding:2px 0;">no events recorded</div>';
+      return;
+    }
+    const olderBtn = hiddenOlder > 0
+      ? `<button class="tv-action-btn tv-conv-older" style="margin-bottom:6px;">⏶ load earlier (${hiddenOlder} hidden)</button>`
+      : '';
+    const moreBtn = st.hasMore
+      ? `<button class="tv-action-btn tv-conv-more" style="margin-top:6px;">load more ▾</button>`
+      : '';
+    slot.innerHTML = `${olderBtn}<div class="tv-conv-feed" style="max-height:320px;overflow-y:auto;padding-right:4px;">${visible.map(tvConvItemHtml).join('')}</div>${moreBtn}`;
+    slot.querySelector('.tv-conv-older')?.addEventListener('click', () => { st.cap += CONVERSATION_INITIAL_CAP; renderConversation(runId); });
+    slot.querySelector('.tv-conv-more')?.addEventListener('click', () => { void loadConversation(runId, true); });
+    const feed = slot.querySelector('.tv-conv-feed');
+    if (feed) feed.scrollTop = feed.scrollHeight;
+  }
+
+  async function loadConversation(runId, force = false) {
+    const st = convStates.get(runId);
+    if (!st || (st.state === 'loading' && !force)) return;
+    st.state = 'loading';
+    renderConversation(runId);
+    try {
+      const data = await api.tasks.sessionEvents(st.sessionId, {
+        agent: st.agentId,
+        afterLine: st.nextAfterLine || 0,
+        limit: CONVERSATION_INITIAL_CAP,
+      });
+      if (data?.notFound) throw new Error('session not found');
+      const folded = foldChatPage(st.items, data?.events || []);
+      st.items = folded.items;
+      st.hasMore = !!data?.hasMore;
+      st.nextAfterLine = data?.hasMore ? data.nextAfterLine : null;
+      st.state = 'ready';
+    } catch (err) {
+      st.state = 'error';
+      st.errorMessage = err?.message || 'fetch failed';
+    }
+    if (selectedTaskId !== st.taskId) return; // selection moved on — drop stale render
+    renderConversation(runId);
+  }
+
+  function toggleConversation(btn) {
+    const runId = btn.dataset.runId;
+    const slot = root.querySelector(`#tvConv-${CSS.escape(runId)}`);
+    if (!slot) return;
+    const isOpen = slot.style.display !== 'none';
+    if (isOpen) {
+      slot.style.display = 'none';
+      btn.textContent = 'Conversation ▸';
+      return;
+    }
+    // Collapse any other open conversation — one at a time keeps DOM bounded.
+    root.querySelectorAll('.tv-conv-toggle').forEach(other => {
+      if (other !== btn) {
+        other.textContent = 'Conversation ▸';
+        const otherSlot = root.querySelector(`#tvConv-${CSS.escape(other.dataset.runId)}`);
+        if (otherSlot) otherSlot.style.display = 'none';
+      }
+    });
+    slot.style.display = 'block';
+    btn.textContent = 'Conversation ▾';
+    if (!convStates.has(runId)) {
+      convStates.set(runId, {
+        taskId: selectedTaskId,
+        sessionId: btn.dataset.session,
+        agentId: btn.dataset.agent,
+        items: [],
+        nextAfterLine: 0,
+        hasMore: false,
+        cap: CONVERSATION_INITIAL_CAP,
+        state: 'idle',
+        errorMessage: '',
+      });
+    }
+    const st = convStates.get(runId);
+    if (st.state === 'idle' || st.state === 'error') void loadConversation(runId, st.state === 'error');
+    else renderConversation(runId);
   }
 
   // === Composer ===
@@ -998,6 +1291,18 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       const modelVal = form.querySelector('#tvEditModel').value;
       const recurrenceVal = form.querySelector('#tvEditRecurrence').value;
       const newStatus = form.querySelector('#tvEditStatus').value;
+      const newOwner = form.querySelector('#tvEditOwner').value || '';
+      const ownerChanged = newOwner !== (task.owner || '');
+
+      // One-click actions slice 2: owner set/change routes through the gated
+      // task.assign action (LOW severity → NONE mode, fires immediately with a
+      // receipt). Unassign stays on the raw PATCH — registry v1 requires a
+      // non-empty owner, and scripts keep the raw endpoint regardless.
+      if (ownerChanged && newOwner) {
+        const assign = await executeAction({ kind: 'task.assign', targetId: task.id, params: { owner: newOwner } });
+        if (!assign.ok) return; // gate refused/blocked — abort so fields never half-move
+      }
+
       try {
         await api.tasks.update(task.id, {
           title: titleVal,
@@ -1005,7 +1310,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
           description: form.querySelector('#tvEditDesc').value.trim() || null,
           status: newStatus,
           priority: form.querySelector('#tvEditPriority').value,
-          owner: form.querySelector('#tvEditOwner').value || null,
+          ...(ownerChanged && newOwner ? {} : { owner: newOwner || null }), // gated path already moved ownership
           category: form.querySelector('#tvEditCategory').value.trim() || null,
           labels: form.querySelector('#tvEditCategory').value.trim() ? [form.querySelector('#tvEditCategory').value.trim()] : [],
           start_date: form.querySelector('#tvEditStart').value || null,
@@ -1133,6 +1438,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
   wireEvent('#tvProjectSelect', 'change', (e) => {
     currentProjectId = e.target.value || null;
     selectedTaskId = null;
+    listShownCount = LIST_INITIAL_CAP;
     loadTasks();
     renderDetail();
   });
@@ -1142,6 +1448,7 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
       currentFilter = btn.dataset.filter;
       root.querySelectorAll('.tv-filter').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      listShownCount = LIST_INITIAL_CAP;
       renderList();
     };
     btn.addEventListener('click', handler);
@@ -1151,15 +1458,16 @@ export async function renderTasksView({ mountNode, api, adapter, stateStore, syn
   let searchTimer = null;
   wireEvent('#tvSearch', 'input', (e) => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => { searchQuery = e.target.value.trim(); renderList(); }, 200);
+    searchTimer = setTimeout(() => { searchQuery = e.target.value.trim(); listShownCount = LIST_INITIAL_CAP; renderList(); }, 200);
   });
 
   wireEvent('#tvCategoryFilter', 'change', (e) => {
     categoryFilter = e.target.value;
+    listShownCount = LIST_INITIAL_CAP;
     renderList();
   });
 
-  wireEvent('#tvSort', 'change', (e) => { sortValue = e.target.value; renderList(); });
+  wireEvent('#tvSort', 'change', (e) => { sortValue = e.target.value; listShownCount = LIST_INITIAL_CAP; renderList(); });
 
   wireEvent('#tvNewBtn', 'click', () => toggleComposer(true));
   wireEvent('#tvToggleComposer', 'click', () => toggleComposer(false));

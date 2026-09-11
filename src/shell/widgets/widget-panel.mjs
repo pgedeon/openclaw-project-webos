@@ -23,6 +23,50 @@ const SIZE_LABELS = Object.fromEntries(SIZE_OPTIONS.map(({ value, label }) => [v
 const VALID_WIDGET_SIZES = new Set(SIZE_OPTIONS.map(({ value }) => value));
 const SLOT_SIZE_CLASS_NAMES = SIZE_OPTIONS.map(({ value }) => `widget-slot--${value}`);
 
+/* Pure move-target + reorder math (exported for DB-free tests).
+   computeMoveTargets: ordered list of OTHER enabled widget ids (move candidates).
+   applyKeyboardReorder: next ordered array, or null when nothing would change. */
+
+export function computeMoveTargets(enabledWidgets, sourceWidgetId) {
+  if (!Array.isArray(enabledWidgets)) {
+    return [];
+  }
+
+  return enabledWidgets.filter((widgetId) => widgetId !== sourceWidgetId);
+}
+
+export function applyKeyboardReorder(enabledWidgets, sourceWidgetId, targetWidgetId, position) {
+  if (!Array.isArray(enabledWidgets)) {
+    return null;
+  }
+
+  if (!enabledWidgets.includes(sourceWidgetId) || !enabledWidgets.includes(targetWidgetId)) {
+    return null;
+  }
+
+  if (sourceWidgetId === targetWidgetId) {
+    return null;
+  }
+
+  if (position !== 'before' && position !== 'after') {
+    return null;
+  }
+
+  const nextEnabledWidgets = enabledWidgets.filter((widgetId) => widgetId !== sourceWidgetId);
+  const targetIndex = nextEnabledWidgets.indexOf(targetWidgetId);
+  if (targetIndex === -1) {
+    return null;
+  }
+
+  const insertIndex = position === 'after' ? targetIndex + 1 : targetIndex;
+  nextEnabledWidgets.splice(insertIndex, 0, sourceWidgetId);
+
+  const hasChanged = nextEnabledWidgets.length !== enabledWidgets.length
+    || nextEnabledWidgets.some((widgetId, index) => widgetId !== enabledWidgets[index]);
+
+  return hasChanged ? nextEnabledWidgets : null;
+}
+
 const DRAG_HANDLE_ICON = `
   <svg viewBox="0 0 10 14" width="10" height="14" aria-hidden="true">
     <circle cx="3" cy="3" r="1.5" fill="currentColor"></circle>
@@ -82,6 +126,7 @@ export class WidgetPanel {
     this.visibilityObserver = null;
     this.dragState = null;
     this.activeSizePopupWidgetId = null;
+    this.activeMoveMenuWidgetId = null;
     this.handlePanelClick = this.handlePanelClick.bind(this);
     this.handleDragStart = this.handleDragStart.bind(this);
     this.handleDragOver = this.handleDragOver.bind(this);
@@ -90,6 +135,8 @@ export class WidgetPanel {
     this.handleDragEnd = this.handleDragEnd.bind(this);
     this.handleResizeHandleClick = this.handleResizeHandleClick.bind(this);
     this.handleSizePopupClick = this.handleSizePopupClick.bind(this);
+    this.handleMoveMenuClick = this.handleMoveMenuClick.bind(this);
+    this.handleMoveMenuKeydown = this.handleMoveMenuKeydown.bind(this);
     this.closeSizePopupOnOutsideClick = this.closeSizePopupOnOutsideClick.bind(this);
     this.handleDocumentKeyDown = this.handleDocumentKeyDown.bind(this);
   }
@@ -122,6 +169,7 @@ export class WidgetPanel {
   destroy() {
     this.closePicker();
     this.closeSizePopup();
+    this.closeMoveMenu();
     this.clearDragState();
     this.unmountAllHosts();
     this.visibilityObserver?.disconnect();
@@ -173,6 +221,7 @@ export class WidgetPanel {
 
     this.closePicker();
     this.closeSizePopup();
+    this.closeMoveMenu();
     this.clearDragState();
     this.unmountAllHosts();
   }
@@ -206,6 +255,10 @@ export class WidgetPanel {
   removeWidget(widgetId) {
     if (this.activeSizePopupWidgetId === widgetId) {
       this.closeSizePopup(widgetId);
+    }
+
+    if (this.activeMoveMenuWidgetId === widgetId) {
+      this.closeMoveMenu(widgetId);
     }
 
     if (this.dragState?.sourceWidgetId === widgetId || this.dragState?.targetWidgetId === widgetId) {
@@ -455,12 +508,15 @@ export class WidgetPanel {
     const dragHandleEl = document.createElement('button');
     dragHandleEl.type = 'button';
     dragHandleEl.className = 'widget-slot__drag-handle';
-    dragHandleEl.setAttribute('aria-label', `Reorder ${widgetLabel}`);
-    dragHandleEl.setAttribute('title', `Reorder ${widgetLabel}`);
+    dragHandleEl.setAttribute('aria-label', `Reorder ${widgetLabel} (opens move menu)`);
+    dragHandleEl.setAttribute('title', `Reorder ${widgetLabel} (opens move menu)`);
+    dragHandleEl.setAttribute('aria-haspopup', 'menu');
+    dragHandleEl.setAttribute('aria-expanded', 'false');
     dragHandleEl.draggable = true;
     dragHandleEl.innerHTML = DRAG_HANDLE_ICON;
     dragHandleEl.addEventListener('dragstart', this.handleDragStart);
     dragHandleEl.addEventListener('dragend', this.handleDragEnd);
+    dragHandleEl.addEventListener('click', this.handleDragHandleClick);
     return dragHandleEl;
   }
 
@@ -590,25 +646,34 @@ export class WidgetPanel {
   }
 
   closeSizePopupOnOutsideClick(event) {
-    if (!this.activeSizePopupWidgetId) {
+    if (!this.activeSizePopupWidgetId && !this.activeMoveMenuWidgetId) {
       return;
     }
 
-    const activeSlot = this.slots.get(this.activeSizePopupWidgetId);
+    const activeSlot = this.slots.get(this.activeSizePopupWidgetId || this.activeMoveMenuWidgetId);
     if (activeSlot?.contains(event.target)) {
       return;
     }
 
     this.closeSizePopup();
+    this.closeMoveMenu();
   }
 
   handleDocumentKeyDown(event) {
-    if (event.key !== 'Escape' || !this.activeSizePopupWidgetId) {
+    if (event.key !== 'Escape') {
       return;
     }
 
-    event.preventDefault();
-    this.closeSizePopup();
+    if (this.activeSizePopupWidgetId) {
+      event.preventDefault();
+      this.closeSizePopup();
+      return;
+    }
+
+    if (this.activeMoveMenuWidgetId) {
+      event.preventDefault();
+      this.closeMoveMenu();
+    }
   }
 
   handleSizeChange(widgetId, newSize) {
@@ -628,10 +693,171 @@ export class WidgetPanel {
   }
 
   /* --------------------------------------------
-     Drag + Drop
+     Keyboard / Touch Reorder (move menu)
      -------------------------------------------- */
 
-  // TODO: Add touch drag support for pointer-based reordering.
+  handleDragHandleClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const slot = event.currentTarget.closest('.widget-slot');
+    const widgetId = slot?.dataset.widgetId;
+    if (!widgetId) {
+      return;
+    }
+
+    this.openMoveMenu(widgetId);
+  }
+
+  createMoveMenu(widgetLabel) {
+    const moveMenuEl = document.createElement('div');
+    moveMenuEl.className = 'widget-slot__move-menu';
+    moveMenuEl.hidden = true;
+    moveMenuEl.setAttribute('role', 'menu');
+    moveMenuEl.setAttribute('aria-label', `Move ${widgetLabel} relative to another widget`);
+    moveMenuEl.addEventListener('click', this.handleMoveMenuClick);
+    moveMenuEl.addEventListener('keydown', this.handleMoveMenuKeydown);
+    return moveMenuEl;
+  }
+
+  renderMoveMenuItems(widgetId) {
+    const slot = this.slots.get(widgetId);
+    const moveMenuEl = slot?.querySelector('.widget-slot__move-menu');
+    if (!moveMenuEl) {
+      return;
+    }
+
+    const targets = computeMoveTargets(this.enabledWidgets, widgetId);
+    moveMenuEl.innerHTML = '';
+
+    if (targets.length === 0) {
+      const emptyEl = document.createElement('div');
+      emptyEl.className = 'widget-slot__move-menu-empty';
+      emptyEl.textContent = 'No other widgets to move relative to.';
+      moveMenuEl.appendChild(emptyEl);
+      return;
+    }
+
+    targets.forEach((targetWidgetId) => {
+      const targetDef = this.registry.get(targetWidgetId);
+      const targetLabel = targetDef?.manifest?.label || targetWidgetId;
+
+      const beforeEl = document.createElement('button');
+      beforeEl.type = 'button';
+      beforeEl.className = 'widget-slot__move-menu-item';
+      beforeEl.dataset.targetWidgetId = targetWidgetId;
+      beforeEl.dataset.position = 'before';
+      beforeEl.setAttribute('role', 'menuitem');
+      beforeEl.innerHTML = `
+        <span class="widget-slot__move-menu-item-label">Before ${escapeHtml(targetLabel)}</span>
+      `;
+      moveMenuEl.appendChild(beforeEl);
+
+      const afterEl = document.createElement('button');
+      afterEl.type = 'button';
+      afterEl.className = 'widget-slot__move-menu-item';
+      afterEl.dataset.targetWidgetId = targetWidgetId;
+      afterEl.dataset.position = 'after';
+      afterEl.setAttribute('role', 'menuitem');
+      afterEl.innerHTML = `
+        <span class="widget-slot__move-menu-item-label">After ${escapeHtml(targetLabel)}</span>
+      `;
+      moveMenuEl.appendChild(afterEl);
+    });
+  }
+
+  openMoveMenu(widgetId) {
+    const slot = this.slots.get(widgetId);
+    const moveMenuEl = slot?.querySelector('.widget-slot__move-menu');
+    const dragHandleEl = slot?.querySelector('.widget-slot__drag-handle');
+    if (!slot || !moveMenuEl || !dragHandleEl) {
+      return;
+    }
+
+    if (this.activeMoveMenuWidgetId === widgetId && !moveMenuEl.hidden) {
+      this.closeMoveMenu(widgetId);
+      return;
+    }
+
+    this.closeMoveMenu();
+    this.closeSizePopup();
+    this.renderMoveMenuItems(widgetId);
+    slot.classList.add('has-open-move-menu');
+    moveMenuEl.hidden = false;
+    dragHandleEl.setAttribute('aria-expanded', 'true');
+    this.activeMoveMenuWidgetId = widgetId;
+
+    const firstItemEl = moveMenuEl.querySelector('.widget-slot__move-menu-item');
+    firstItemEl?.focus();
+  }
+
+  closeMoveMenu(widgetId = this.activeMoveMenuWidgetId) {
+    if (!widgetId) {
+      return;
+    }
+
+    const slot = this.slots.get(widgetId);
+    const moveMenuEl = slot?.querySelector('.widget-slot__move-menu');
+    const dragHandleEl = slot?.querySelector('.widget-slot__drag-handle');
+
+    if (moveMenuEl && !moveMenuEl.hidden) {
+      moveMenuEl.hidden = true;
+      dragHandleEl?.focus();
+    }
+
+    slot?.classList.remove('has-open-move-menu');
+    dragHandleEl?.setAttribute('aria-expanded', 'false');
+
+    if (this.activeMoveMenuWidgetId === widgetId) {
+      this.activeMoveMenuWidgetId = null;
+    }
+  }
+
+  handleMoveMenuClick(event) {
+    const moveItemEl = event.target.closest('.widget-slot__move-menu-item');
+    if (!moveItemEl) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const slot = event.currentTarget.closest('.widget-slot');
+    const widgetId = slot?.dataset.widgetId;
+    const { targetWidgetId, position } = moveItemEl.dataset;
+    if (!widgetId || !targetWidgetId || !position) {
+      return;
+    }
+
+    this.commitKeyboardReorder(widgetId, targetWidgetId, position);
+  }
+
+  handleMoveMenuKeydown(event) {
+    if (event.key !== 'Escape') {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.closeMoveMenu();
+  }
+
+  commitKeyboardReorder(sourceWidgetId, targetWidgetId, position) {
+    const nextEnabledWidgets = applyKeyboardReorder(this.enabledWidgets, sourceWidgetId, targetWidgetId, position);
+
+    if (nextEnabledWidgets) {
+      this.enabledWidgets = nextEnabledWidgets;
+      this.reorderSlotDOM(sourceWidgetId, targetWidgetId, position);
+      this.saveEnabledWidgets();
+      this.refreshVisibleWidgets();
+    }
+
+    this.closeMoveMenu(sourceWidgetId);
+  }
+
+  /* --------------------------------------------
+     Drag + Drop
+     -------------------------------------------- */
 
   getDropPosition(slot, clientX) {
     const rect = slot.getBoundingClientRect();
@@ -672,19 +898,9 @@ export class WidgetPanel {
   }
 
   reorderEnabledWidgets(sourceWidgetId, targetWidgetId, position) {
-    const nextEnabledWidgets = this.enabledWidgets.filter((widgetId) => widgetId !== sourceWidgetId);
-    const targetIndex = nextEnabledWidgets.indexOf(targetWidgetId);
-    if (targetIndex === -1) {
-      return false;
-    }
+    const nextEnabledWidgets = applyKeyboardReorder(this.enabledWidgets, sourceWidgetId, targetWidgetId, position);
 
-    const insertIndex = position === 'after' ? targetIndex + 1 : targetIndex;
-    nextEnabledWidgets.splice(insertIndex, 0, sourceWidgetId);
-
-    const hasChanged = nextEnabledWidgets.length !== this.enabledWidgets.length
-      || nextEnabledWidgets.some((widgetId, index) => widgetId !== this.enabledWidgets[index]);
-
-    if (!hasChanged) {
+    if (!nextEnabledWidgets) {
       return false;
     }
 
@@ -716,6 +932,7 @@ export class WidgetPanel {
     }
 
     this.closeSizePopup();
+    this.closeMoveMenu();
     this.clearDragState();
 
     this.dragState = {
@@ -881,6 +1098,7 @@ export class WidgetPanel {
     slot.appendChild(this.createDragHandle(widgetDef.manifest.label));
     slot.appendChild(this.createResizeHandle(widgetDef.manifest.label));
     slot.appendChild(this.createSizePopup(widgetDef.manifest.label));
+    slot.appendChild(this.createMoveMenu(widgetDef.manifest.label));
 
     this.gridEl.appendChild(slot);
     this.slots.set(widgetId, slot);

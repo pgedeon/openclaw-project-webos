@@ -6,7 +6,7 @@
  */
 
 function registerHistoryRoutes(router, deps) {
-  const getPool = () => deps?.pool || deps;
+  const getPool = () => (deps && typeof deps === 'object' && 'pool' in deps ? deps.pool : deps);
   const _ensurePool = (res, ctx) => {
     if (!getPool()) { ctx.sendJSON(res, 503, { error: 'Database not available (running in JSON snapshot mode)' }); return false; }
     return true;
@@ -23,7 +23,7 @@ function registerHistoryRoutes(router, deps) {
 
   // GET /api/history — recent changes across all entities
   router.add('GET', '/api/history', async (req, res, ctx) => {
-    if (!_ensurePool(res, ctx)) return;
+    if (!_ensurePool(res, ctx)) return true;
     try {
       const urlStr = req.url || '';
       const limit = Math.min(parseInt(urlStr.split('limit=')[1]?.split('&')[0] || '30', 10), 100);
@@ -51,11 +51,12 @@ function registerHistoryRoutes(router, deps) {
     } catch (err) {
       ctx.sendJSON(res, 500, { error: err.message });
     }
+    return true;
   });
 
   // GET /api/history/:taskId — full audit history for a task
   router.add('GET', '/api/history/:taskId', async (req, res, ctx, params) => {
-    if (!_ensurePool(res, ctx)) return;
+    if (!_ensurePool(res, ctx)) return true;
     try {
       const { taskId } = params;
       const limit = Math.min(parseInt(req.url?.split('limit=')[1]?.split('&')[0] || '50', 10), 200);
@@ -77,16 +78,20 @@ function registerHistoryRoutes(router, deps) {
     } catch (err) {
       ctx.sendJSON(res, 500, { error: err.message });
     }
+    return true;
   });
 
   // GET /api/history/:taskId/snapshot?at=ISO — point-in-time state from snapshots
   router.add('GET', '/api/history/:taskId/snapshot', async (req, res, ctx, params) => {
-    if (!_ensurePool(res, ctx)) return;
+    if (!_ensurePool(res, ctx)) return true;
     try {
       const { taskId } = params;
       const urlStr = req.url || '';
       const atParam = urlStr.split('at=')[1]?.split('&')[0];
-      if (!atParam) return ctx.sendJSON(res, 400, { error: 'Missing ?at=ISO_TIMESTAMP parameter' });
+      if (!atParam) {
+        ctx.sendJSON(res, 400, { error: 'Missing ?at=ISO_TIMESTAMP parameter' });
+        return true;
+      }
       const at = decodeURIComponent(atParam);
 
       const result = await getPool().query(
@@ -98,25 +103,33 @@ function registerHistoryRoutes(router, deps) {
 
       if (result.rows.length === 0) {
         const taskResult = await getPool().query('SELECT * FROM tasks WHERE id = $1', [taskId]);
-        if (taskResult.rows.length === 0) return ctx.sendJSON(res, 404, { error: 'Task not found' });
-        return ctx.sendJSON(res, 200, { snapshot: taskResult.rows[0], exact: false });
+        if (taskResult.rows.length === 0) {
+          ctx.sendJSON(res, 404, { error: 'Task not found' });
+          return true;
+        }
+        ctx.sendJSON(res, 200, { snapshot: taskResult.rows[0], exact: false });
+        return true;
       }
 
       ctx.sendJSON(res, 200, { snapshot: result.rows[0].state, exact: true });
     } catch (err) {
       ctx.sendJSON(res, 500, { error: err.message });
     }
+    return true;
   });
 
   // GET /api/history/:taskId/diff?from=ISO&to=ISO — diff between two points
   router.add('GET', '/api/history/:taskId/diff', async (req, res, ctx, params) => {
-    if (!_ensurePool(res, ctx)) return;
+    if (!_ensurePool(res, ctx)) return true;
     try {
       const { taskId } = params;
       const urlStr = req.url || '';
       const from = urlStr.split('from=')[1]?.split('&')[0];
       const to = urlStr.split('to=')[1]?.split('&')[0];
-      if (!from || !to) return ctx.sendJSON(res, 400, { error: 'Missing ?from=ISO&to=ISO parameters' });
+      if (!from || !to) {
+        ctx.sendJSON(res, 400, { error: 'Missing ?from=ISO&to=ISO parameters' });
+        return true;
+      }
 
       const [fromResult, toResult] = await Promise.all([
         getPool().query(
@@ -144,11 +157,17 @@ function registerHistoryRoutes(router, deps) {
     } catch (err) {
       ctx.sendJSON(res, 500, { error: err.message });
     }
+    return true;
   });
 
-  // GET /api/snapshots — list recent snapshots across all entities
-  router.add('GET', '/api/snapshots', async (req, res, ctx) => {
-    if (!_ensurePool(res, ctx)) return;
+  // GET /api/snapshots — list recent snapshots across all entities.
+  // NOTE (slice-3 route-order fix): task-server.js registers snapshot-routes
+  // FIRST, so at integration time the bare path serves the full-state artifact
+  // registry (docs/briefs/snapshot-restore.md §4.1). Time Travel listing is
+  // canonical on the /api/state-snapshots alias — same handler, both paths
+  // registered so standalone/isolated consumers keep working.
+  const listAllStateSnapshots = async (req, res, ctx) => {
+    if (!_ensurePool(res, ctx)) return true;
     try {
       const urlStr = req.url || '';
       const limit = Math.min(parseInt(urlStr.split('limit=')[1]?.split('&')[0] || '50', 10), 200);
@@ -161,11 +180,13 @@ function registerHistoryRoutes(router, deps) {
       ctx.sendJSON(res, 500, { error: err.message });
     }
     return true;
-  });
+  };
+  router.add('GET', '/api/state-snapshots', listAllStateSnapshots);
+  router.add('GET', '/api/snapshots', listAllStateSnapshots);
 
   // GET /api/snapshots/:entityType/:entityId — list state snapshots for a specific entity
   router.add('GET', '/api/snapshots/:entityType/:entityId', async (req, res, ctx, params) => {
-    if (!_ensurePool(res, ctx)) return;
+    if (!_ensurePool(res, ctx)) return true;
     try {
       const { entityType, entityId } = params;
       const limit = Math.min(parseInt(req.url?.split('limit=')[1]?.split('&')[0] || '50', 10), 200);
@@ -179,15 +200,19 @@ function registerHistoryRoutes(router, deps) {
     } catch (err) {
       ctx.sendJSON(res, 500, { error: err.message });
     }
+    return true;
   });
 
   // POST /api/snapshots/:snapshotId/preview-revert — preview what reverting would do
   router.add('POST', '/api/snapshots/:snapshotId/preview-revert', async (req, res, ctx, params) => {
-    if (!_ensurePool(res, ctx)) return;
+    if (!_ensurePool(res, ctx)) return true;
     try {
       const { snapshotId } = params;
       const snapshot = await getPool().query('SELECT * FROM state_snapshots WHERE id = $1', [snapshotId]);
-      if (!snapshot.rows[0]) return ctx.sendJSON(res, 404, { error: 'Snapshot not found' });
+      if (!snapshot.rows[0]) {
+        ctx.sendJSON(res, 404, { error: 'Snapshot not found' });
+        return true;
+      }
 
       const snap = snapshot.rows[0];
       const state = typeof snap.state === 'string' ? JSON.parse(snap.state) : snap.state;
@@ -205,13 +230,15 @@ function registerHistoryRoutes(router, deps) {
     } catch (err) {
       ctx.sendJSON(res, 500, { error: err.message });
     }
+    return true;
   });
 
   // POST /api/snapshots/:snapshotId/revert — revert entity to snapshot state
   router.add('POST', '/api/snapshots/:snapshotId/revert', async (req, res, ctx, params) => {
-    if (!_ensurePool(res, ctx)) return;
-    const client = await getPool().connect();
+    if (!_ensurePool(res, ctx)) return true;
+    let client;
     try {
+      client = await getPool().connect();
       const { snapshotId } = params;
       const body = await parseBody(req);
       const actor = body.actor || 'dashboard-operator';
@@ -220,7 +247,11 @@ function registerHistoryRoutes(router, deps) {
 
       const snapResult = await client.query('SELECT * FROM state_snapshots WHERE id = $1', [snapshotId]);
       const snap = snapResult.rows[0];
-      if (!snap) { await client.query('ROLLBACK'); return ctx.sendJSON(res, 404, { error: 'Snapshot not found' }); }
+      if (!snap) {
+        await client.query('ROLLBACK');
+        ctx.sendJSON(res, 404, { error: 'Snapshot not found' });
+        return true;
+      }
 
       const state = typeof snap.state === 'string' ? JSON.parse(snap.state) : snap.state;
       const eid = snap.entity_id;
@@ -257,11 +288,12 @@ function registerHistoryRoutes(router, deps) {
       await client.query('COMMIT');
       ctx.sendJSON(res, 200, { reverted: true, entityType: snap.entity_type, entityId: eid });
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (client) await client.query('ROLLBACK');
       ctx.sendJSON(res, 500, { error: err.message });
     } finally {
-      client.release();
+      if (client) client.release();
     }
+    return true;
   });
 }
 

@@ -2,7 +2,7 @@
 /**
  * Lightweight cron job management API server.
  * Runs alongside task-server on port 3878.
- * 
+ *
  * Endpoints:
  *   GET    /api/cron-admin/jobs          - List all cron jobs
  *   GET    /api/cron-admin/jobs/:id       - Get single job
@@ -11,12 +11,22 @@
  *   DELETE /api/cron-admin/jobs/:id       - Delete a cron job
  *   POST   /api/cron-admin/jobs/:id/run   - Trigger a job run
  *   GET    /api/cron-admin/jobs/:id/logs  - Get recent log entries
+ *
+ * Security (SECURITY-AUDIT-2026-08.md F2/F3):
+ *   - Every endpoint requires `Authorization: Bearer $DASHBOARD_AUTH_TOKEN`.
+ *   - Host header must match the loopback allowlist (DNS-rebinding defense).
+ *   - A browser Origin header, when present, must match the task-server origin.
+ *   - Mutating methods require Content-Type: application/json (blocks
+ *     cross-site "simple request" CSRF such as text/plain form posts).
+ *   - Job ids are validated against /^[A-Za-z0-9._-]+$/ with any '..'
+ *     rejected before being joined into a filesystem path.
  */
 
 import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, basename } from 'path';
 import { createServer } from 'http';
 import { spawn } from 'child_process';
+import crypto from 'crypto';
 
 const CRONTAB_DIR = process.env.WORKSPACE
   ? join(process.env.WORKSPACE, 'crontab')
@@ -25,10 +35,43 @@ const LOGS_DIR = process.env.WORKSPACE
   ? join(process.env.WORKSPACE, 'logs')
   : '/root/.openclaw/workspace/logs';
 const WORKSPACE = process.env.WORKSPACE || '/root/.openclaw/workspace';
-const PORT = process.env.CRON_MANAGER_PORT || 3878;
+const PORT = String(process.env.CRON_MANAGER_PORT || 3878);
+const DASHBOARD_AUTH_TOKEN = process.env.DASHBOARD_AUTH_TOKEN || '';
+
+if (!DASHBOARD_AUTH_TOKEN) {
+  console.error('❌ FATAL: DASHBOARD_AUTH_TOKEN is not set — refusing to start cron-manager (SECURITY-AUDIT-2026-08.md F2).');
+  process.exit(1);
+}
+
+const TASK_SERVER_PORT = String(process.env.PORT || 3876);
+const ALLOWED_ORIGINS = new Set([
+  `http://localhost:${TASK_SERVER_PORT}`,
+  `http://127.0.0.1:${TASK_SERVER_PORT}`,
+]);
+const ALLOWED_HOSTS = new Set([
+  `127.0.0.1:${PORT}`,
+  `localhost:${PORT}`,
+]);
+
+const JOB_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+function assertValidJobId(id) {
+  if (typeof id !== 'string' || !id || id.length > 128 ||
+      !JOB_ID_PATTERN.test(id) || id.includes('..')) {
+    throw new Error('Invalid job id');
+  }
+}
+
+function timingSafeTokenEqual(token, expectedToken) {
+  if (!token || !expectedToken) return false;
+  const tokenBuffer = Buffer.from(token);
+  const expectedBuffer = Buffer.from(expectedToken);
+  return tokenBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(tokenBuffer, expectedBuffer);
+}
 
 function sendJSON(res, status, data) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || '3876') });
+  res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 }
 
@@ -92,6 +135,7 @@ function listJobs() {
 }
 
 function getJob(id) {
+  assertValidJobId(id);
   const filePath = join(CRONTAB_DIR, `${id}.cron`);
   if (!existsSync(filePath)) return null;
   return parseCronFile(filePath);
@@ -100,7 +144,7 @@ function getJob(id) {
 function createJob(data) {
   const { id, name, description, minute = '*', hour = '*', dom = '*', month = '*', dow = '*', command } = data;
   if (!id || !command) throw new Error('id and command are required');
-  if (/\s/.test(id)) throw new Error('id cannot contain spaces');
+  assertValidJobId(id);
   const filePath = join(CRONTAB_DIR, `${id}.cron`);
   if (existsSync(filePath)) throw new Error(`Cron job "${id}" already exists`);
   const desc = description || name || id;
@@ -110,6 +154,7 @@ function createJob(data) {
 }
 
 function updateJob(id, data) {
+  assertValidJobId(id);
   const filePath = join(CRONTAB_DIR, `${id}.cron`);
   if (!existsSync(filePath)) throw new Error(`Cron job "${id}" not found`);
   const existing = parseCronFile(filePath);
@@ -127,6 +172,7 @@ function updateJob(id, data) {
 }
 
 function deleteJob(id) {
+  assertValidJobId(id);
   const filePath = join(CRONTAB_DIR, `${id}.cron`);
   if (!existsSync(filePath)) throw new Error(`Cron job "${id}" not found`);
   unlinkSync(filePath);
@@ -151,15 +197,52 @@ function runJob(id) {
 }
 
 const server = createServer(async (req, res) => {
+  // Host allowlist — DNS-rebinding defense (F2).
+  const host = req.headers.host || '';
+  if (!ALLOWED_HOSTS.has(host)) {
+    sendJSON(res, 403, { error: 'Forbidden host' });
+    return;
+  }
+
+  // CORS: reflect only the known task-server origin (F2).
+  const origin = req.headers.origin || '';
+  const corsOrigin = ALLOWED_ORIGINS.has(origin) ? origin : '';
+  if (corsOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
+
   if (req.method === 'OPTIONS') {
+    if (!corsOrigin) {
+      sendJSON(res, 403, { error: 'Forbidden origin' });
+      return;
+    }
     res.writeHead(204, {
-      'Access-Control-Allow-Origin': 'http://localhost:' + (process.env.PORT || '3876'),
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '600',
     });
     res.end();
     return;
   }
+
+  // Bearer-token auth on every route (F2).
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!timingSafeTokenEqual(token, DASHBOARD_AUTH_TOKEN)) {
+    sendJSON(res, 401, { error: 'Unauthorized', message: 'Valid Bearer token required' });
+    return;
+  }
+
+  // Mutating routes must declare application/json (F2).
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    const contentType = String(req.headers['content-type'] || '').toLowerCase();
+    if (!contentType.startsWith('application/json')) {
+      sendJSON(res, 415, { error: 'Unsupported Media Type', message: 'Content-Type: application/json required' });
+      return;
+    }
+  }
+
   try {
     const url = req.url.split('?')[0];
     const method = req.method;

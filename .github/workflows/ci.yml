@@ -1,0 +1,217 @@
+# CI pipeline — UPGRADE_ROADMAP.md Phase 0 item #1.
+#
+# Scope: syntax check + docs drift check + DB-free tests + npm audit (prod deps) only.
+# No PostgreSQL or any other service is started or required.
+#
+# Dependency alerting is two-layered: this npm-audit step catches advisories at
+# CI time, and GitHub Dependabot (vulnerability alerts + automated security
+# fixes, both enabled 2026-08-29 by repo owner) provides continuous upstream
+# alerting between runs.
+#
+# Test inclusion/exclusion (originally verified 2026-08-23 by running every
+# tests/test-*.js with PostgreSQL unreachable, on Node v20 and v22; re-triaged
+# 2026-08-23 in "test: triage 31 CI-excluded tests"):
+#
+# INCLUDED — pass without a database; the authoritative list lives in
+# scripts/ci-db-free-tests.js (66 tests as of 2026-08-29). The names below
+# are the original 2026-08-23 triage snapshot, kept for context:
+#   test-agent-routes.js, test-auth-policy.js, test-bing-routes.js,
+#   test-catalog-api.js, test-chat-routes.js, test-cron-routes.js,
+#   test-dispatcher-v2.js, test-export-routes.js,
+#   test-filesystem-proxy-availability.js, test-filesystem-proxy-origin.js,
+#   test-health-routes.js, test-health-status-gateway-snapshot.js,
+#   test-history-routes.js, test-memory-routes.js, test-metrics-api.js,
+#   test-operational-followup.js, test-org-api-storage.js, test-org-api.js,
+#   test-org-department-operating-view.js, test-project-routes.js,
+#   test-route-modules.js, test-service-requests-api.js, test-session-routes.js,
+#   test-settings-routes.js, test-settings.js, test-space-routes.js,
+#   test-sse-routes.js, test-task-routes.js,
+#   test-task-server-storage-fallback.js, test-view-routes.js,
+#   test-workflow-approvals-api.js, test-workflow-artifacts-api.js,
+#   test-workflow-blockers-api.js, test-workflow-governance.js,
+#   test-workflow-routing-routes.js, test-workflow-runs-business-context.js
+#
+# EXCLUDED — skip themselves gracefully when their dependency is absent:
+#   - Need PostgreSQL / running servers / browsers / CLI args:
+#     test-dispatcher-v2-integration.js (PostgreSQL),
+#     test-filter-behavior.js (Playwright + server on :3876),
+#     test-saved-views-api.js (<project_id> arg + server),
+#     test-settings-deep.js (.env + server + browser),
+#     test-batch1-work.js / test-batch3-admin.js (.env + server on :3876)
+#   - Need host files outside the repo:
+#     test-metrics-snapshot-job.js (host crontab file),
+#     test-org-bootstrap-coverage.js (host openclaw.json)
+#
+# DELETED (2026-08-23 triage) — referenced files that never existed in this repo
+# (pre-shell-era page/view tests and a phantom storage module); they could never pass:
+#   test-agents-page-blockers.js, test-agents-page-explicit-grouping.js,
+#   test-approvals-view.js, test-artifacts-view.js, test-asana-json-snapshot.js,
+#   test-audit-view-governance.js, test-dashboard-navigation.js,
+#   test-departments-view.js, test-extracted-views-registry.js,
+#   test-local-dev-service-worker.js, test-metrics-view.js, test-operations-page.js,
+#   test-publish-view.js, test-runbook-governance-embeds.js,
+#   test-service-requests-view.js, test-skills-tools-entrypoint.js,
+#   test-skills-tools-page.js, test-skills-tools-view.js, test-view-router.js,
+#   test-workflows-page.js
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # npm audit gate (roadmap review #2 promoted item; unblocks the cost
+      # analytics dependency chain). Prod dependencies only (--omit=dev):
+      # dev-dep noise and moderate findings never block this gate.
+      #
+      # Level is HIGH: the 5 known-open HIGH findings that forced a
+      # critical-only gate on day one (2026-08-24) are resolved:
+      #   - ws 8.20.0 (direct prod dep): GHSA-58qx-3vcg-4xpx (uninitialized
+      #     memory disclosure) + GHSA-96hv-2xvq-fx4p (memory exhaustion DoS);
+      #     fixed in ws >= 8.20.2 — now 8.21.3 (non-breaking).
+      #   - extract-zip 2.0.1 via @puppeteer/browsers 2.13.0 <- puppeteer /
+      #     puppeteer-core 24.42.0: GHSA-jmr9-qjv8-65gv (unvalidated symlink
+      #     path traversal); fixed by puppeteer[-core] 25.9.0 (breaking major
+      #     bump; puppeteer is used only in CI-excluded browser tests).
+      # `npm audit --omit=dev` now reports 0 vulnerabilities.
+      #
+      # Registry-error resilience (2026-09-04): the npm audit endpoint is in
+      # a deprecation window and intermittently returns transport errors
+      # (observed: 400 "Invalid package tree", 503 "Service Unavailable")
+      # with zero advisory content. This step retries ONLY those registry
+      # errors — recognized by the exact "audit endpoint returned an error"
+      # marker npm prints for them — up to 3 attempts. A real audit report
+      # (any vulnerability output, including the exit-1 "found N
+      # vulnerabilities" path) is NEVER retried and always fails the gate.
+      - name: npm audit (prod deps, high+ fails)
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if out=$(npm audit --omit=dev --audit-level=high 2>&1); then
+              echo "$out"
+              echo "audit clean (attempt $attempt)"
+              exit 0
+            else
+              code=$?
+              if echo "$out" | grep -q "audit endpoint returned an error"; then
+                echo "attempt $attempt: npm registry audit endpoint error (deprecation-window flapping) — retrying"
+                echo "$out" | tail -5
+                sleep $((attempt * 20))
+                continue
+              fi
+              # Real audit failure (vulnerabilities at/above gate level) —
+              # show the full report and fail. Never retried.
+              echo "$out"
+              exit $code
+            fi
+          done
+          echo "npm audit endpoint failed with registry errors 3 times in a row"
+          echo "::warning::npm audit endpoint unavailable (registry-side) — gate could not run"
+          exit 1
+
+      - name: Syntax check (node --check over root, routes/, storage/, scripts/, src/)
+        run: |
+          set -euo pipefail
+          files=$(
+            {
+              find . -maxdepth 1 -type f \( -name '*.js' -o -name '*.mjs' \)
+              find routes storage scripts src -type f \( -name '*.js' -o -name '*.mjs' \)
+            } | sort
+          )
+          count=$(printf '%s\n' "$files" | sed '/^$/d' | wc -l)
+          echo "Checking $count files..."
+          printf '%s\n' "$files" | while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            node --check "$f"
+          done
+          echo "Syntax OK: $count files"
+
+      - name: Docs drift check (DB-free)
+        run: node scripts/docs-drift-check.js
+
+      - name: DB-free tests
+        run: node scripts/ci-db-free-tests.js
+
+  # Playwright e2e (UPGRADE_ROADMAP.md Phase 0 "Fix test suite", part 2).
+  #
+  # Deliberately a separate job from `verify` so e2e failures do not block the
+  # syntax/docs/unit gates.
+  #
+  # Scope note: tests/e2e.spec.ts is a DB-free SMOKE suite. The original spec
+  # asserted storage CRUD (POST /api/tasks → 201, snapshots, spaces) which
+  # requires real PostgreSQL; it was replaced 2026-08-23 because STORAGE_TYPE=
+  # json_snapshot is read-only by design and cannot serve those routes.
+  #
+  # task-server.js serves the UI from the hardcoded path
+  # /root/.openclaw/workspace/dashboard (WORKSPACE const), so the job stages
+  # the repo's frontend assets there before starting the server.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Stage dashboard assets (server reads UI from /root/.openclaw/workspace/dashboard)
+        run: |
+          sudo mkdir -p /root/.openclaw/workspace/dashboard
+          sudo cp -a index.html src /root/.openclaw/workspace/dashboard/
+          # task-server.js runs as the non-root `runner` user, but /root is 0700
+          # on ubuntu-latest, so it cannot traverse to the staged assets (every
+          # page request 404s while API routes stay healthy). Grant traverse-only.
+          sudo chmod 711 /root
+
+      - name: Start task-server (json_snapshot, DB-free)
+        run: |
+          STORAGE_TYPE=json_snapshot HOST=127.0.0.1 PORT=3876 DASHBOARD_AUTH_TOKEN=ci-e2e-token \
+            node task-server.js > task-server-e2e.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3876/api/health > /dev/null 2>&1; then
+              echo "task-server ready (attempt $i)"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "task-server failed to become ready"
+          cat task-server-e2e.log
+          exit 1
+
+      - name: Run Playwright e2e (chromium)
+        run: npx playwright test --project=chromium
+        env:
+          E2E_AUTH_TOKEN: ci-e2e-token
+
+      - name: Upload playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

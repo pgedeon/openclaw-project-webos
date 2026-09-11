@@ -4,20 +4,126 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenClaw Desktop</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="icon" href="/icons/icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/styles/win11-theme.css">
+    <link rel="stylesheet" href="/src/styles/win11-accents.css">
     <link rel="stylesheet" href="/src/styles/win11-shell.css">
     <link rel="stylesheet" href="/src/styles/win11-windows.css">
     <link rel="stylesheet" href="/src/styles/win11-taskbar.css">
     <link rel="stylesheet" href="/src/styles/win11-widget-card.css">
     <link rel="stylesheet" href="/src/styles/win11-widget-panel.css">
     <link rel="stylesheet" href="/src/styles/win11-start.css">
+    <script>
+        // Accent pre-paint: forward the persisted accent id to <html> before
+        // first paint (mirror of src/shell/accent-packs.mjs readStoredAccent
+        // + applyAccent, inlined because classic scripts run before module
+        // imports). Unknown ids are inert by design — win11-accents.css only
+        // defines override blocks for known packs, so an invalid stored value
+        // silently falls back to the base theme colors.
+        try {
+            var __accent = localStorage.getItem('openclaw.accent');
+            if (__accent && /^[a-z][a-z0-9-]{0,31}$/.test(__accent)) {
+                document.documentElement.setAttribute('data-accent', __accent);
+            }
+        } catch (e) { /* storage unavailable — base theme stays */ }
+    </script>
 </head>
 <body>
     <div id="desktop"></div>
     <div id="taskbar-root"></div>
-    <script type="module" src="/src/shell/shell-main.mjs"></script>
+    <script type="module">
+        // Auth bootstrap (SECURITY-AUDIT-2026-08.md F1):
+        // The server never embeds DASHBOARD_AUTH_TOKEN in the page. The shell
+        // only boots after a token is verified against /api/auth/self; it is
+        // kept in localStorage and attached to API requests as a Bearer header
+        // (see src/shell/api-client.mjs and src/shell/realtime-sync.mjs).
+        const TOKEN_STORAGE_KEY = 'openclaw.dashboardToken';
+
+        function readStoredToken() {
+            try { return localStorage.getItem(TOKEN_STORAGE_KEY) || ''; } catch { return ''; }
+        }
+
+        function storeToken(token) {
+            try { localStorage.setItem(TOKEN_STORAGE_KEY, token); } catch { /* storage unavailable */ }
+        }
+
+        async function checkAuth(token) {
+            try {
+                const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                const res = await fetch('/api/auth/self', { headers });
+                if (!res.ok) return { state: 'unreachable' };
+                const state = await res.json();
+                return state.authenticated === true ? { state: 'ok' } : { state: 'rejected' };
+            } catch {
+                return { state: 'unreachable' };
+            }
+        }
+
+        function promptForToken(message) {
+            return new Promise((resolve) => {
+                document.getElementById('auth-bootstrap-overlay')?.remove();
+
+                const overlay = document.createElement('div');
+                overlay.id = 'auth-bootstrap-overlay';
+                overlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#1f1f1f;z-index:99999;';
+                overlay.innerHTML = `
+                    <div style="width:360px;padding:28px;border-radius:8px;background:#2b2b2b;color:#ffffff;font-family:'Segoe UI',Inter,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.5);">
+                        <h1 style="margin:0 0 6px;font-size:1.25rem;font-weight:600;">OpenClaw Desktop</h1>
+                        <p style="margin:0 0 16px;font-size:.82rem;color:#9a9a9a;">Enter the dashboard access token (DASHBOARD_AUTH_TOKEN).</p>
+                        <input id="auth-bootstrap-token" type="password" autocomplete="off" spellcheck="false" placeholder="Access token"
+                               style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:6px;border:1px solid #555;background:#1f1f1f;color:#fff;font-size:.9rem;outline:none;" />
+                        <div id="auth-bootstrap-error" style="display:none;margin-top:8px;font-size:.8rem;color:#ff7b72;"></div>
+                        <button id="auth-bootstrap-connect" type="button"
+                                style="margin-top:14px;width:100%;padding:9px 0;border:none;border-radius:6px;background:#0078d4;color:#fff;font-size:.9rem;font-weight:600;cursor:pointer;">Connect</button>
+                    </div>`;
+                document.body.appendChild(overlay);
+
+                const input = overlay.querySelector('#auth-bootstrap-token');
+                const errorEl = overlay.querySelector('#auth-bootstrap-error');
+                if (message) {
+                    errorEl.textContent = message;
+                    errorEl.style.display = 'block';
+                }
+                overlay.querySelector('#auth-bootstrap-connect').addEventListener('click', () => resolve(input.value.trim()));
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') resolve(input.value.trim()); });
+                input.focus();
+            });
+        }
+
+        let token = readStoredToken();
+        let check = await checkAuth(token);
+        while (check.state !== 'ok') {
+            const message = check.state === 'unreachable'
+                ? 'Cannot reach /api/auth/self — is the task server running?'
+                : (token ? 'Invalid token. Try again.' : '');
+            token = await promptForToken(message);
+            check = await checkAuth(token);
+        }
+        // The gate overlay only removes itself when promptForToken rebuilds it;
+        // on the success path nothing else removes it, and it is an opaque
+        // fullscreen layer that would hide the booted desktop (fixed 2026-09-09:
+        // valid token + Connect appeared to "do nothing").
+        document.getElementById('auth-bootstrap-overlay')?.remove();
+        if (token) storeToken(token);
+        globalThis.__DASHBOARD_AUTH_TOKEN__ = token;
+
+        // PWA install (roadmap Phase 3): register the service worker ONLY after
+        // auth bootstrap succeeds — an unauthenticated session must never put
+        // the auth-gate shell under SW control. Fire-and-forget: registration
+        // failure must not block desktop boot.
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
+                console.warn('Service worker registration failed:', err);
+            });
+        }
+
+        await import('/src/shell/shell-main.mjs');
+    </script>
 </body>
 </html>

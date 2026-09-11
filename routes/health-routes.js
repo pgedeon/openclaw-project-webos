@@ -4,23 +4,34 @@
  */
 const { URL } = require('url');
 const oc = require('../lib/openclaw-cli');
+const { getSelfAuthState } = require('./auth-policy');
+
+function assertCliSuccess(data) {
+  if (data && typeof data.error === 'string' && data.error.trim()) {
+    throw new Error(data.error);
+  }
+}
 
 function registerHealthRoutes(router) {
   // GET /api/health
   router.add('GET', '/api/health', async (req, res, ctx) => {
-    const storageHealth = await ctx.getAsanaStorageHealth();
-    ctx.sendJSON(res, 200, {
-      status: storageHealth.ready ? (storageHealth.databaseHealthy ? 'ok' : 'degraded') : 'error',
-      timestamp: new Date().toISOString(),
-      asana_storage: storageHealth.mode,
-      storage_type: ctx.STORAGE_TYPE,
-      storage_mode: storageHealth.mode,
-      storage_label: storageHealth.label,
-      storage_note: storageHealth.note,
-      db_latency_ms: storageHealth.dbLatencyMs,
-      uptime: process.uptime(),
-      port: ctx.PORT,
-    });
+    try {
+      const storageHealth = await ctx.getAsanaStorageHealth();
+      ctx.sendJSON(res, 200, {
+        status: storageHealth.ready ? (storageHealth.databaseHealthy ? 'ok' : 'degraded') : 'error',
+        timestamp: new Date().toISOString(),
+        asana_storage: storageHealth.mode,
+        storage_type: ctx.STORAGE_TYPE,
+        storage_mode: storageHealth.mode,
+        storage_label: storageHealth.label,
+        storage_note: storageHealth.note,
+        db_latency_ms: storageHealth.dbLatencyMs,
+        uptime: process.uptime(),
+        port: ctx.PORT,
+      });
+    } catch (err) {
+      ctx.sendJSON(res, 500, { status: 'error', error: err.message });
+    }
     return true;
   });
 
@@ -30,8 +41,12 @@ function registerHealthRoutes(router) {
       ctx.sendJSON(res, 503, { error: 'Asana storage not initialized' });
       return true;
     }
-    const stats = await ctx.asanaStorage.stats();
-    ctx.sendJSON(res, 200, stats);
+    try {
+      const stats = await ctx.asanaStorage.stats();
+      ctx.sendJSON(res, 200, stats);
+    } catch (err) {
+      ctx.sendJSON(res, 500, { error: 'Failed to get stats', details: err.message });
+    }
     return true;
   });
 
@@ -141,6 +156,7 @@ function registerHealthRoutes(router) {
   router.add('GET', '/api/openclaw/health', async (req, res, ctx) => {
     try {
       const data = await oc.health();
+      assertCliSuccess(data);
       ctx.sendJSON(res, 200, {
         source: 'openclaw-cli',
         timestamp: new Date().toISOString(),
@@ -165,6 +181,7 @@ function registerHealthRoutes(router) {
       if (url.searchParams.get('runtime')) filters.runtime = url.searchParams.get('runtime');
       if (url.searchParams.get('status')) filters.status = url.searchParams.get('status');
       const data = await oc.tasksList(filters);
+      assertCliSuccess(data);
       ctx.sendJSON(res, 200, {
         source: 'openclaw-cli',
         timestamp: new Date().toISOString(),
@@ -182,6 +199,7 @@ function registerHealthRoutes(router) {
   router.add('GET', '/api/openclaw/tasks/audit', async (req, res, ctx) => {
     try {
       const data = await oc.tasksAudit();
+      assertCliSuccess(data);
       ctx.sendJSON(res, 200, { source: 'openclaw-cli', ...data });
     } catch (err) {
       console.error('[Tasks] CLI audit failed:', err);
@@ -194,6 +212,7 @@ function registerHealthRoutes(router) {
   router.add('GET', '/api/openclaw/agents', async (req, res, ctx) => {
     try {
       const data = await oc.agentsList();
+      assertCliSuccess(data);
       // CLI returns an array directly
       const agents = Array.isArray(data) ? data : (data.agents || []);
       ctx.sendJSON(res, 200, {
@@ -214,6 +233,7 @@ function registerHealthRoutes(router) {
       const url = new URL(req.url, `http://${req.headers.host}`);
       const agentId = url.searchParams.get('agent') || 'main';
       const data = await oc.memoryIndex(agentId);
+      assertCliSuccess(data);
       ctx.sendJSON(res, 200, { source: 'openclaw-cli', success: true, agentId, result: data });
     } catch (err) {
       console.error('[Memory] CLI reindex failed:', err);
@@ -230,6 +250,7 @@ function registerHealthRoutes(router) {
       const agentId = url.searchParams.get('agent') || 'main';
       const limit = parseInt(url.searchParams.get('limit')) || 10;
       const data = await oc.memoryPromote(agentId, { limit });
+      assertCliSuccess(data);
       ctx.sendJSON(res, 200, { source: 'openclaw-cli', agentId, ...data });
     } catch (err) {
       console.error('[Memory] CLI promote preview failed:', err);
@@ -244,6 +265,7 @@ function registerHealthRoutes(router) {
       try { body = JSON.parse(await ctx.readBody(req)); } catch (_) {}
       const agentId = body.agent || 'main';
       const data = await oc.memoryPromote(agentId, { apply: true, limit: body.limit });
+      assertCliSuccess(data);
       ctx.sendJSON(res, 200, { source: 'openclaw-cli', success: true, agentId, ...data });
     } catch (err) {
       console.error('[Memory] CLI promote apply failed:', err);
@@ -254,16 +276,8 @@ function registerHealthRoutes(router) {
 
   // GET /api/auth/self — returns current auth mode and actor info
   router.add('GET', '/api/auth/self', async (req, res) => {
-    const authHeader = req.headers['authorization'] || '';
-    const token = (authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '').trim();
-    const expectedToken = process.env.DASHBOARD_AUTH_TOKEN || '';
-    const authenticated = token && token === expectedToken;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      authenticated,
-      mode: expectedToken ? 'token' : 'open',
-      user: authenticated ? 'dashboard-operator' : null,
-    }));
+    res.end(JSON.stringify(getSelfAuthState(req)));
     return true;
   });
 

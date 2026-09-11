@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Gateway Workflow Dispatcher v2 — Design Document
 
 ## Problem Statement

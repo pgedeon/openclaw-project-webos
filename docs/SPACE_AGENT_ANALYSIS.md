@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Space Agent Analysis & Feature Proposals for OpenClaw WebOS
 
 **Source analyzed:** [github.com/agent0ai/space-agent](https://github.com/agent0ai/space-agent) v0.36+

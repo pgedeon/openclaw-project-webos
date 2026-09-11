@@ -13,7 +13,23 @@
  */
 
 const assert = require('assert');
-const { chromium } = require('@playwright/test');
+const http = require('http');
+
+let chromium;
+try {
+  ({ chromium } = require('@playwright/test'));
+} catch {
+  console.log('SKIP: requires Playwright (@playwright/test) — not installed');
+  process.exit(0);
+}
+
+function serverReachable(url) {
+  return new Promise((resolve) => {
+    const req = http.get(url, (res) => { res.resume(); resolve(true); });
+    req.on('error', () => resolve(false));
+    req.setTimeout(3000, () => { req.destroy(); resolve(false); });
+  });
+}
 
 const DASHBOARD_BASE = process.env.DASHBOARD_BASE || 'http://localhost:3876';
 const WAIT_TIMEOUT_MS = 30000;
@@ -110,6 +126,10 @@ async function waitForState(page, predicate, timeoutMs = WAIT_TIMEOUT_MS) {
 }
 
 async function run() {
+  if (!(await serverReachable(DASHBOARD_BASE))) {
+    console.log(`SKIP: requires dashboard server on ${DASHBOARD_BASE}`);
+    process.exit(0);
+  }
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();

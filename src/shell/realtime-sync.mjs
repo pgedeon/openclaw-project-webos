@@ -9,6 +9,27 @@
 const SYNC_INTERVAL_MS = 20000; // 20 seconds
 const DEBOUNCE_MS = 2000; // 2 seconds minimum between refreshes
 
+// Live mode (opt-in): localStorage flag openclaw.liveSync=1 switches the sync
+// feed from 20s polling to the bridge-fed SSE stream (/api/events/stream).
+// Polling stays the fallback: on SSE error/close the interval restarts, and
+// after LIVE_RECONNECT_MAX_ATTEMPTS failed reconnects the client gives up and
+// stays on polling. Default OFF — zero behavior change unless enabled.
+const LIVE_SYNC_FLAG = 'openclaw.liveSync';
+const LIVE_RECONNECT_MAX_ATTEMPTS = 5;
+const LIVE_EVENT_TYPES = ['task-updated', 'agent-status-changed', 'run-updated'];
+
+/**
+ * Checks whether live mode is enabled via localStorage flag.
+ * @returns {boolean}
+ */
+function isLiveSyncEnabled() {
+  try {
+    return localStorage.getItem(LIVE_SYNC_FLAG) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
 /**
  * @typedef {Object} SyncState
  * @property {Object|null} stats - System stats from /api/stats
@@ -89,6 +110,9 @@ export function createRealtimeSync({ api, interval = SYNC_INTERVAL_MS }) {
   /** @type {number|null} */
   let intervalId = null;
 
+  /** @type {boolean} */
+  let started = false;
+
   /** @type {number} */
   let lastRefreshTime = 0;
 
@@ -97,6 +121,14 @@ export function createRealtimeSync({ api, interval = SYNC_INTERVAL_MS }) {
 
   /** @type {boolean} */
   let pendingRefresh = false;
+
+  // ── Live mode state (opt-in via openclaw.liveSync=1) ──────────
+  /** @type {EventSource|null} */
+  let liveSource = null;
+  /** @type {boolean} */
+  let liveConnected = false;
+  /** @type {number} */
+  let liveReconnectAttempts = 0;
 
   /**
    * Subscribes to sync updates
@@ -302,17 +334,12 @@ export function createRealtimeSync({ api, interval = SYNC_INTERVAL_MS }) {
   }
 
   /**
-   * Starts the automatic sync interval
+   * Starts the automatic sync interval (polling fallback feed)
    */
-  function start() {
+  function ensurePollingInterval() {
     if (intervalId !== null) {
-      return; // Already started
+      return; // Already running
     }
-    
-    // Initial refresh
-    refresh(true);
-    
-    // Set up interval
     intervalId = setInterval(() => {
       refresh();
     }, interval);
@@ -321,11 +348,117 @@ export function createRealtimeSync({ api, interval = SYNC_INTERVAL_MS }) {
   /**
    * Stops the automatic sync interval
    */
-  function stop() {
+  function haltPollingInterval() {
     if (intervalId !== null) {
       clearInterval(intervalId);
       intervalId = null;
     }
+  }
+
+  /**
+   * Handles a bridge-pushed live event by triggering a coalesced refresh.
+   * refresh() already debounces (DEBOUNCE_MS), so event bursts collapse into
+   * at most one poll round-trip per debounce window.
+   */
+  function handleLiveEvent() {
+    refresh();
+  }
+
+  /**
+   * Opens the bridge-fed SSE stream and applies incoming events.
+   * While connected, 20s polling is halted; any error/close restarts polling
+   * immediately and counts against a capped reconnect budget before giving up
+   * and staying on polling permanently.
+   */
+  function connectLiveStream() {
+    if (liveSource) return;
+    try {
+      const token = globalThis.__DASHBOARD_AUTH_TOKEN__;
+      const url = '/api/events/stream' + (token ? '?token=' + encodeURIComponent(token) : '');
+      liveSource = new EventSource(url);
+
+      liveSource.onopen = () => {
+        liveConnected = true;
+        liveReconnectAttempts = 0;
+        haltPollingInterval(); // live feed replaces polling while connected
+      };
+
+      for (const type of LIVE_EVENT_TYPES) {
+        liveSource.addEventListener(type, handleLiveEvent);
+      }
+      // Budget breach frames (budget ledger slice 3): surface as actionable
+      // notification-center entries. Data-only listener — does NOT trigger the
+      // generic refresh (breaches don't change polled row shapes).
+      liveSource.addEventListener('budget:breach', (e) => {
+        let data = null;
+        try { data = JSON.parse(e.data); } catch (_) { return; }
+        if (globalThis.__notifCenter) {
+          globalThis.__notifCenter.pushSSE({ type: 'budget:breach', data });
+        }
+      });
+      liveSource.addEventListener('resync', () => {
+        refresh(true);
+      });
+
+      liveSource.onerror = () => {
+        liveConnected = false;
+        ensurePollingInterval(); // fall back to polling immediately
+        liveReconnectAttempts += 1;
+        if (liveReconnectAttempts > LIVE_RECONNECT_MAX_ATTEMPTS) {
+          disconnectLiveStream(); // give up; stay on polling
+        }
+        // Otherwise EventSource keeps retrying with its own backoff.
+      };
+    } catch (e) {
+      console.warn('[RealtimeSync] Live sync unavailable:', e.message);
+      liveSource = null;
+      ensurePollingInterval();
+    }
+  }
+
+  /**
+   * Closes the live SSE stream (if open). Polling must be restarted separately.
+   */
+  function disconnectLiveStream() {
+    if (liveSource) {
+      try {
+        liveSource.close();
+      } catch (_) { /* ignore */ }
+      liveSource = null;
+    }
+    liveConnected = false;
+  }
+
+  /**
+   * Starts the sync module: initial refresh, then live mode when the operator
+   * enabled it (openclaw.liveSync=1), otherwise the classic 20s poll interval.
+   */
+  function start() {
+    if (started) {
+      return; // Already started
+    }
+    started = true;
+
+    // Initial refresh
+    refresh(true);
+
+    if (isLiveSyncEnabled()) {
+      connectLiveStream();
+      if (!liveConnected) {
+        ensurePollingInterval(); // until the stream opens (or forever on failure)
+      }
+    } else {
+      ensurePollingInterval();
+    }
+  }
+
+  /**
+   * Stops the sync module entirely (polling + live stream)
+   */
+  function stop() {
+    started = false;
+    haltPollingInterval();
+    disconnectLiveStream();
   }
 
   /**
@@ -390,6 +523,9 @@ export function createRealtimeSync({ api, interval = SYNC_INTERVAL_MS }) {
     
     // Utility
     isStale,
+
+    // Live mode diagnostics (opt-in via openclaw.liveSync=1)
+    isLiveConnected: () => liveConnected,
     
     // Direct access to data for advanced use
     _data: data,
@@ -457,6 +593,17 @@ export function connectSSE() {
       if (typeof globalThis.__realtimeSyncForceRefresh === 'function') {
         globalThis.__realtimeSyncForceRefresh();
       }
+    });
+
+    // Budget breach frames (budget ledger slice 3): the dispatcher mirrors
+    // them onto the legacy always-connected channel so notification-center
+    // delivery does not depend on opt-in liveSync.
+    sseSource.addEventListener('budget:breach', (e) => {
+      if (!globalThis.__notifCenter) return;
+      try {
+        const data = e.data ? JSON.parse(e.data) : {};
+        globalThis.__notifCenter.pushSSE({ type: 'budget:breach', data });
+      } catch {}
     });
 
     sseSource.onerror = () => {

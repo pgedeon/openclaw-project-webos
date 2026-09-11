@@ -6,6 +6,7 @@
  */
 
 import { skeletonLoader } from './skeleton-loader.mjs';
+import { executeAction } from './shell/action-client.mjs';
 
 export class AgentView {
   /**
@@ -406,6 +407,36 @@ export class AgentView {
       actions.appendChild(claimBtn);
     }
 
+    // ⚡ Run workflow… — gated run.dispatch placement (one-click actions slice 2,
+    // brief §2 row 2): opens the template picker, then the typed PREVIEW_MODAL,
+    // then POSTs one envelope to /api/actions/execute (create+start composed
+    // server-side). Available on every task row regardless of lock state.
+    const dispatchBtn = document.createElement('button');
+    dispatchBtn.className = 'action-btn dispatch-btn';
+    dispatchBtn.textContent = '⚡ Run workflow…';
+    dispatchBtn.setAttribute('aria-label', `Run workflow for task: ${task.title}`);
+    dispatchBtn.onclick = async () => {
+      dispatchBtn.disabled = true;
+      try {
+        const params = await this.openDispatchDialog(task);
+        if (!params) return; // dialog dismissed — nothing minted, nothing fired
+        const result = await executeAction({
+          kind: 'run.dispatch',
+          targetId: task.id,
+          params,
+          previewLines: [`Template: ${params.template}`],
+        });
+        if (result.ok) {
+          const newRunId = result.receipt?.detail?.result?.new_run_id;
+          this.showNotice(`Workflow dispatched${newRunId ? ` → run ${String(newRunId).substring(0, 8)}` : ''}.`, 'success');
+          await this.loadAgentTasks(this.currentAgent);
+        }
+      } finally {
+        dispatchBtn.disabled = false;
+      }
+    };
+    actions.appendChild(dispatchBtn);
+
     // Assemble the task element
     container.appendChild(textEl);
 
@@ -470,6 +501,114 @@ export class AgentView {
     container.appendChild(actions);
 
     return container;
+  }
+
+  /**
+   * Template picker for the gated run.dispatch action (brief §5 flow 2:
+   * "Run workflow…" → template picker → PREVIEW_MODAL → Confirm).
+   * Resolves {template, input_payload} | null when dismissed.
+   */
+  async openDispatchDialog(task) {
+    let templates = [];
+    try {
+      const token = globalThis.__DASHBOARD_AUTH_TOKEN__;
+      const res = await fetch('/api/workflow-templates', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      templates = Array.isArray(data?.templates) ? data.templates : (Array.isArray(data) ? data : []);
+    } catch (e) {
+      this.showNotice(`Failed to load workflow templates: ${e.message}`, 'error');
+      return null;
+    }
+    const active = templates.filter((t) => t.is_active !== false);
+    if (!active.length) {
+      this.showNotice('No active workflow templates available to dispatch.', 'error');
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+
+      const modal = document.createElement('div');
+      modal.style.cssText = 'background: var(--surface); border-radius: 16px; padding: 24px; max-width: 480px; width: 90%; box-shadow: var(--shadow); font-size: 0.85rem;';
+
+      const title = document.createElement('h3');
+      title.textContent = 'Run workflow…';
+      title.style.marginBottom = '4px';
+      const sub = document.createElement('div');
+      sub.style.cssText = 'color: var(--muted); font-size: 0.78rem; margin-bottom: 12px;';
+      sub.textContent = `Creates and starts a workflow run on task: ${task.title || task.text || task.id}`;
+
+      const label = document.createElement('label');
+      label.textContent = 'Template';
+      label.style.cssText = 'display:block;font-weight:600;margin-bottom:4px;';
+      const select = document.createElement('select');
+      select.style.cssText = 'width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);margin-bottom:12px;';
+      for (const t of active) {
+        const opt = document.createElement('option');
+        opt.value = t.name || t.id;
+        opt.textContent = t.display_name || t.name || t.id;
+        select.appendChild(opt);
+      }
+
+      const payloadLabel = document.createElement('label');
+      payloadLabel.textContent = 'Input payload (JSON, optional)';
+      payloadLabel.style.cssText = 'display:block;font-weight:600;margin-bottom:4px;';
+      const payloadInput = document.createElement('textarea');
+      payloadInput.rows = 3;
+      payloadInput.placeholder = '{"instructions": "..."}';
+      payloadInput.style.cssText = 'width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-family:monospace;font-size:0.78rem;resize:vertical;box-sizing:border-box;margin-bottom:12px;';
+
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'secondary-btn';
+      cancelBtn.type = 'button';
+      cancelBtn.textContent = 'Cancel';
+      const goBtn = document.createElement('button');
+      goBtn.className = 'primary-btn';
+      goBtn.type = 'button';
+      goBtn.textContent = 'Continue';
+      btnRow.append(cancelBtn, goBtn);
+
+      const done = (value) => {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        resolve(value);
+      };
+      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
+      document.addEventListener('keydown', onKey);
+
+      cancelBtn.addEventListener('click', () => done(null));
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) done(null); });
+      goBtn.addEventListener('click', () => {
+        let inputPayload = {};
+        const raw = payloadInput.value.trim();
+        if (raw) {
+          try {
+            inputPayload = JSON.parse(raw);
+          } catch {
+            this.showNotice('Invalid JSON in input payload.', 'error');
+            return;
+          }
+          if (!inputPayload || typeof inputPayload !== 'object' || Array.isArray(inputPayload)) {
+            this.showNotice('Input payload must be a JSON object.', 'error');
+            return;
+          }
+        }
+        done({ template: select.value, input_payload: inputPayload });
+      });
+
+      modal.append(title, sub, label, select, payloadLabel, payloadInput, btnRow);
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      select.focus();
+    });
   }
 
   /**

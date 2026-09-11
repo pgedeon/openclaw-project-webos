@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Admin Guide
 
 ## Overview
@@ -27,7 +31,7 @@ bash scripts/dashboard-health.sh check
 ### Validate API
 
 ```bash
-node scripts/dashboard-validation.js
+DASHBOARD_AUTH_TOKEN=<token> node scripts/dashboard-validation.js
 ```
 
 ## Database Management
@@ -50,6 +54,29 @@ PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTG
 psql -U postgres -d mission_control -f schema/openclaw-dashboard.sql
 ```
 
+### Snapshots & Restore (backup)
+
+Full-state backup as JSON artifacts in `storage/snapshots/` (docs/briefs/snapshot-restore.md; no new DB tables — the registry is the directory listing). Artifacts are secret-free by construction: settings carry config-source keys only, and a deny-regex pass redacts secret-looking values anywhere in the payload.
+
+```bash
+# Create (requires PostgreSQL)
+curl -X POST http://localhost:3876/api/snapshots -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"name":"pre-maintenance"}'
+
+# List / download
+curl http://localhost:3876/api/snapshots -H "Authorization: Bearer $TOKEN"
+curl -OJ http://localhost:3876/api/snapshots/<snapshot_id>/download -H "Authorization: Bearer $TOKEN"
+
+# Dry-run diff preview (nothing written), then apply merge or replace
+curl -X POST http://localhost:3876/api/restore/preview -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"snapshot_id":"<id>"}'
+curl -X POST http://localhost:3876/api/restore/apply -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"snapshot_id":"<id>","mode":"merge","restoreId":"<uuid>"}'
+```
+
+Notes: restore requests over `RESTORE_MAX_BYTES` (default 100 MB) are rejected 413 before parsing. Apply is checkpointed per table — re-POST with the same `restoreId` to resume after a partial failure; a completed apply replays as `{duplicate:true}` doing nothing. Replace mode deletes rows absent from the artifact — take a fresh snapshot first (that IS the rollback move). Without PostgreSQL, create/preview/apply answer `503 {available:false}` while list/download keep working from disk.
+
 ## Cron Job Management
 
 ### Install Cron Jobs
@@ -62,10 +89,13 @@ cat crontab/*.cron | crontab -
 
 ### Monitor Cron
 
-The cron-manager-server (port 3878) provides an API:
+The cron-manager-server (port 3878) provides an API. Since the 2026-08
+security fixes it requires a bearer token and only accepts loopback Host
+headers (see SECURITY-AUDIT-2026-08.md F2/F3):
 
 ```bash
-curl http://127.0.0.1:3878/api/cron-admin/jobs
+curl -H "Authorization: Bearer $DASHBOARD_AUTH_TOKEN" \
+     http://127.0.0.1:3878/api/cron-admin/jobs
 ```
 
 ### Keepalive Servers
@@ -159,9 +189,13 @@ See `DEVELOPER_GUIDE.md` → "Adding a New View"
 ## Security
 
 - All credentials via environment variables (`.env`)
+- Dashboard API auth is single-operator bearer token mode via `DASHBOARD_AUTH_TOKEN`
+- `/api/health` and `/api/auth/self` are public; other `/api/*` routes require the bearer token when configured
+- Full login/session/RBAC auth is deferred until a multi-operator requirement exists
 - Secret scanning pipeline in `src/security/`
 - No hardcoded credentials in codebase
 - CORS headers configured per-origin
+- See `docs/auth-reference.md` for the current auth contract
 - See `.env.example` for all configurable settings
 
 ## Support

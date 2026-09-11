@@ -605,6 +605,73 @@ test('creates handler with pool', () => {
   assert.ok(handler.dispatcher instanceof GatewayWorkflowDispatcherV2);
 });
 
+// ─── Budget channel alert wiring (slice 5) ───────────────────────
+
+function breachItem(overrides = {}) {
+  return {
+    event: { event_kind: 'paused', detail: {} },
+    budget: {
+      id: '22222222-2222-2222-2222-222222222222',
+      name: 'wiring cap',
+      scope: 'fleet',
+      scope_id: null,
+      period: 'monthly',
+      cap_usd: 10,
+      cap_tokens: null,
+      action_on_exceed: 'pause_new_runs',
+    },
+    key: '2026-08',
+    spendUsd: 12,
+    spendTokens: 0,
+    ...overrides,
+  };
+}
+
+(async () => {
+  test('emitBudgetBreachFrames fans out to channel notifier after SSE emit', async () => {
+    const sent = [];
+    const d = new GatewayWorkflowDispatcherV2(createFakePool(), {
+      budgetSseBroadcast: () => {},
+      budgetAlertGatewayClient: {
+        sendDelivery({ channel, to, message }) {
+          sent.push({ channel, to, message });
+          return Promise.resolve({ ok: true });
+        },
+      },
+    }, console);
+    process.env.BUDGET_ALERT_CHANNEL = 'whatsapp';
+    process.env.BUDGET_ALERT_TARGET = '+491700000000';
+    try {
+      d.emitBudgetBreachFrames([breachItem()]);
+      await new Promise((r) => setTimeout(r, 25)); // deliverFrame is fire-and-forget
+      assert.strictEqual(sent.length, 1, JSON.stringify(sent));
+      assert.strictEqual(sent[0].channel, 'whatsapp');
+      assert.ok(sent[0].message.includes('⏸ PAUSED — Budget "wiring cap"'), sent[0].message);
+      // Second tick over the same latched row ⇒ seen-set dedupe, no resend.
+      d.emitBudgetBreachFrames([breachItem()]);
+      await new Promise((r) => setTimeout(r, 25));
+      assert.strictEqual(sent.length, 1);
+    } finally {
+      delete process.env.BUDGET_ALERT_CHANNEL;
+      delete process.env.BUDGET_ALERT_TARGET;
+    }
+  });
+
+  test('notifier disabled by default (BUDGET_ALERT_CHANNEL unset) ⇒ zero sends', async () => {
+    const sent = [];
+    const d = new GatewayWorkflowDispatcherV2(createFakePool(), {
+      budgetSseBroadcast: () => {},
+      budgetAlertGatewayClient: {
+        sendDelivery() { sent.push(1); return Promise.resolve({ ok: true }); },
+      },
+    }, console);
+    delete process.env.BUDGET_ALERT_CHANNEL;
+    d.emitBudgetBreachFrames([breachItem()]);
+    await new Promise((r) => setTimeout(r, 25));
+    assert.strictEqual(sent.length, 0);
+  });
+})();
+
 // ─── Summary ──────────────────────────────────────────────────────
 
 console.log(`\n${'='.repeat(50)}`);

@@ -1,3 +1,7 @@
+---
+layout: default
+---
+
 # Database Schema Reference
 
 ## Overview
@@ -38,10 +42,11 @@ Container for tasks with configuration.
 | `default_workflow_id` | `UUID` | FK → `workflows(id)`, NOT NULL | Default workflow for tasks |
 | `metadata` | `JSONB` | NOT NULL, default `'{}'` | |
 | `qmd_project_namespace` | `TEXT` | NOT NULL, UNIQUE | QMD namespace identifier |
+| `workspace_id` | `UUID` | nullable, FK → `workspaces(id)` ON DELETE SET NULL (027) | Owning workspace; NULL = storage null-coalesces to the `default` workspace |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, default `NOW()` | |
 | `updated_at` | `TIMESTAMPTZ` | NOT NULL, default `NOW()` | Auto-updated via trigger |
 
-**Indexes:** GIN on `tags`, GIN on `metadata`
+**Indexes:** GIN on `tags`, GIN on `metadata`, btree on `workspace_id` (027)
 
 ---
 
@@ -55,6 +60,7 @@ The primary work items.
 |--------|------|-------------|-------------|
 | `id` | `UUID` | PK, default `uuid_generate_v4()` | |
 | `project_id` | `UUID` | FK → `projects(id)` ON DELETE CASCADE, NOT NULL | |
+| `workspace_id` | `UUID` | nullable, FK → `workspaces(id)` ON DELETE SET NULL (027) | Per-workspace counts/reassign; NULL = inherits project's workspace |
 | `title` | `TEXT` | NOT NULL | Task title |
 | `description` | `TEXT` | NOT NULL, default `''` | |
 | `status` | `TEXT` | NOT NULL, default `'backlog'` | See status values below |
@@ -198,6 +204,13 @@ Tracks execution instances of workflows.
 | `claimed_by` | `TEXT` | nullable | *(021)* |
 | `claim_session_id` | `TEXT` | nullable | *(021)* |
 | `dispatch_attempts` | `INTEGER` | NOT NULL, default `0` | *(021)* |
+| `input_tokens` | `BIGINT` | nullable | *(022)* Prompt/input tokens consumed by the run |
+| `output_tokens` | `BIGINT` | nullable | *(022)* Completion/output tokens produced by the run |
+| `cached_tokens` | `BIGINT` | nullable | *(022)* Tokens served from cache (subset of input) |
+| `model_id` | `TEXT` | nullable | *(022)* Primary model used for this run |
+| `cost_estimate` | `NUMERIC(12,6)` | nullable | *(022)* Estimated cost of the run |
+| `currency` | `TEXT` | default `'USD'` | *(022)* ISO 4217 currency code for `cost_estimate` |
+| `reported_at` | `TIMESTAMPTZ` | nullable | *(022)* When usage/cost was last reported |
 | `blocker_type` | `TEXT` | nullable | *(004)* |
 | `blocker_description` | `TEXT` | nullable | *(004)* |
 
@@ -223,13 +236,26 @@ Individual steps within a workflow run.
 | `workflow_run_id` | `UUID` | FK → `workflow_runs(id)` ON DELETE CASCADE, NOT NULL | |
 | `step_name` | `TEXT` | NOT NULL | |
 | `step_order` | `INTEGER` | NOT NULL | |
-| `status` | `TEXT` | NOT NULL, default `'pending'` | `pending`, `in_progress`, `completed`, `failed`, `skipped` |
+| `status` | `TEXT` | NOT NULL, default `'pending'` | *(025)* Step-native: `pending`, `in_progress`, `completed`, `failed`, `skipped`; plus dispatcher-vocabulary mirrored by agents onto their current step: `queued`, `dispatched`, `claimed`, `running`, `waiting_for_approval`, `blocked`, `retrying`, `cancelled`, `timed_out`. Writers must go through `updateStep`, which validates against the same list |
 | `started_at` | `TIMESTAMPTZ` | nullable | |
 | `finished_at` | `TIMESTAMPTZ` | nullable | |
 | `output` | `JSONB` | NOT NULL, default `'{}'` | |
 | `error_message` | `TEXT` | nullable | |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, default `NOW()` | |
 | `updated_at` | `TIMESTAMPTZ` | NOT NULL, default `NOW()` | |
+
+**Constraint** *(025)*:
+
+```sql
+valid_workflow_step_status CHECK (status IN (
+  'pending', 'in_progress', 'completed', 'failed', 'skipped',
+  'queued', 'dispatched', 'claimed', 'running',
+  'waiting_for_approval', 'blocked', 'retrying',
+  'cancelled', 'timed_out'
+))
+```
+
+Chosen vocabulary = step-native lifecycle (001) ∪ dispatcher v2 run statuses (021). Reality check: gateway sessions mirror run-level states (`timed_out` observed live 2026-08-25) onto their current step; the original five-value CHECK either rejected those writes or had never applied on drifted deployments (`CREATE TABLE IF NOT EXISTS` skips existing tables). Unknown status strings are rejected at the API layer (`WORKFLOW_STEP_STATUSES` in workflow-runs-api.js), not silently mapped.
 
 **Indexes:** `workflow_run_id`, `status`, `step_order`
 
@@ -244,7 +270,7 @@ Reusable workflow definitions.
 | `display_name` | `TEXT` | NOT NULL | Human-readable name |
 | `description` | `TEXT` | NOT NULL, default `''` | |
 | `default_owner_agent` | `TEXT` | NOT NULL | Default agent for runs |
-| `steps` | `JSONB` | NOT NULL, default `'[]'` | Ordered step definitions |
+| `steps` | `JSONB` | NOT NULL, default `'[]'` | Ordered step definitions; canonical entry shape `{name, display_name, required}` *(025 lifts bare strings on write + backfill)* |
 | `required_approvals` | `JSONB` | NOT NULL, default `'[]'` | Steps needing approval |
 | `success_criteria` | `JSONB` | NOT NULL, default `'{}'` | Completion criteria |
 | `category` | `TEXT` | NOT NULL, default `'general'` | `content`, `publishing`, `maintenance`, `incident`, `development`, `quality` |
@@ -589,7 +615,7 @@ Records full entity state at each mutation for point-in-time recovery and undo.
 
 ## Spaces / Workspaces
 
-#### `workspaces` (extended)
+#### `workspaces` (base: 026; extended: 20260429a)
 
 Multi-workspace support with per-space configuration.
 
@@ -607,7 +633,7 @@ Multi-workspace support with per-space configuration.
 | `created_at` | `TIMESTAMPTZ` | default `NOW()` | |
 | `updated_at` | `TIMESTAMPTZ` | default `NOW()` | Auto-updated via trigger |
 
-**Referenced by:** `tasks.workspace_id`, `cron_jobs.workspace_id`
+**Referenced by:** `projects.workspace_id` (027), `tasks.workspace_id` (027). (An older revision of this line also claimed `cron_jobs.workspace_id` — stale: no code path queries it, no migration defines it, 027 deliberately does not add it.)
 
 ---
 
@@ -632,6 +658,7 @@ Multi-workspace support with per-space configuration.
 | 015 | `015_add_department_daily_metrics.sql` | — | Add `department_daily_metrics` table |
 | 020 | `020_add_error_details_to_workflow_runs.sql` | 2026-03-21 | Add `error_details` JSONB column to workflow_runs |
 | 021 | `021_add_workflow_agent_routing.sql` | 2026-03-22 | Add `workflow_agent_routing` table, dispatch/claim columns |
+| 022 | `022_add_run_token_cost_tracking.sql` | 2026-08-23 | Add per-run token/cost tracking columns to `workflow_runs` (roadmap Phase 0) |
 | 20260216a | `20260216_add_agent_observability.sql` | 2026-02-16 | Add `agent_heartbeats` and `task_runs` tables, `retry_count` on tasks |
 | 20260216b | `20260216_add_archive_deleted_to_tasks.sql` | 2026-02-16 | Add `archived_at` and `deleted_at` to tasks |
 | 20260216c | `20260216_add_audit_log_search_indexes.sql` | 2026-02-16 | Add `action` and `(actor, action)` indexes to audit_log |
@@ -640,6 +667,74 @@ Multi-workspace support with per-space configuration.
 | 20260216d | `20260216_add_cron_job_runs.sql` | 2026-02-16 | Add `cron_job_runs` table |
 | 20260216e | `20260216_add_saved_views.sql` | 2026-02-16 | Add `saved_views` table |
 | 20260216f | `20260216_add_updated_at_index_to_tasks.sql` | 2026-02-16 | Add `updated_at` index to tasks for incremental sync |
+| 20260429b | `20260429_spaces_constraints.sql` | 2026-04-29 | Enforce single default workspace via partial unique index on `workspaces.is_default` |
+| 022 | `022_add_run_token_cost_tracking.sql` | 2026-08-23 | Add per-run token/cost tracking to `workflow_runs`: input_tokens, output_tokens, cached_tokens, model_id, cost_estimate, currency, reported_at |
+| 023 | `023_add_budget_ledger.sql` | 2026-08-24 | Add `budgets` rules + `budget_events` append-only audit trail (budget ledger slice 1) |
+| 024 | `024_add_action_receipts.sql` | 2026-08-24 | Add `action_receipts` idempotency latch + persisted operator-action receipts (one-click actions slice 1) |
+| 025 | `025_add_workflow_normalization.sql` | 2026-08-25 | Debt D1 normalization: widen `workflow_steps` status CHECK to step-native ∪ dispatcher-vocabulary (14 values); lift string-only `workflow_templates.steps` into `{name, display_name, required}` objects (idempotent, order-preserving) |
+| 20260826a | `20260826_audit_log_task_id_nullable.sql` | 2026-08-26 | Make `audit_log.task_id` nullable — task-less system events (MCP adoption telemetry, workflow-graph events) append rows with `task_id NULL`; aligns canonical DDL with prod reality + docs (drift fix) |
+| 026 | `026_add_workspaces_base.sql` | 2026-08-29 | Add the missing base `workspaces` CREATE TABLE (P3 Spaces shipped the ALTER migrations but never the base DDL — fresh DBs had `/api/spaces` fail with `relation "workspaces" does not exist`); seeds the `default` workspace idempotently |
+| 027 | `027_add_workspace_columns_to_projects_tasks.sql` | 2026-09-06 | Add `projects.workspace_id` + `tasks.workspace_id` (FK → `workspaces`, ON DELETE SET NULL, btree indexes) — the P3 Spaces storage layer (create/update/list/copy/reassign, per-workspace counts) referenced columns no migration or canonical DDL ever defined; staging 400'd `POST /api/projects` (`column "workspace_id" does not exist`). cron_jobs deliberately untouched (no code queries it). Existing rows stay NULL — storage null-coalesces to the default workspace |
+
+---
+
+## Budget Ledger Tables
+
+### budgets *(023)*
+
+Named spending rules; spend is derived from `workflow_runs` (migration 022) at evaluation time, never stored twice.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `UUID` | PK, default `gen_random_uuid()` |
+| `name` | `TEXT` | NOT NULL — operator-facing label |
+| `scope` | `TEXT` | NOT NULL, CHECK: `agent` \| `department` \| `project` \| `fleet` |
+| `scope_id` | `TEXT` | nullable — agent id / department id / workflow_type; NULL only for fleet |
+| `period` | `TEXT` | NOT NULL, CHECK: `daily` \| `weekly` \| `monthly` |
+| `cap_usd` | `NUMERIC(12,6)` | nullable — XOR with `cap_tokens` (table CHECK) |
+| `cap_tokens` | `BIGINT` | nullable — over `input_tokens + output_tokens`; XOR with `cap_usd` |
+| `action_on_exceed` | `TEXT` | NOT NULL, CHECK: `warn` \| `pause_new_runs` \| `hard_stop` |
+| `active` | `BOOLEAN` | NOT NULL, default `true` |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, default `now()` |
+
+**Indexes:** partial unique `uq_budgets_active_scope_period (scope, COALESCE(scope_id, ''), period) WHERE active` — one active budget per scope+period; `idx_budgets_scope_period (scope, period, active)`.
+
+### budget_events *(023)*
+
+Append-only enforcement audit trail. `UNIQUE (budget_id, period_key, event_kind)` is the idempotency latch (`ON CONFLICT DO NOTHING`) so repeated dispatcher ticks never duplicate an event.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `BIGSERIAL` | PK |
+| `budget_id` | `UUID` | NOT NULL, FK → `budgets(id)` ON DELETE CASCADE |
+| `period_key` | `TEXT` | NOT NULL — e.g. `2026-08-24` / `2026-W35` / `2026-08` |
+| `event_kind` | `TEXT` | NOT NULL, CHECK: `warned` \| `paused` \| `hard_stopped` \| `recovered` |
+| `detail` | `JSONB` | nullable — spend at breach, affected run ids, actor |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, default `now()` |
+
+**Indexes:** unique `(budget_id, period_key, event_kind)`; `idx_budget_events_budget_created (budget_id, created_at DESC)`.
+
+---
+
+## Action Receipts Tables
+
+### action_receipts *(024)*
+
+One receipt per executed operator action (one-click actions slice 1). The primary key IS the idempotency latch: a replayed client-minted `action_id` returns the stored row (`duplicate:true`) instead of re-executing; the same `action_id` with a different `params_hash` is a stale retry (HTTP 409) and never executes.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `action_id` | `TEXT` | PK — client-minted UUID, one per confirmed intent; retries reuse it, a deliberate repeat mints a new one |
+| `kind` | `TEXT` | NOT NULL, CHECK: `task.assign` \| `run.dispatch` \| `approval.decide` \| `run.cancel` \| `run.redispatch` |
+| `target_id` | `TEXT` | NOT NULL — task / approval / run id per kind |
+| `params_hash` | `TEXT` | NOT NULL — sha256 over canonical JSON (sorted keys) of params; staleness guard |
+| `actor` | `TEXT` | NOT NULL, default `'dashboard-operator'` |
+| `outcome` | `TEXT` | nullable, CHECK: `executed` \| `rejected_governance` \| `blocked_budget` \| `failed` \| `duplicate`; NULL while executing (latch inserted before the side effect). Budget-blocked refusals are answered pre-latch and intentionally leave NO receipt so the action stays retryable after a cap raise |
+| `rollback_hint` | `TEXT` | nullable — human-readable recovery move shown before confirm and in the tray; hints only, nothing auto-reverts |
+| `detail` | `JSONB` | nullable — executor result ids (e.g. new run_id), governance verdict, error text |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, default `now()` |
+
+**Indexes:** `idx_action_receipts_created (created_at DESC)` for the recent-receipts feed. Every completed receipt is mirrored into `audit_log` (`action = 'action.<kind>'`) in the same transaction that stamps the outcome.
 
 ---
 
