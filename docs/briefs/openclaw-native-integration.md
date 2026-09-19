@@ -4,7 +4,7 @@ layout: default
 
 # Brief: OpenClaw-native integration of the WebOS desktop (owner request 2026-09-09)
 
-**Status:** PROPOSAL — awaiting owner approval before any card is queued.
+**Status:** APPROVED — owner ruling 2026-09-19 15:40 CEST (chat); Phase 0 research authorized.
 **Author:** CEO seat (ZCode), research against OpenClaw **2026.9.3** installed in WSL.
 **Owner:** Rosa. **Target:** make the OpenClaw Project WebOS desktop feel native to OpenClaw's own web app (Control UI + Workboard), not a separate dashboard on a separate port with a separate token.
 

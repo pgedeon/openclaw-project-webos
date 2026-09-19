@@ -34,3 +34,4 @@ _legacy-archive/
 .env.blogger
 .env*
 gateway-status.json
+docs/briefs/*.bak*
