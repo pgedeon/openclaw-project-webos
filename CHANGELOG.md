@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Phase 0 protocol research for OpenClaw-native desktop integration (2026-09-19): `docs/briefs/openclaw-native-integration-phase0-findings.md` pins tab-content mechanics, Control UI WS auth, workboard list/notify contracts, and extension packaging against OpenClaw 2026.9.4. Brief APPROVED earlier the same day (1aec8ad/2979513). Roadmap Post-2.0 status updated.
+
 ### Fixed
 
 - Token-gate Connect appeared to do nothing with a VALID token (2026-09-09, reported live by the operator): the auth bootstrap in index.html only removed the `#auth-bootstrap-overlay` gate from inside `promptForToken` — i.e., when re-prompting after a failed check. On the SUCCESS path nothing removed it, and it is an opaque fullscreen layer (fixed, inset 0, z-index 99999), so the desktop booted invisibly BEHIND the gate after clicking Connect. Wrong tokens showed the proper "Invalid token. Try again." rebuild, which is why the bug hid on the happy path. CI e2e never caught it because the stored-token test seeds localStorage via addInitScript BEFORE load, so `promptForToken` (and the overlay) never run there. Fix: remove the overlay explicitly after the auth loop succeeds. Regression e2e added (tests/e2e.spec.ts): loads with no stored token, asserts the gate appears, types the token, clicks Connect, asserts the overlay is GONE and the taskbar is visible — the exact manual path that was broken, now pinned. Full e2e 13 → 14 green locally against a CI-shaped scratch server (UI assets staged via OPENCLAW_WORKSPACE); fixed index.html deployed to staging :8120 and verified in the served bytes.
