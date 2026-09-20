@@ -1,0 +1,28 @@
+{
+  "id": "openclaw-webos",
+  "name": "OpenClaw WebOS",
+  "description": "Control UI tab that mounts the OpenClaw Project WebOS desktop as a Lit ControlUiView (Phase 2). In-repo only — do not install without owner approval.",
+  "enabledByDefault": false,
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "taskServerUrl": {
+        "type": "string",
+        "default": "http://192.168.0.81:8120",
+        "description": "Staging task-server URL. Tab uses host.request for Workboard RPCs when served from the Gateway origin; this URL is reserved for a same-host proxy only if proven needed."
+      },
+      "desktopTokenGate": {
+        "type": "boolean",
+        "default": false,
+        "description": "Optional desktop token gate when the tab is served from the Gateway origin. Default UNCHANGED (off) so :8120 and other origins keep their existing DASHBOARD_AUTH_TOKEN bootstrap."
+      }
+    }
+  },
+  "controlUi": {
+    "entry": "dist/control-ui/d3a76ed718bfc11173991d1efbb2823145c187f12f7fb99cc052e5a538521d0b/index.js",
+    "styles": [
+      "dist/control-ui/d3a76ed718bfc11173991d1efbb2823145c187f12f7fb99cc052e5a538521d0b/index.css"
+    ]
+  }
+}

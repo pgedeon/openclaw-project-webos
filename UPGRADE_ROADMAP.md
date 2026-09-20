@@ -312,10 +312,10 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       STATUS: APPROVED 2026-09-19 (commits 1aec8ad/2979513). Phase 0 research
       landed in `docs/briefs/openclaw-native-integration-phase0-findings.md`
       (card eae41fc8). Phase 1 gateway RPC + read-only Workboard window
-      landed (card 10e4f44f, first-hand 15/15 tests). Phase 2+ queue one
-      card at a time under a19fbc46.
-      After Phase 2 lands, the pass's health checks extend to the
-      gateway-tab surface alongside :8120.
+      landed (card 10e4f44f, first-hand 15/15 tests). Phase 2 in-repo
+      `openclaw-webos/` extension landed (card dd329865, first-hand 13/13);
+      gateway install still owner-gated — health checks stay :8120 until
+      that note. Phase 3+ queue one card at a time under a19fbc46.
 
 - [x] **[candidate] Workflow data normalization migration** — repair the
       `timed_out` CHECK-constraint violation (migration 021) and lift 14/29

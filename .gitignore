@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# Phase 2 Control UI tab ships hashed js/css in-tree (workboard packaging).
+!openclaw-webos/dist/
 playwright-report/
 test-results/
 coverage/

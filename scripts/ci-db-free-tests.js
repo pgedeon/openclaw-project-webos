@@ -57,6 +57,7 @@ const INCLUDED = [
   'test-memory-routes.js',
   'test-mcp-adapter.js',
   'test-mcp-server.js',
+  'test-openclaw-webos-extension.js',
   'test-mcp-telemetry.js',
   'test-metrics-api.js',
   'test-nl-parse.js',

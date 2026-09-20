@@ -121,6 +121,8 @@ Read-only native window over the OpenClaw Gateway Workboard (Phase 1, `src/shell
 - durable `tasks.list`, automations via `cron.list`
 - `workboard.notifications.events` then `workboard.notifications.advance`
 
+**Phase 2 (in-repo only):** `openclaw-webos/` is a Control UI tab extension that would register `surface:tab` at `route:desktop` (`/openclaw/desktop`) once owner-approved into `~/.openclaw/extensions/`. Packaging mirrors the in-tree workboard plugin (`controlUi.entry` = `dist/control-ui/<hash>/index.js` + styles). The tab is a Lit ControlUiView that mounts a vanilla ES view module — not a URL, not raw `index.html`. This card does **not** install or restart the Gateway; `:8120` remains the dashboard data backend. The tab is Control UI chrome, not a new windowed app.
+
 ### Requests
 
 **Category:** Work · **ID:** `requests` · **Default size:** 1060×720

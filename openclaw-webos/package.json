@@ -1,0 +1,13 @@
+{
+  "name": "@openclaw/webos",
+  "version": "0.2.0",
+  "private": true,
+  "description": "OpenClaw Control UI tab extension for the Project WebOS desktop. In-repo only.",
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ],
+    "controlUi": "./dist/control-ui/d3a76ed718bfc11173991d1efbb2823145c187f12f7fb99cc052e5a538521d0b/index.js"
+  }
+}
