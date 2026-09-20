@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Phase 1 native OpenClaw Workboard window (2026-09-20): browser-side Gateway WS RPC client `src/shell/gateway-rpc.mjs` opens its own `connect` from the :8120 origin (no Control UI socket piggyback). Read RPCs: `workboard.cards.list` / `cards.stats` / `boards.list`, durable `tasks.list`, automations via `cron.list`. Live refresh is two RPCs — `workboard.notifications.events` then `workboard.notifications.advance` — tracking `lastEventId`/`lastEventSequence` inclusive-exclusive (Phase 0 mismatches #3/#4/#6). Read-only `workboard` app (`native-views/workboard-view.mjs`) with status columns, board filter, card drawer, Control UI deep-link, and `gateway-unavailable` degrade. Fake-RPC harness `tests/test-gateway-rpc.js` (15/15) in ci-db-free-tests. First-hand: `node tests/test-gateway-rpc.js` PASS on WSL dashboard tree; landed here from worker commit 46faae8.
 - Phase 0 protocol research for OpenClaw-native desktop integration (2026-09-19): `docs/briefs/openclaw-native-integration-phase0-findings.md` pins tab-content mechanics, Control UI WS auth, workboard list/notify contracts, and extension packaging against OpenClaw 2026.9.4. Brief APPROVED earlier the same day (1aec8ad/2979513). Roadmap Post-2.0 status updated.
 
 ### Fixed

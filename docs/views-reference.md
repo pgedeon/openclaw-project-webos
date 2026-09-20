@@ -4,7 +4,7 @@ layout: default
 
 # Views Reference — All Desktop Windows
 
-The OpenClaw Project WebOS exposes **36 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
+The OpenClaw Project WebOS exposes **38 windowed applications** through the desktop shell. Each view is a self-contained module loaded on demand when the user opens its window from the start menu or taskbar.
 
 Views are organized into four categories in the start menu: **Work**, **Operations**, **System**, and **Admin**.
 
@@ -23,6 +23,7 @@ Views are organized into four categories in the start menu: **Work**, **Operatio
 - [Agents](#agents) ✓ (see user-guide.md)
 - [Sessions](#sessions)
 - [Session Replay](#session-replay)
+- [Workboard](#workboard)
 - [Requests](#requests)
 - [Publish](#publish)
 - [Approvals](#approvals)
@@ -104,6 +105,21 @@ Gantt-style timeline view. Fully documented in the [User Guide — Timeline View
 **Category:** Work · **ID:** `agents` · **Default size:** 1120×740
 
 Agent dashboard with queue visibility. Fully documented in the [User Guide — Agent View](user-guide.md#agent-view).
+
+### Workboard
+
+**Category:** Work · **ID:** `workboard` · **Default size:** 1180×760
+
+Read-only native window over the OpenClaw Gateway Workboard (Phase 1, `src/shell/gateway-rpc.mjs`). Columns follow the official status enum (`triage`…`done`). A board filter and card detail drawer show title, agent, labels, proof links, and heartbeat age. Live refresh calls `workboard.notifications.events` then `workboard.notifications.advance` as two RPCs and tracks `lastEventId`/`lastEventSequence` (inclusive-exclusive). The :8120 tab opens its own Gateway `connect` (device token / shared secret) and never piggybacks the Control UI socket.
+
+**Graceful degradation:** bridge down → house-contract `gateway-unavailable` state (`{available:false, reason:'gateway-unavailable'}`). No invented fallback origin.
+
+**Deep-link:** "Open in Workboard" targets Control UI `https://home.3dput.com/openclaw?board=<id>&card=<id>#workboard`.
+
+**API / RPC used (read-only):**
+- `workboard.cards.list`, `workboard.cards.stats`, `workboard.boards.list`
+- durable `tasks.list`, automations via `cron.list`
+- `workboard.notifications.events` then `workboard.notifications.advance`
 
 ### Requests
 

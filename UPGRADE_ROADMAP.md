@@ -311,7 +311,9 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       workboard RPC (one registry) → 4 de-dup review (owner checkpoint).
       STATUS: APPROVED 2026-09-19 (commits 1aec8ad/2979513). Phase 0 research
       landed in `docs/briefs/openclaw-native-integration-phase0-findings.md`
-      (card eae41fc8). Phase 1+ queue one card at a time under a19fbc46.
+      (card eae41fc8). Phase 1 gateway RPC + read-only Workboard window
+      landed (card 10e4f44f, first-hand 15/15 tests). Phase 2+ queue one
+      card at a time under a19fbc46.
       After Phase 2 lands, the pass's health checks extend to the
       gateway-tab surface alongside :8120.
 

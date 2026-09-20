@@ -199,6 +199,16 @@ export const APP_REGISTRY = Object.freeze([
     defaultHeight: 760,
   },
   {
+    id: 'workboard',
+    label: 'Workboard',
+    icon: appIcon.kanban,
+    url: '/?view=workboard',
+    viewModule: './native-views/workboard-view.mjs',
+    category: 'Work',
+    defaultWidth: 1180,
+    defaultHeight: 760,
+  },
+  {
     id: 'agents',
     label: 'Agents',
     icon: appIcon.robot,
