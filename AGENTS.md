@@ -70,7 +70,7 @@ Win11-style desktop environment for managing OpenClaw agent workflows. Served en
 
 ## Workboard & approval rules (CEO seat, 2026-09-02 — BINDING)
 
-> Canonical source: `/root/.openclaw/workspace/AGENTS.md` (WSL) §0 + §6a. This block applies the same rules to every agent/subagent session working in this folder.
+> Canonical source: `/root/.openclaw/workspace/AGENTS.md` on dev (from Windows, `ssh oc`) §0 + §6a. This block applies the same rules to every agent/subagent session working in this folder.
 
 - **All work goes through the OpenClaw workboard** (home.3dput.com/openclaw/workboard): card first — claim → heartbeat → proof → complete/block. No card, no work. Check the board for blockers before starting any task, even message-assigned work.
 - **Never close a card with a raw status move** (`workboard move --status done` or any script equivalent) — it permanently flags the card "Done card has no proof". Finish through `workboard_complete` (auto-attaches the summary as proof), or attach `workboard_proof` first. Scripts and cron jobs that close their own run cards must use their agent tools, never a shelled-out move-to-done.
