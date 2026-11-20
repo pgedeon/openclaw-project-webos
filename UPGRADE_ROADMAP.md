@@ -313,9 +313,14 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       landed in `docs/briefs/openclaw-native-integration-phase0-findings.md`
       (card eae41fc8). Phase 1 gateway RPC + read-only Workboard window
       landed (card 10e4f44f, first-hand 15/15 tests). Phase 2 in-repo
-      `openclaw-webos/` extension landed (card dd329865, first-hand 13/13);
-      gateway install still owner-gated — health checks stay :8120 until
-      that note. Phase 3+ queue one card at a time under a19fbc46.
+      `openclaw-webos/` extension landed (card dd329865, first-hand 13/13)
+      and is installed on the dev gateway; Phase 2.5 tab live refresh landed
+      2026-11-20 (card 599744ce, commits 0509233/8d6757c/9d8fe7d/af12d25) and
+      passed independent QA (card 6c3ce24c: live heartbeat rendered in 8.9s,
+      zero polling after unmount, installed copy byte-identical, ci-db-free
+      72/72, docs-drift 0). Phase 3a governed card move queued as cards
+      29d99298 (impl) + d6aad3b3 (QA). Phase 3 remains one card at a time
+      under a19fbc46.
 
 - [x] **[candidate] Workflow data normalization migration** — repair the
       `timed_out` CHECK-constraint violation (migration 021) and lift 14/29
