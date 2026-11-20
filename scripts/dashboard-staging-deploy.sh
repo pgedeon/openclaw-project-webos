@@ -112,27 +112,34 @@ fi
 say "5/6 restart staging server (SIGTERM+wait, detached successor, health gate)"
 # Robust restart, all inside ONE ssh session (no gap for the per-minute keepalive
 # cron to race into):
-#   1. SIGTERM the old instance by PID and WAIT until it is gone (escalate to
-#      SIGKILL after 10s) — never a blind sleep. Candidate PIDs from pgrep -f are
-#      filtered to comm=node so the remote shell's own cmdline (which necessarily
-#      contains the unbracketed launcher path in the nohup line below) can never
-#      match-and-self-kill the session.
-#   2. Start the successor fully detached from this SSH session (setsid + nohup +
-#      stdin </dev/null, own appended log) so sshd teardown cannot take it down.
-#   3. Gate on the health endpoint BEFORE the session closes: if the successor
-#      never turns healthy the deploy FAILS HERE with the log tail printed, instead
-#      of leaving staging dark while the script reports success.
+#   1. Identify the old instance by LAUNCH ARGUMENTS, never by comm. Node 24
+#      reports comm=MainThread, and the old `comm=node` filter therefore matched
+#      nothing: OLD stayed empty, nothing was stopped, and the health gate below
+#      was satisfied by the PREVIOUS server — a restart that was a silent no-op
+#      while the deploy reported success (2026-11-20). scripts/lib/staging-pids.sh
+#      selects candidates by argv (launcher path token + node argv[0]) and
+#      explicitly excludes this shell and its whole ancestor chain, so the ssh
+#      session's own cmdline (which contains the launcher path) cannot self-kill.
+#   2. SIGTERM the old PIDs, WAIT until they are gone (escalate to SIGKILL after
+#      10s) and assert they ARE gone before launching — never a blind sleep, and
+#      never a launch on top of a live predecessor.
+#   3. Start the successor fully detached from this SSH session (setsid + nohup +
+#      stdin </dev/null, own appended log) so sshd teardown cannot take it down,
+#      and keep its PID from `$!`.
+#   4. Gate on BOTH the successor PID being alive AND /api/health answering
+#      BEFORE the session closes: if either fails the deploy FAILS HERE with the
+#      log tail printed, instead of leaving staging dark (or stale) while the
+#      script reports success.
 # Re-runs stay safe: the stop step is pid-targeted and waits for actual exit.
-ssh "$DEV_HOST" "set -e
-  PAT='openclaw-dashboard-staging-serve[r]'
-  OLD=''
-  for p in \$(pgrep -f \"\$PAT\" || true); do
-    if [[ \"\$(ps -o comm= -p \$p 2>/dev/null)\" == node ]]; then
-      OLD=\"\$OLD \$p\"
-    fi
-  done
-  if [[ -n \$OLD ]]; then
-    echo \"stopping old instance(s):\$OLD\"
+ssh "$DEV_HOST" "set -euo pipefail
+  SEL=~/$WEBROOT/scripts/lib/staging-pids.sh
+  [[ -f \$SEL ]] || { echo 'FATAL: \$SEL missing on $DEV_HOST (rsync step 1 did not ship it)' >&2; exit 1; }
+  . \$SEL
+  STAGING_LAUNCHER='$LAUNCHER'
+  snapshot() { ps -eo pid=,ppid=,comm=,args=; }
+  OLD=\$(snapshot | staging_select_pids \$\$ \"\$STAGING_LAUNCHER\")
+  if [[ -n \"\$OLD\" ]]; then
+    echo \"stopping old instance(s): \$(echo \$OLD)\"
     kill \$OLD 2>/dev/null || true
     for i in \$(seq 1 20); do
       ALIVE=0
@@ -151,18 +158,46 @@ ssh "$DEV_HOST" "set -e
       kill -KILL \$OLD 2>/dev/null || true
       sleep 1
     fi
+    SURVIVORS=''
+    for p in \$OLD; do
+      if kill -0 \$p 2>/dev/null; then SURVIVORS=\"\$SURVIVORS \$p\"; fi
+    done
+    if [[ -n \"\$SURVIVORS\" ]]; then
+      echo \"FATAL: old instance still alive after SIGKILL:\$SURVIVORS — refusing to launch a second server\" >&2
+      exit 1
+    fi
+    echo \"old instance(s) confirmed stopped: \$(echo \$OLD)\"
+  else
+    echo 'no running instance matched (cold start)'
   fi
-  nohup setsid node $LAUNCHER >> $LOGFILE 2>&1 < /dev/null &
+  nohup setsid node \"\$STAGING_LAUNCHER\" >> $LOGFILE 2>&1 < /dev/null &
+  NEW=\$!
+  echo \"successor pid: \$NEW\"
   for i in \$(seq 1 30); do
+    if ! kill -0 \$NEW 2>/dev/null; then
+      echo \"FATAL: successor \$NEW died during startup — last 20 log lines:\" >&2
+      tail -20 $LOGFILE >&2
+      exit 1
+    fi
     BODY=\$(curl -sf http://127.0.0.1:$STAGING_PORT/api/health 2>/dev/null || true)
-    case \"\$BODY\" in *json_snapshot*|*postgres*) echo \"successor healthy (iteration \$i)\"; exit 0;; esac
+    case \"\$BODY\" in
+      *json_snapshot*|*postgres*)
+        if ! kill -0 \$NEW 2>/dev/null; then
+          echo \"FATAL: successor \$NEW exited right after answering health — last 20 log lines:\" >&2
+          tail -20 $LOGFILE >&2
+          exit 1
+        fi
+        echo \"successor healthy (iteration \$i, pid \$NEW)\"
+        printf '%s\n' \"\$NEW\" > /home/pgedeon/.openclaw-dashboard-staging.pid
+        exit 0
+        ;;
+    esac
     sleep 1
   done
   echo 'FATAL: successor never became healthy — last 20 log lines:' >&2
   tail -20 $LOGFILE >&2
   exit 1
 "
-
 say "6/6 health verification from $(hostname)"
 HEALTH_OK=0
 for i in $(seq 1 15); do
