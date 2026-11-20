@@ -84,6 +84,24 @@ core Control UI bootstrap paths, not the tab:
 
 (Same residual class already recorded in `install/proof-2026-11-20/EVIDENCE.md`.)
 
+## Durability — live, headless Chrome over CDP (v2)
+
+Second mount with the v2 code on the same gateway, same running card:
+
+```
+subscriptions openclaw-webos-tab: 1 before mount -> 1 during mount -> 1 after unmount
+observedText: "... coder 2m ago" -> "... coder 3m ago"   (no heartbeat in this window)
+liveChip    : "live"
+pollingStoppedAfterUnmount: true
+notifyRpcFrames: beforeLeave 2 -> afterIdle 2
+errorsAfterUnmount: []
+```
+
+One durable cursor record is reused across the mount; no duplicate was created
+and none was deleted on cleanup (raw: `v2-durability-result.json`). The
+live-change proof remains `result.json` (06:43:07.796Z, "8m ago" -> "just now"
+on a real heartbeat, no Refresh click).
+
 ## Degrade path (unit-proven)
 
 `tests/test-openclaw-webos-extension.js` — "unsupported notify RPC degrades to a

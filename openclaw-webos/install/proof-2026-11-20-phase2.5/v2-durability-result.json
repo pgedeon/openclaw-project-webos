@@ -1,0 +1,123 @@
+{
+  "marker": "RESULT",
+  "cardId": "599744ce-27d8-4771-98d8-b3b96a6d2216",
+  "baselineText": "webos:openclaw-native-integration:phase2.5:tab-live-refresh:v1 — tab Workboard live-updates via workboard.notifications (events+advance) high coder 2m ago",
+  "observedText": "webos:openclaw-native-integration:phase2.5:tab-live-refresh:v1 — tab Workboard live-updates via workboard.notifications (events+advance) high coder 3m ago",
+  "stillText": "webos:openclaw-native-integration:phase2.5:tab-live-refresh:v1 — tab Workboard live-updates via workboard.notifications (events+advance) high coder 3m ago",
+  "liveChip": "live",
+  "chipAfterChange": "live",
+  "chipTextAfterChange": "live",
+  "observedAtIso": "2026-11-20T08:29:30.435Z",
+  "screenshots": {
+    "baselineShot": "/tmp/proof-v2-verify/01-baseline.png",
+    "changedShot": "/tmp/proof-v2-verify/02-live-updated.png"
+  },
+  "requests": {
+    "beforeLeave": 136,
+    "afterLeave": 136,
+    "afterIdle": 136
+  },
+  "pollingStoppedAfterUnmount": true,
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "errorsAfterUnmount": [],
+  "notifyRpcFrames": {
+    "beforeLeave": 2,
+    "afterLeave": 2,
+    "afterIdle": 2,
+    "methods": [
+      "agent.identity.get",
+      "agents.list",
+      "board.get",
+      "chat.startup",
+      "config.get",
+      "connect",
+      "controlUi.sessionPreview",
+      "controlUi.sessionPullRequests.subscribe",
+      "cron.list",
+      "cron.status",
+      "exec.approval.list",
+      "mcp.app.discover",
+      "mentions.list",
+      "models.authStatus",
+      "models.list",
+      "openclaw.approval.list",
+      "plugin.approval.list",
+      "plugin.surface.refresh",
+      "plugins.controlUi.list",
+      "plugins.controlUi.report",
+      "plugins.list",
+      "presence.activity",
+      "progressCard.get",
+      "projects.list",
+      "question.list",
+      "session.discussion.info",
+      "session.members.listEvidence",
+      "session.reactions.list",
+      "sessions.branches.list",
+      "sessions.catalog.list",
+      "sessions.companion.state",
+      "sessions.describe",
+      "sessions.github.options",
+      "sessions.groups.defaults",
+      "sessions.groups.list",
+      "sessions.list",
+      "sessions.messages.subscribe",
+      "sessions.observer.visibility",
+      "sessions.patch",
+      "sessions.subscribe",
+      "sessions.viewers.set",
+      "system.info",
+      "talk.catalog",
+      "talk.config",
+      "taskSuggestions.list",
+      "tools.effective",
+      "update.status",
+      "users.list",
+      "users.prefs.get",
+      "workboard.boards.list",
+      "workboard.cards.list",
+      "workboard.notifications.advance",
+      "workboard.notifications.events",
+      "workboard.notifications.list"
+    ]
+  },
+  "failedResponses": [
+    {
+      "status": 401,
+      "url": "https://127.0.0.1:18789/openclaw/control-ui-config.json"
+    },
+    {
+      "status": 401,
+      "url": "https://127.0.0.1:18789/openclaw/control-ui-config.json"
+    },
+    {
+      "status": 404,
+      "url": "https://127.0.0.1:18789/openclaw/api/users/gateway-owner/avatar?v=1788775796380"
+    },
+    {
+      "status": 404,
+      "url": "https://127.0.0.1:18789/openclaw/__openclaw__/workspace-icon/agent%3Amain%3Amain"
+    },
+    {
+      "status": 401,
+      "url": "https://127.0.0.1:18789/openclaw/control-ui-config.json"
+    },
+    {
+      "status": 401,
+      "url": "https://127.0.0.1:18789/openclaw/control-ui-config.json"
+    },
+    {
+      "status": 404,
+      "url": "https://127.0.0.1:18789/openclaw/api/users/gateway-owner/avatar?v=1788775796380"
+    }
+  ],
+  "consoleSample": []
+}
