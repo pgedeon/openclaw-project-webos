@@ -1,7 +1,10 @@
 # openclaw-webos — live proof (2026-11-20, dev gateway)
 
 Card: 6add2b28-d307-40e2-b979-63e4043278a7
-Commit: 74324b8 (fix(webos): opt plugin into gateway startup so tab + assets register)
+Commit: 6da8dfd (fix(webos): opt plugin into gateway startup so tab + assets register)
+Note: an earlier draft of this file cited worker-local commit `74324b8`, which
+was never pushed to the repo; the canonical landed commit for this fix is
+`6da8dfd`. Repo and installed extension files are byte-identical modulo CRLF.
 Gateway: openclaw-gateway.service PID 3089177, OpenClaw 2026.11.3 (847611d)
 
 ## Root cause of the 404 asset route (B5)
