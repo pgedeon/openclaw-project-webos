@@ -9,6 +9,7 @@
 import { ensureNativeRoot, escapeHtml } from './helpers.mjs';
 import {
   WORKBOARD_STATUSES,
+  allowedMoveTargets,
   createGatewayRpc,
   createGatewayUnavailableState,
   formatHeartbeatAge,
@@ -61,6 +62,11 @@ function injectCSS() {
     .wb-unavailable h2{margin:0;font-size:1.05rem}
     .wb-link{color:var(--win11-accent);font-size:.8rem}
     .wb-proof a{display:block;font-size:.76rem;margin-top:4px}
+    .wb-move{margin-top:14px;border-top:1px solid var(--win11-border);padding-top:10px}
+    .wb-move__label{font-size:.75rem;color:var(--win11-text-tertiary);margin:0 0 6px}
+    .wb-move__targets{display:flex;flex-wrap:wrap;gap:6px}
+    .wb-move__confirm{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;font-size:.76rem}
+    .wb-move__error{margin:8px 0 0;font-size:.75rem;color:#ef4444;word-break:break-word}
   `;
   document.head.appendChild(style);
 }
@@ -147,6 +153,8 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
   const rpc = gatewayRpc || createGatewayRpc();
   let currentBoard = boardId;
   let selectedId = null;
+  let pendingMove = null;
+  let moveError = null;
   let snapshot = { available: true, cards: [], boards: [], columns: {}, statuses: WORKBOARD_STATUSES };
   let disposed = false;
   let pollTimer = null;
@@ -177,6 +185,27 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
     const labels = Array.isArray(card.labels) ? card.labels : [];
     const proofs = collectProofLinks(card);
     const openUrl = controlUiWorkboardUrl({ cardId: card.id, boardId: currentBoard });
+    const moveTargets = allowedMoveTargets(card.status);
+    const confirming = pendingMove && pendingMove.cardId === card.id ? pendingMove.target : null;
+    const errorForCard = moveError && moveError.cardId === card.id ? moveError.message : '';
+    const moveSection = moveTargets.length
+      ? `
+        <div class="wb-move" data-role="move">
+          <p class="wb-move__label">Move to …</p>
+          <div class="wb-move__targets">
+            ${moveTargets.map((target) => `<button type="button" class="wb-ctl" data-move-target="${escapeHtml(target)}">${escapeHtml(target)}</button>`).join('')}
+          </div>
+          ${confirming ? `
+            <div class="wb-move__confirm" data-role="move-confirm">
+              <span>Move to <strong>${escapeHtml(confirming)}</strong>?</span>
+              <button type="button" class="wb-ctl" data-action="move-confirm">Confirm move</button>
+              <button type="button" class="wb-ctl" data-action="move-cancel">Cancel</button>
+            </div>
+          ` : ''}
+          ${errorForCard ? `<p class="wb-move__error" data-role="move-error" role="alert">${escapeHtml(errorForCard)}</p>` : ''}
+        </div>
+      `
+      : '<p class="wb-empty" data-role="move-none">No governed move targets for this status.</p>';
     return `
       <aside class="wb-drawer" data-card-id="${escapeHtml(card.id)}">
         <h3>${escapeHtml(card.title || '(untitled)')}</h3>
@@ -190,6 +219,7 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
         <div class="wb-proof" style="margin-top:12px">
           ${proofs.length ? proofs.map((item) => `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.label)}</a>`).join('') : '<span class="wb-empty">No proof links</span>'}
         </div>
+        ${moveSection}
         <p style="margin-top:14px"><a class="wb-link" href="${escapeHtml(openUrl)}" target="_blank" rel="noopener">Open in Workboard</a></p>
       </aside>
     `;
@@ -244,6 +274,22 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
       </div>
     `;
 
+    root.querySelectorAll('[data-move-target]').forEach((node) => {
+      node.addEventListener('click', () => {
+        const target = node.getAttribute('data-move-target');
+        if (!selectedId || !target) return;
+        pendingMove = { cardId: selectedId, target };
+        moveError = null;
+        renderBoard();
+      });
+    });
+    root.querySelector('[data-action="move-confirm"]')?.addEventListener('click', () => {
+      confirmMove();
+    });
+    root.querySelector('[data-action="move-cancel"]')?.addEventListener('click', () => {
+      pendingMove = null;
+      renderBoard();
+    });
     root.querySelector('[data-role="board-filter"]')?.addEventListener('change', (event) => {
       currentBoard = event.target.value || 'default';
       loadAndRender();
@@ -256,6 +302,65 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
         renderBoard();
       });
     });
+  };
+
+  // Phase 3a: ONE governed mutation. No optimistic status change — the card is
+  // re-rendered from the RPC result (or the real list on a missing payload),
+  // and any refusal keeps the gateway's status and shows the reason inline.
+  const confirmMove = async () => {
+    const cardId = pendingMove?.cardId;
+    const target = pendingMove?.target;
+    const card = (snapshot.cards || []).find((item) => item.id === cardId);
+    if (!cardId || !target || !card) {
+      pendingMove = null;
+      renderBoard();
+      return;
+    }
+    if (!rpc?.cards || typeof rpc.cards.moveCard !== 'function') {
+      moveError = { cardId, message: 'gateway client cannot move cards' };
+      pendingMove = null;
+      renderBoard();
+      return;
+    }
+    moveError = null;
+    try {
+      const result = await rpc.cards.moveCard({
+        id: card.id,
+        status: target,
+        fromStatus: card.status,
+      });
+      if (!result || result.moved !== true) {
+        moveError = {
+          cardId,
+          message: result?.detail || result?.reason || 'move rejected by gateway',
+        };
+        pendingMove = null;
+        renderBoard();
+        return;
+      }
+      if (result.card && result.card.id) {
+        snapshot.cards = (snapshot.cards || []).map((item) => (
+          item.id === result.card.id ? { ...item, ...result.card } : item
+        ));
+        snapshot.columns = groupCardsByStatus(snapshot.cards, snapshot.statuses || WORKBOARD_STATUSES);
+      } else {
+        snapshot = await loadWorkboardSnapshot(rpc, { boardId: currentBoard });
+        if (disposed) return;
+        if (isGatewayUnavailablePayload(snapshot)) {
+          renderUnavailable(snapshot);
+          return;
+        }
+      }
+      pendingMove = null;
+      renderBoard();
+    } catch (error) {
+      moveError = {
+        cardId,
+        message: error?.detail || error?.message || 'move failed',
+      };
+      pendingMove = null;
+      renderBoard();
+    }
   };
 
   const loadAndRender = async () => {

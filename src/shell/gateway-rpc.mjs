@@ -33,6 +33,68 @@ export const GATEWAY_UNAVAILABLE = Object.freeze({
   reason: 'gateway-unavailable',
 });
 
+/**
+ * Phase 3a governance: the ONLY statuses a governed card move may target.
+ * Deliberately excludes `done` (completion requires proof via the complete
+ * path), `running` (claim lifecycle), and the intake statuses triage/backlog/
+ * scheduled (owned by dispatch/planning, not a drawer move).
+ * `review` is included only because the live vocabulary uses it instead of
+ * `in_review` (checked against WORKBOARD_STATUSES above).
+ */
+export const GOVERNED_MOVE_TARGETS = Object.freeze(
+  ['todo', 'ready', 'blocked', 'review'].filter((status) => WORKBOARD_STATUSES.includes(status)),
+);
+
+export const MOVE_REFUSED = 'move-refused';
+
+export function createMoveRefusedError(reason, detail = '') {
+  return Object.assign(new Error(`move refused: ${reason}`), {
+    code: MOVE_REFUSED,
+    reason,
+    detail: detail ? String(detail) : '',
+  });
+}
+
+/**
+ * Pure governance matrix for the card drawer.
+ * Returns the list of statuses a card currently in `fromStatus` may be moved
+ * to. Unknown source, `done`, and `running` (claimed) sources yield [].
+ */
+export function allowedMoveTargets(fromStatus) {
+  const from = String(fromStatus || '').trim();
+  if (!WORKBOARD_STATUSES.includes(from)) return [];
+  if (from === 'done' || from === 'running') return [];
+  return GOVERNED_MOVE_TARGETS.filter((status) => status !== from);
+}
+
+const SCOPE_REJECTION_CODES = new Set([
+  'forbidden',
+  'unauthorized',
+  'permission-denied',
+  'permission_denied',
+  'insufficient-scope',
+  'insufficient_scope',
+  'scope-denied',
+  'missing-scope',
+]);
+
+export function isScopeRejection(error) {
+  const code = String(error?.code || '').toLowerCase();
+  if (SCOPE_REJECTION_CODES.has(code)) return true;
+  const text = `${code} ${error?.message || ''}`.toLowerCase();
+  return /\b(scope|permission|forbidden|unauthorized)\b/.test(text);
+}
+
+export function createMoveDegrade(error) {
+  return {
+    available: false,
+    moved: false,
+    ok: false,
+    reason: 'gateway-scope-rejected',
+    detail: String(error?.message || error?.reason || 'gateway rejected the move'),
+  };
+}
+
 const STORAGE_DEVICE_IDENTITY = 'openclaw-device-identity-v1';
 const STORAGE_DEVICE_AUTH_PREFIX = 'openclaw.device.auth.v1:';
 
@@ -375,6 +437,40 @@ export function createGatewayRpc(options = {}) {
       },
       stats(params = {}) {
         return safeCall('workboard.cards.stats', params);
+      },
+      /**
+       * Phase 3a: ONE governed mutation. Refuses client-side (typed
+       * `move-refused`) anything outside GOVERNED_MOVE_TARGETS, and never
+       * retries. A gateway scope/auth rejection degrades to a typed state
+       * instead of throwing; other transport failures throw so the caller
+       * can show the real reason.
+       */
+      async moveCard({ id, status, position, fromStatus } = {}) {
+        const cardId = String(id || '').trim();
+        if (!cardId) throw createMoveRefusedError('missing-card-id');
+        const target = String(status || '').trim();
+        if (!WORKBOARD_STATUSES.includes(target)) {
+          throw createMoveRefusedError('unknown-status', target);
+        }
+        if (target === 'done') {
+          throw createMoveRefusedError('done-requires-complete', target);
+        }
+        if (!GOVERNED_MOVE_TARGETS.includes(target)) {
+          throw createMoveRefusedError('target-not-allowed', target);
+        }
+        if (fromStatus !== undefined && !allowedMoveTargets(fromStatus).includes(target)) {
+          throw createMoveRefusedError('source-not-movable', String(fromStatus));
+        }
+        const params = { id: cardId, status: target };
+        if (Number.isFinite(position)) params.position = position;
+        try {
+          await ensureConnected();
+          const payload = await request('workboard.cards.move', params);
+          return { ok: true, moved: true, card: payload?.card ?? payload };
+        } catch (error) {
+          if (isScopeRejection(error)) return createMoveDegrade(error);
+          throw error;
+        }
       },
     },
     boards: {

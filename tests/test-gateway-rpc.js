@@ -7,6 +7,7 @@
  */
 
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
@@ -48,6 +49,8 @@ function makeTransport(handler) {
   const viewMod = await import(pathToFileURL(viewPath).href);
 
   const {
+    GOVERNED_MOVE_TARGETS,
+    allowedMoveTargets,
     buildConnectFrame,
     buildRequestFrame,
     compareNotifications,
@@ -295,6 +298,156 @@ function makeTransport(handler) {
       { available: state.available, reason: state.reason },
       { available: false, reason: 'gateway-unavailable' },
     );
+  });
+
+  console.log('gateway-rpc: phase 3a governed card move');
+
+  await check('allowedMoveTargets matrix: done/running/unknown sources never movable', () => {
+    assert.deepStrictEqual(allowedMoveTargets('ready'), ['todo', 'blocked', 'review']);
+    assert.deepStrictEqual(allowedMoveTargets('todo'), ['ready', 'blocked', 'review']);
+    assert.deepStrictEqual(allowedMoveTargets('blocked'), ['todo', 'ready', 'review']);
+    assert.deepStrictEqual(allowedMoveTargets('review'), ['todo', 'ready', 'blocked']);
+    assert.deepStrictEqual(allowedMoveTargets('running'), []);
+    assert.deepStrictEqual(allowedMoveTargets('done'), []);
+    assert.deepStrictEqual(allowedMoveTargets('mystery'), []);
+    assert.deepStrictEqual(allowedMoveTargets(''), []);
+    for (const from of WORKBOARD_STATUSES) {
+      const targets = allowedMoveTargets(from);
+      assert.strictEqual(targets.includes('done'), false, `${from} must never target done`);
+      assert.strictEqual(targets.includes('running'), false, `${from} must never target running`);
+      for (const target of targets) {
+        assert.ok(GOVERNED_MOVE_TARGETS.includes(target), `${target} must be governed`);
+        assert.notStrictEqual(target, from, 'self-move must not be offered');
+      }
+    }
+  });
+
+  await check('moveCard sends ONE workboard.cards.move frame with id+status (no retry)', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.move') {
+        return { ok: true, payload: { card: { id: 'c1', status: 'ready' } } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const result = await rpc.cards.moveCard({ id: 'c1', status: 'ready', fromStatus: 'todo' });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.moved, true);
+    assert.strictEqual(result.card.status, 'ready');
+    const moves = transport.calls.filter((frame) => frame.method === 'workboard.cards.move');
+    assert.strictEqual(moves.length, 1, 'exactly one move frame, never a retry loop');
+    assert.deepStrictEqual(moves[0].params, { id: 'c1', status: 'ready' });
+    assert.deepStrictEqual(transport.calls.map((frame) => frame.method), ['connect', 'workboard.cards.move']);
+  });
+
+  await check('moveCard passes position only when finite', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.move') return { ok: true, payload: { card: { id: 'c1', status: 'todo' } } };
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    await rpc.cards.moveCard({ id: 'c1', status: 'todo', position: 1500, fromStatus: 'ready' });
+    const move = transport.calls.find((frame) => frame.method === 'workboard.cards.move');
+    assert.deepStrictEqual(move.params, { id: 'c1', status: 'todo', position: 1500 });
+  });
+
+  await check('done move is refused client-side with a typed error and zero frames', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      throw new Error('must not send a move frame');
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    let error = null;
+    try {
+      await rpc.cards.moveCard({ id: 'c1', status: 'done', fromStatus: 'review' });
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error, 'done move must throw');
+    assert.strictEqual(error.code, 'move-refused');
+    assert.strictEqual(error.reason, 'done-requires-complete');
+    assert.strictEqual(transport.calls.some((frame) => frame.method === 'workboard.cards.move'), false);
+  });
+
+  await check('unknown / running / intake statuses are refused client-side', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      throw new Error('must not send a move frame');
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const cases = [
+      [{ id: 'c1', status: 'mystery' }, 'unknown-status'],
+      [{ id: 'c1', status: 'running' }, 'target-not-allowed'],
+      [{ id: 'c1', status: 'triage' }, 'target-not-allowed'],
+      [{ id: 'c1', status: 'backlog' }, 'target-not-allowed'],
+      [{ id: 'c1', status: 'scheduled' }, 'target-not-allowed'],
+      [{ id: 'c1', status: 'ready', fromStatus: 'running' }, 'source-not-movable'],
+      [{ id: 'c1', status: 'ready', fromStatus: 'done' }, 'source-not-movable'],
+      [{ id: '', status: 'ready' }, 'missing-card-id'],
+    ];
+    for (const [params, reason] of cases) {
+      let error = null;
+      try {
+        await rpc.cards.moveCard(params);
+      } catch (caught) {
+        error = caught;
+      }
+      assert.ok(error, `expected refusal for ${JSON.stringify(params)}`);
+      assert.strictEqual(error.code, 'move-refused');
+      assert.strictEqual(error.reason, reason);
+    }
+    assert.strictEqual(transport.calls.some((frame) => frame.method === 'workboard.cards.move'), false);
+  });
+
+  await check('scope/auth rejection degrades to typed state with reason, no retry', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.move') {
+        return { ok: false, error: { code: 'forbidden', message: 'missing scope workboard:write' } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const result = await rpc.cards.moveCard({ id: 'c1', status: 'ready', fromStatus: 'todo' });
+    assert.strictEqual(result.available, false);
+    assert.strictEqual(result.moved, false);
+    assert.strictEqual(result.reason, 'gateway-scope-rejected');
+    assert.ok(/scope/i.test(result.detail));
+    assert.strictEqual(transport.calls.filter((frame) => frame.method === 'workboard.cards.move').length, 1);
+  });
+
+  await check('non-scope gateway failure throws so the drawer can show the real reason', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.move') {
+        return { ok: false, error: { code: 'invalid-params', message: 'bad position' } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    let error = null;
+    try {
+      await rpc.cards.moveCard({ id: 'c1', status: 'ready', fromStatus: 'todo' });
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error);
+    assert.strictEqual(error.code, 'invalid-params');
+    assert.ok(/bad position/.test(error.message));
+  });
+
+  await check('drawer exposes only governed targets behind an explicit confirm (static)', () => {
+    const source = fs.readFileSync(viewPath, 'utf8');
+    assert.ok(source.includes('allowedMoveTargets(card.status)'), 'drawer must derive targets from the matrix');
+    assert.ok(source.includes('data-move-target='), 'drawer must render explicit move buttons');
+    assert.ok(source.includes('data-action="move-confirm"'), 'second click confirm required');
+    assert.ok(source.includes('data-action="move-cancel"'));
+    assert.ok(source.includes('fromStatus: card.status'), 'RPC call must pass the real source status');
+    assert.strictEqual(/card\.status\s*=\s*['"]/.test(source), false, 'no optimistic status assignment');
+    assert.strictEqual(source.includes("status: 'done'"), false, 'view must not hardcode a done move');
+    assert.ok(!/'done'/.test(source.split('STATUS_META')[1]?.split('};')[0] || ''), 'done is display-only metadata');
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

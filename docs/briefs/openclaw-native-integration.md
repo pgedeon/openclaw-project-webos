@@ -56,6 +56,8 @@ Pin the remaining gateway facts by reading 2026.9.3 sources + live probing:
 - Card actions from the desktop (create/move/dispatch) via `workboard.cards.dispatch` + CLI-equivalent RPC where the contract allows; every mutation keeps ONE registry (workboard) — the desktop stops maintaining a parallel agent-queue mirror.
 - MCP alignment: `get_mission_control_summary` gains workboard section; the flagship tool reflects the same board the tab shows.
 
+**Phase 3a status (2026-11-20):** governed card move shipped in the native window (`webos:openclaw-native-integration:phase3a:governed-card-move:v1`). ONE mutation only — `workboard.cards.move` via `allowedMoveTargets(fromStatus)` (`todo`/`ready`/`blocked`/`review`) behind an inline confirm, with `done`, `running`/claim transitions, and unknown statuses refused client-side (`move-refused`) and scope/auth rejections degraded to `gateway-scope-rejected`. No dispatch, start, complete, delete, local task-store writes, or parallel queue mirror. Remaining Phase 3 scope: dispatch/start/create actions once each has its own governance card.
+
 ### Phase 4 — De-duplication review (product-planner, owner checkpoint)
 - Map desktop tasks/projects vs workboard cards vs durable tasks; propose which stores remain (owner decides). Retire mirrors that lost their reason. Update positioning docs.
 
