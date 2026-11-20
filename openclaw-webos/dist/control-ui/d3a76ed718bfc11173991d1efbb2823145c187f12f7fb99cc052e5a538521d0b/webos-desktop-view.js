@@ -45,6 +45,10 @@ const STATUS_META = {
 const LIVE_INTERVAL_MS = 8000;
 const LIVE_MIN_INTERVAL_MS = 5000;
 const LIVE_EVENT_LIMIT = 50;
+// One durable cursor record per board is reused across mounts, so a reload
+// resumes at the right cursor instead of replaying history or leaking a
+// subscription per mount.
+const LIVE_TARGET = 'openclaw-webos-tab';
 
 const escapeHtml = (value) => String(value ?? '')
   .replaceAll('&', '&amp;')
@@ -240,23 +244,46 @@ export function render(container, context = {}) {
     }
   };
 
+  const ensureSubscription = async () => {
+    // Reuse an existing board-scoped cursor record; prune duplicates left by
+    // earlier mounts. Only when none exists do we create one.
+    try {
+      const listed = await host.request('workboard.notifications.list', { boardId });
+      const mine = (Array.isArray(listed?.subscriptions) ? listed.subscriptions : [])
+        .filter((sub) => sub?.target === LIVE_TARGET && (sub.boardId || 'default') === boardId)
+        .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+      if (mine.length > 0) {
+        subscriptionId = mine[0].id;
+        for (const extra of mine.slice(1)) {
+          try {
+            await host.request('workboard.notifications.delete', { id: extra.id });
+          } catch {
+            /* prune is best-effort */
+          }
+        }
+        return;
+      }
+    } catch {
+      /* list unsupported → try to create one below */
+    }
+    try {
+      const result = await host.request('workboard.notifications.subscribe', {
+        boardId,
+        target: LIVE_TARGET,
+      });
+      subscriptionId = result?.subscription?.id ?? null;
+    } catch {
+      subscriptionId = null;
+    }
+  };
+
   const startLive = async () => {
     if (!host || disposed || signal?.aborted || liveState === 'unavailable') return;
     liveState = 'live';
     // Best-effort subscription so advance can move the server cursor. A
     // read-only operator cannot subscribe; we then keep the cursor client-side
     // and never write to the gateway.
-    if (host.connection?.canWrite !== false) {
-      try {
-        const result = await host.request('workboard.notifications.subscribe', {
-          boardId,
-          target: 'openclaw-webos-tab',
-        });
-        subscriptionId = result?.subscription?.id ?? null;
-      } catch {
-        subscriptionId = null;
-      }
-    }
+    if (host.connection?.canWrite !== false) await ensureSubscription();
     if (disposed || signal?.aborted) return;
     if (liveState === 'live' && snapshot.available) renderDom();
     scheduleLive();
@@ -387,15 +414,9 @@ export function render(container, context = {}) {
     if (signal && typeof signal.removeEventListener === 'function') {
       signal.removeEventListener('abort', onAbort);
     }
-    if (subscriptionId && host) {
-      // Remove our own cursor record; never leave a live loop's state behind.
-      try {
-        Promise.resolve(host.request('workboard.notifications.delete', { id: subscriptionId })).catch(() => {});
-      } catch {
-        /* already gone */
-      }
-      subscriptionId = null;
-    }
+    // The board-scoped subscription is a durable cursor, intentionally kept so
+    // a reload resumes where it left off; it is reused (and pruned) on mount.
+    subscriptionId = null;
     root.remove();
   };
 

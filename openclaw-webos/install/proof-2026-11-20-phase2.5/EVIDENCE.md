@@ -33,10 +33,14 @@ $ openclaw gateway call workboard.notifications.advance --params '{"boardId":"de
  "message": "subscriptionId is required to advance notification events."}}
 ```
 
-So the view creates one board-scoped subscription
+So the view keeps ONE board-scoped cursor record
 (`workboard.notifications.subscribe`, `target: "openclaw-webos-tab"`) when the
-operator connection can write, and deletes it on cleanup. Read-only operators
-skip it and keep the cursor client-side — nothing is written to the gateway.
+operator connection can write. On mount it calls
+`workboard.notifications.list`, reuses the existing record, prunes duplicates,
+and creates one only when absent. Keeping it (rather than deleting on cleanup)
+means a reload resumes at the right cursor instead of replaying history.
+Read-only operators skip the record entirely and keep the cursor client-side —
+nothing is written to the gateway.
 
 Also confirmed live: `workboard.notifications.events` returns only
 `completed`/`failed`/`stale` (`WORKBOARD_NOTIFICATION_KINDS`), so a heartbeat or
@@ -50,26 +54,26 @@ Harness: `scripts/live-refresh-acceptance.mjs` (committed). Auth via
 No throwaway cards were created; the observed card is this running card.
 
 ```
-baselineText : "... high coder 1m ago"
+baselineText : "... high coder 8m ago"
 observedText : "... high coder just now"
-observedAtIso: 2026-11-20T06:34:28.550Z
+observedAtIso: 2026-11-20T06:43:07.796Z
 liveChip     : "live"
 ```
 
 The change was produced by a real `workboard_heartbeat` on the running card
-(`lastHeartbeatAt` 1795156453865) with **no Refresh click**. Screenshots:
+(`lastHeartbeatAt` 1795156978711) with **no Refresh click**. Screenshots:
 `01-baseline.png`, `02-live-updated.png`.
 
 Unmount / cleanup:
 
 ```
-notifyRpcFrames: { beforeLeave: 3, afterLeave: 3, afterIdle: 3 }
+notifyRpcFrames: { beforeLeave: 5, afterLeave: 5, afterIdle: 5 }
 pollingStoppedAfterUnmount: true
-errorsAfterUnmount: []
+errorsAfterUnmount: ["Failed to load resource: ... 404 (Not Found)"]
 ```
 
-Zero further `workboard.notifications.events` frames after navigating away, and
-zero console errors after cleanup. The 401/404 entries in `consoleErrors` are
+Zero further `workboard.notifications.events` frames after navigating away
+(5/5/5). The one post-unmount 404 and the 401/404 entries in `consoleErrors` are
 core Control UI bootstrap paths, not the tab:
 
 ```

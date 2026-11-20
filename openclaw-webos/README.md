@@ -111,10 +111,13 @@ the view runs a bounded refresh loop through the same authenticated
   `context.signal` abort or view cleanup.
 - The first `events` read is treated as **history**: it seeds the cursor and
   does not trigger a refresh, so opening the tab never fakes a change.
-- A board-scoped subscription (`workboard.notifications.subscribe`,
-  `target: "openclaw-webos-tab"`) is created once so `advance` has a cursor to
-  move. Read-only operators skip it and keep the cursor client-side; nothing is
-  written to the gateway. Cleanup deletes the subscription.
+- `advance` needs a cursor record. One board-scoped subscription
+  (`workboard.notifications.subscribe`, `target: "openclaw-webos-tab"`) is
+  **reused across mounts** — `workboard.notifications.list` finds it, extra
+  duplicates are pruned, and only a missing record is created. Keeping it means
+  a reload resumes at the right cursor instead of replaying history. Read-only
+  operators skip the record entirely and keep the cursor client-side; nothing
+  is written to the gateway.
 - The toolbar shows a small **live** chip while the loop is healthy.
 
 ### Failure mode (honest, never fake)

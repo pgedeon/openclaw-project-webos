@@ -437,7 +437,7 @@ function makeDocument() {
     delete global.document;
   });
 
-  await check('cleanup stops polling, aborts on signal, and drops the subscription', async () => {
+  await check('cleanup stops polling and leaves the durable cursor record intact', async () => {
     global.document = makeDocument();
     await withFakeTimers(async (scheduled) => {
       const calls = [];
@@ -460,10 +460,49 @@ function makeDocument() {
       cleanup();
       await flush();
       assert.strictEqual(scheduled.filter((h) => !h.cleared).length, 0, 'no tick left after cleanup');
-      assert.ok(calls.includes('workboard.notifications.delete'), 'subscription removed');
+      assert.ok(!calls.includes('workboard.notifications.delete'), 'durable cursor record is kept, not deleted');
       const before = calls.length;
       await new Promise((r) => setTimeoutReal(r, 20));
       assert.strictEqual(calls.length, before, 'no requests after cleanup');
+    });
+    delete global.document;
+  });
+
+  await check('reuses one board cursor record and prunes duplicates on mount', async () => {
+    global.document = makeDocument();
+    await withFakeTimers(async (scheduled) => {
+      const calls = [];
+      const host = {
+        connection: { canWrite: true },
+        async request(method, params) {
+          calls.push({ method, params });
+          if (method === 'workboard.notifications.list') {
+            return {
+              subscriptions: [
+                { id: 'keep', boardId: 'default', target: 'openclaw-webos-tab', createdAt: 1 },
+                { id: 'dup1', boardId: 'default', target: 'openclaw-webos-tab', createdAt: 2 },
+                { id: 'other', boardId: 'other', target: 'openclaw-webos-tab', createdAt: 3 },
+              ],
+            };
+          }
+          if (method === 'workboard.notifications.events') return { events: [] };
+          if (method === 'workboard.notifications.advance') return { subscription: { id: 'keep' }, events: [] };
+          if (method === 'workboard.notifications.delete') return { deleted: true };
+          if (method === 'workboard.cards.list') return { cards: [], boards: [], revision: { epoch: 'e', revision: 1 } };
+          throw new Error(`unexpected ${method}`);
+        },
+      };
+      const container = { last: null, replaceChildren(node) { this.last = node; } };
+      const cleanup = viewMod.render(container, { host });
+      await flush();
+      const subscribe = calls.find((c) => c.method === 'workboard.notifications.subscribe');
+      assert.ok(!subscribe, 'must not create a second subscription');
+      const deletes = calls.filter((c) => c.method === 'workboard.notifications.delete');
+      assert.deepStrictEqual(deletes.map((c) => c.params.id), ['dup1'], 'only the duplicate is pruned');
+      await runNextTick(scheduled);
+      const advance = calls.filter((c) => c.method === 'workboard.notifications.advance');
+      assert.ok(advance.length >= 1 && advance[0].params.subscriptionId === 'keep', 'reuses the kept record');
+      cleanup();
     });
     delete global.document;
   });
