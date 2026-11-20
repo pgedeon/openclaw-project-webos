@@ -292,6 +292,15 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
    visibly, not just in a log file.
 10. Hygiene: never commit screenshots/binary dumps casually; `npm ci` not `npm install`
     in scripts; never force-push or rebase published history.
+11. Staging verification means **served bytes**, not `/api/health`. Added 2026-11-20
+    after the staging webroot (`~/www/staging/openclaw-dashboard` on dev) was found
+    frozen at a 2026-09-11 tree: `/` and `/api/health` were both 200 while
+    `src/shell/gateway-rpc.mjs` and `src/shell/native-views/workboard-view.mjs`
+    returned 404 and the served `app-registry.mjs` had no `workboard` entry — every
+    commit since then was live only in git. After any deploy, curl the exact module
+    paths the change touched and compare their bytes (e.g. `md5sum`) against the
+    checkout; a green health endpoint on a stale webroot looks identical to a healthy
+    one.
 
 ## Post-2.0 Candidates (2.1 planning)
 
