@@ -1,8 +1,11 @@
 {
   "id": "openclaw-webos",
   "name": "OpenClaw WebOS",
-  "description": "Control UI tab that mounts the OpenClaw Project WebOS desktop as a Lit ControlUiView (Phase 2). In-repo only — do not install without owner approval.",
+  "description": "Control UI tab that mounts the OpenClaw Project WebOS desktop as a native ControlUiView page (slug: desktop).",
   "enabledByDefault": false,
+  "activation": {
+    "onStartup": true
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -24,5 +27,8 @@
     "styles": [
       "dist/control-ui/d3a76ed718bfc11173991d1efbb2823145c187f12f7fb99cc052e5a538521d0b/index.css"
     ]
-  }
+  },
+  "uiCapabilities": [
+    "page"
+  ]
 }

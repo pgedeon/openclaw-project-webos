@@ -1,0 +1,30 @@
+--- openclaw.json.bak-20261119-webos-preinstall	2026-11-11 14:33:59.009327790 +0000
++++ openclaw.json	2026-11-19 20:17:35.360759500 +0000
+@@ -1932,7 +1932,10 @@
+         "https://127.0.0.1:18789",
+         "https://home.3dput.com"
+       ],
+-      "basePath": "/openclaw"
++      "basePath": "/openclaw",
++      "experimental": {
++        "customPlugins": true
++      }
+     },
+     "auth": {
+       "mode": "password",
+@@ -2196,10 +2199,14 @@
+       "zai",
+       "exec-guard",
+       "memory-core",
+-      "acpx"
++      "acpx",
++      "openclaw-webos"
+     ],
+     "deny": [],
+     "entries": {
++      "openclaw-webos": {
++        "enabled": true
++      },
+       "google": {
+         "enabled": true
+       },

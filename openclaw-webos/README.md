@@ -1,32 +1,98 @@
-# openclaw-webos — Control UI tab extension (Phase 2)
+# openclaw-webos — Control UI tab extension
 
-In-repo OpenClaw extension that **would** register an OpenClaw Desktop tab at
-`route:desktop` (`/openclaw/desktop`) once installed under
-`~/.openclaw/extensions/`.
+In-repo OpenClaw extension that registers an **OpenClaw Desktop** tab in the
+Control UI. The tab mounts the WebOS shell (Workboard read-only view) over the
+operator's authenticated Control UI socket.
 
-**This card does not install or restart the Gateway.** Installing into
-`~/.openclaw/extensions/` is an infra change and waits on a separate
-owner-approved install note (Phase 2 QA / follow-on).
+Target: installed OpenClaw **2026.11.3**.
 
-## Packaging (workboard, not dashboard-bridge)
+## What changed for 2026.11.3
 
-Mirrors the in-tree workboard plugin (Phase 0 mismatch #5):
+| Blocker | Fix |
+|---|---|
+| B1 — `openclaw/plugin-sdk` has no bare export | `index.js` imports `definePluginEntry` from `openclaw/plugin-sdk/plugin-entry` |
+| B2 — `placement: "route:desktop"` is not in the route allowlist | descriptor uses `slug: "desktop"`; address is `/openclaw/desktop`. No HTTP route is registered |
+| B3 — global extensions are denied native Control UI JS | dev gateway config: `gateway.controlUi.experimental.customPlugins=true`, `plugins.allow` includes `openclaw-webos`, `plugins.entries.openclaw-webos.enabled=true` |
+| B4 — served Control UI has no importmap, no bare `lit` | `dist/control-ui/<hash>/index.js` uses the documented plain-DOM `ControlUiView` mount and imports only the sibling view module relatively. No bundler, no bare imports |
+| B5 — plugin loads for `plugins list` but never registers its tab, and its asset route 404s | `openclaw.plugin.json` sets `activation.onStartup: true` and `uiCapabilities: ["page"]`. The Gateway startup plan only loads plugins whose manifest opts in via `activation.onStartup` (or that own a configured slot); without it the plugin is skipped at startup, so no descriptor and no asset route exist |
+
+`/openclaw/` and `/openclaw/desktop` serving the same Control UI shell is
+**expected** — the slug is a Control UI address, not a separate HTTP route.
+
+## Packaging (mirrors the in-tree workboard plugin)
 
 | File | Role |
 |---|---|
 | `openclaw.plugin.json` | `controlUi.entry` + `styles` under `dist/control-ui/<hash>/` |
-| `index.js` | Runtime: `registerControlUiDescriptor({ surface: "tab", placement: "route:desktop" })` |
-| `dist/control-ui/<hash>/index.js` | Thin Lit wrapper (`defineControlUiPlugin` shape: `{ id, activate }`) |
-| `dist/control-ui/<hash>/webos-desktop-view.js` | Vanilla ES view module the wrapper mounts |
+| `index.js` | Gateway runtime: `registerControlUiDescriptor({ surface: "tab", id: "desktop", slug: "desktop" })` |
+| `dist/control-ui/<hash>/index.js` | `{ id, activate(host) }`; registers page id `desktop` (must match descriptor id) |
+| `dist/control-ui/<hash>/webos-desktop-view.js` | Vanilla ES view module mounted by the page (`render(container, context) -> cleanup`) |
 | `dist/control-ui/<hash>/index.css` | Styles (plugin asset route serves **only** `.js`/`.css`) |
 
-No `index.html`. No bundler. No repo build step. Lit ships with the Gateway.
+No `index.html`. No bundler. No repo build step.
 
-## Contract (Phase 0 findings §5)
+## Install (dev gateway)
 
-1. Plugin asset route serves only `.js`/`.css` — no raw HTML via `handleControlUiPluginAssetRequest`.
-2. `surface:tab` mounts a Lit `ControlUiView` (DOM mount), not a URL.
-5. Packaging template is workboard, not dashboard-bridge.
+The extension must be copied as a **global** extension. Native Control UI JS
+from a global extension is gated, so the config keys below are required.
+
+```text
+# 1. Copy the package
+cp -a /root/.openclaw/workspace/dashboard/openclaw-webos \
+      /root/.openclaw/extensions/openclaw-webos
+
+# 2. Patch /root/.openclaw/openclaw.json (merge; do not replace the file)
+#    gateway.controlUi.experimental.customPlugins = true
+#    plugins.allow += "openclaw-webos"
+#    plugins.entries.openclaw-webos = { "enabled": true }
+
+# 3. Restart the Gateway once
+systemctl restart openclaw-gateway.service
+
+# 4. Open Control UI, then /openclaw/desktop
+```
+
+Expected after restart:
+
+- Gateway plugin load log lists `openclaw-webos` as loaded (no
+  `ERR_MODULE_NOT_FOUND`).
+- `openclaw gateway call plugins.uiDescriptors --json` includes
+  `openclaw-webos tab desktop` with `slug: "desktop"`.
+- `openclaw gateway call plugins.controlUi.list --json` lists
+  `openclaw-webos` with a `revision` and an `entryUrl` under
+  `/openclaw/__openclaw__/plugins/control-ui/openclaw-webos/<revision>/`.
+- Control UI sidebar shows **OpenClaw Desktop**.
+- `/openclaw/desktop` renders the WebOS shell (Workboard columns from the
+  authenticated Gateway RPC `workboard.cards.list`).
+
+### Config diff (reversible)
+
+```json
+{
+  "gateway": {
+    "controlUi": {
+      "experimental": {
+        "customPlugins": true
+      }
+    }
+  },
+  "plugins": {
+    "allow": ["...existing entries...", "openclaw-webos"],
+    "entries": {
+      "openclaw-webos": { "enabled": true }
+    }
+  }
+}
+```
+
+Rollback:
+
+```text
+rm -rf ~/.openclaw/extensions/openclaw-webos
+# remove gateway.controlUi.experimental.customPlugins, the plugins.allow entry,
+# and plugins.entries.openclaw-webos
+systemctl restart openclaw-gateway.service
+```
 
 ## Data path
 
@@ -36,17 +102,6 @@ No extra token gate. Staging task-server `:8120` remains the dashboard data
 backend for the standalone WebOS origin. `desktopTokenGate` in the plugin
 config defaults **off** so other origins stay unchanged.
 
-## Owner-approval install (NOT this card)
-
-```text
-# After owner approval only — do not run from this card.
-cp -a openclaw-webos ~/.openclaw/extensions/openclaw-webos
-# then restart the Gateway via the Control UI / owner runbook
-```
-
-Acceptance of "tab reachable at home.3dput.com/openclaw/desktop" waits on that
-install note.
-
 ## Out of scope
 
-Write-back (Phase 3), de-dup (Phase 4), gateway install, production.
+Write-back (Phase 3), de-dup (Phase 4), production.

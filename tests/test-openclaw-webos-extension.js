@@ -141,6 +141,15 @@ function makeDocument() {
     assert.strictEqual(plugin.name, 'OpenClaw WebOS');
   });
 
+  await check('manifest opts into gateway startup and declares page uiCapability', () => {
+    // Gateway startup plan only loads plugins whose manifest sets
+    // activation.onStartup=true (or owns a configured slot). Without it the
+    // plugin loads for `plugins list` but never registers its tab descriptor
+    // and its Control UI asset route 404s.
+    assert.strictEqual(plugin.activation?.onStartup, true);
+    assert.deepStrictEqual(plugin.uiCapabilities, ['page']);
+  });
+
   await check('controlUi.entry matches workboard dist/control-ui/<hash>/index.js shape', () => {
     assert.ok(CONTROL_UI_ENTRY_RE.test(entryRel), `entry ${entryRel}`);
     assert.ok(entryRel.startsWith('dist/control-ui/'), entryRel);
@@ -174,48 +183,39 @@ function makeDocument() {
     assert.strictEqual(pkg.type, 'module');
   });
 
-  await check('runtime index.js registers surface:tab at route:desktop', () => {
+  await check('runtime index.js registers surface:tab with slug desktop', () => {
     const src = read('index.js');
     assert.ok(src.includes("surface: 'tab'"));
     assert.ok(src.includes("id: 'desktop'"));
-    assert.ok(src.includes("placement: 'route:desktop'"));
+    assert.ok(src.includes("slug: 'desktop'"));
+    assert.ok(!/\bplacement\s*:/.test(src.replace(/\/\*[\s\S]*?\*\//g, '')));
     assert.ok(src.includes('registerControlUiDescriptor'));
     assert.ok(src.includes('definePluginEntry'));
+    assert.ok(src.includes("from 'openclaw/plugin-sdk/plugin-entry'"));
+    assert.ok(!src.includes("from 'openclaw/plugin-sdk'"));
   });
 
-  await check('Lit wrapper is a single module that mounts sibling vanilla view', () => {
+  await check('wrapper is a single vanilla module with no bare lit import', () => {
     const src = read(entryRel);
-    assert.ok(src.includes("from 'lit'"));
-    assert.ok(src.includes('LitElement'));
-    assert.ok(src.includes("surface: 'tab'"));
-    assert.ok(src.includes('registerReplacement'));
+    assert.ok(!src.includes("from 'lit'"));
+    assert.ok(!src.includes('LitElement'));
+    assert.ok(!/^\s*import\s[^;]*from\s+'[^.]/m.test(src), 'bare imports forbidden');
+    assert.ok(src.includes('registerPage'));
     assert.ok(src.includes("id: 'desktop'"));
     assert.ok(src.includes('./webos-desktop-view.js'));
     assert.ok(src.includes('document.createElement'));
     assert.ok(!src.includes('<iframe'));
   });
 
-  await check('wrapper activate() returns dispose and never mounts a URL', () => {
+  await check('wrapper activate() registers page id desktop and returns dispose', () => {
     const src = read(entryRel);
     const registrations = [];
-    const fakeLit = {
-      LitElement: class {
-        static properties = {};
-        static styles = null;
-      },
-      html: () => '',
-      css: () => '',
-    };
     const wrapped = src
-      .replace("import { LitElement, html, css } from 'lit';",
-        'const { LitElement, html, css } = __lit;')
       .replace("new URL('./webos-desktop-view.js', import.meta.url).href",
         "'file:///virtual/webos-desktop-view.js'")
       .replace('export default', 'module.exports =');
     const context = vm.createContext({
-      customElements: { get: () => undefined, define: () => {} },
       document: { createElement: () => ({ host: null, signal: null, remove() {} }) },
-      __lit: fakeLit,
       module: { exports: {} },
       exports: {},
       console,
@@ -225,7 +225,7 @@ function makeDocument() {
     assert.strictEqual(pluginMod.id, 'openclaw-webos');
     const host = {
       ui: {
-        registerReplacement(desc) {
+        registerPage(desc) {
           registrations.push(desc);
           return () => {};
         },
@@ -234,8 +234,8 @@ function makeDocument() {
     const dispose = pluginMod.activate(host);
     assert.strictEqual(typeof dispose, 'function');
     assert.strictEqual(registrations.length, 1);
-    assert.strictEqual(registrations[0].surface, 'tab');
     assert.strictEqual(registrations[0].id, 'desktop');
+    assert.strictEqual(registrations[0].label, 'OpenClaw Desktop');
     assert.strictEqual(typeof registrations[0].mount, 'function');
     assert.ok(!('url' in registrations[0]));
     dispose();
@@ -305,11 +305,13 @@ function makeDocument() {
     assert.ok(url.includes(':8120'), url);
   });
 
-  await check('README documents owner-approval install gate and no-html contract', () => {
+  await check('README documents install, B3 config keys, slug, and no-html contract', () => {
     const readme = read('README.md');
-    assert.ok(readme.includes('does not install'));
+    assert.ok(readme.includes('Install (dev gateway)'));
     assert.ok(readme.includes('~/.openclaw/extensions/'));
-    assert.ok(readme.includes('route:desktop'));
+    assert.ok(readme.includes('experimental.customPlugins'));
+    assert.ok(readme.includes('slug: "desktop"'));
+    assert.ok(readme.includes('/openclaw/desktop'));
     assert.ok(readme.includes('no raw HTML') || readme.includes('No `index.html`'));
     assert.ok(readme.includes('workboard'));
   });

@@ -1,15 +1,22 @@
 /**
  * openclaw-webos runtime entry.
  *
- * Registers a surface:tab descriptor with placement route:desktop so Control UI
- * would expose /openclaw/desktop once this tree is installed under
- * ~/.openclaw/extensions/ (OWNER-APPROVAL GATE — this card does not install).
+ * Registers a surface:tab descriptor for the OpenClaw 2026.11.3 plugin SDK.
  *
- * Mirrors the in-tree workboard plugin (api.session.controls.registerControlUiDescriptor),
- * NOT dashboard-bridge (backend-only — Phase 0 mismatch #5).
+ * Contract notes (installed OpenClaw 2026.11.3):
+ *  - Runtime plugin entries import `definePluginEntry` from
+ *    `openclaw/plugin-sdk/plugin-entry`; the bare `openclaw/plugin-sdk`
+ *    specifier is not exported (B1).
+ *  - Tab placement uses `slug` (single-segment Control UI address).
+ *    `placement: "route:..."` is reserved for bundled plugins whose native
+ *    route matches the plugin id; no HTTP route is registered here (B2).
+ *  - A global (non-bundled) extension additionally needs
+ *    gateway.controlUi.experimental.customPlugins=true plus plugins.allow /
+ *    plugins.entries.openclaw-webos.enabled=true before the Control UI will
+ *    grant the native asset route (B3). See README "Install".
  */
 
-import { definePluginEntry } from 'openclaw/plugin-sdk';
+import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 
 export default definePluginEntry({
   id: 'openclaw-webos',
@@ -20,7 +27,7 @@ export default definePluginEntry({
       surface: 'tab',
       id: 'desktop',
       label: 'OpenClaw Desktop',
-      placement: 'route:desktop',
+      slug: 'desktop',
       icon: 'layout',
       group: 'control',
       requiredScopes: ['operator.read'],
