@@ -12,6 +12,8 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const vm = require('vm');
 
+const setTimeoutReal = global.setTimeout;
+
 const ROOT = path.resolve(__dirname, '..');
 const EXT = path.join(ROOT, 'openclaw-webos');
 
@@ -267,9 +269,13 @@ function makeDocument() {
     const cleanup = viewMod.render(container, { host, boardId: 'default' });
     await new Promise((r) => setImmediate(r));
     await new Promise((r) => setImmediate(r));
-    assert.strictEqual(calls.length, 1);
     assert.strictEqual(calls[0].method, 'workboard.cards.list');
     assert.strictEqual(calls[0].params.boardId, 'default');
+    // Phase 2.5: after the initial load the view opens a board-scoped notify
+    // subscription so the cursor can be advanced server-side.
+    const sub = calls.find((c) => c.method === 'workboard.notifications.subscribe');
+    assert.ok(sub, `expected subscribe, got ${calls.map((c) => c.method).join(',')}`);
+    assert.strictEqual(sub.params.boardId, 'default');
     const html = container.last.innerHTML;
     assert.ok(html.includes('Alpha'), html.slice(0, 200));
     assert.ok(html.includes('Beta'));
@@ -295,6 +301,182 @@ function makeDocument() {
     assert.ok(html.includes('socket closed'));
     cleanup();
     delete global.document;
+  });
+
+  // ---- Phase 2.5 live refresh -------------------------------------------
+
+  const withFakeTimers = async (fn) => {
+    const realSetTimeout = global.setTimeout;
+    const realClearTimeout = global.clearTimeout;
+    const scheduled = [];
+    global.setTimeout = (cb, ms) => {
+      const handle = { cb, ms, cleared: false, unref() {} };
+      scheduled.push(handle);
+      return handle;
+    };
+    global.clearTimeout = (handle) => { if (handle) handle.cleared = true; };
+    try {
+      return await fn(scheduled);
+    } finally {
+      global.setTimeout = realSetTimeout;
+      global.clearTimeout = realClearTimeout;
+    }
+  };
+
+  const flush = async () => {
+    for (let i = 0; i < 6; i += 1) await new Promise((r) => setImmediate(r));
+  };
+
+  const runNextTick = async (scheduled) => {
+    const pending = scheduled.filter((h) => !h.cleared).pop();
+    assert.ok(pending, 'expected a scheduled live tick');
+    pending.cleared = true;
+    await pending.cb();
+    await flush();
+  };
+
+  await check('live refresh re-fetches cards on a new notification event (no Refresh click)', async () => {
+    global.document = makeDocument();
+    await withFakeTimers(async (scheduled) => {
+      const calls = [];
+      let revision = 1;
+      let events = [{ id: 'e0', kind: 'failed', createdAt: 1000, sequence: 1000000 }];
+      const host = {
+        connection: { canWrite: true },
+        async request(method, params) {
+          calls.push({ method, params });
+          if (method === 'workboard.notifications.subscribe') return { subscription: { id: 'sub-1' } };
+          if (method === 'workboard.notifications.events') return { events };
+          if (method === 'workboard.notifications.advance') return { subscription: { id: 'sub-1' }, events: [] };
+          if (method === 'workboard.cards.list') {
+            return {
+              cards: [{ id: 'c1', title: revision === 1 ? 'Alpha' : 'Alpha renamed', status: 'running', updatedAt: revision }],
+              boards: [{ id: 'default', name: 'Default' }],
+              revision: { epoch: 'e', revision, boardId: 'default' },
+            };
+          }
+          throw new Error(`unexpected ${method}`);
+        },
+      };
+      const container = { last: null, replaceChildren(node) { this.last = node; } };
+      const cleanup = viewMod.render(container, { host, boardId: 'default' });
+      await flush();
+      assert.ok(container.last.innerHTML.includes('Alpha'), 'initial render');
+
+      // First tick: history only — seeds the cursor, must NOT refresh.
+      await runNextTick(scheduled);
+      const listCallsAfterSeed = calls.filter((c) => c.method === 'workboard.cards.list').length;
+      assert.strictEqual(listCallsAfterSeed, 2, 'seed tick does one revision check, no extra refresh');
+
+      // A real notification lands + the card changed.
+      events = [...events, { id: 'e1', kind: 'completed', createdAt: 2000, sequence: 2000000 }];
+      revision = 2;
+      await runNextTick(scheduled);
+      assert.ok(container.last.innerHTML.includes('Alpha renamed'), 'live update without clicking Refresh');
+      cleanup();
+    });
+    delete global.document;
+  });
+
+  await check('advance is a separate RPC; events never carries advance:true', async () => {
+    global.document = makeDocument();
+    await withFakeTimers(async (scheduled) => {
+      const calls = [];
+      const host = {
+        connection: { canWrite: true },
+        async request(method, params) {
+          calls.push({ method, params });
+          if (method === 'workboard.notifications.subscribe') return { subscription: { id: 'sub-9' } };
+          if (method === 'workboard.notifications.events') return { events: [{ id: 'e1', kind: 'failed', createdAt: 5, sequence: 5000 }] };
+          if (method === 'workboard.notifications.advance') return { subscription: { id: 'sub-9' }, events: [] };
+          if (method === 'workboard.cards.list') return { cards: [], boards: [], revision: { epoch: 'e', revision: 1 } };
+          throw new Error(`unexpected ${method}`);
+        },
+      };
+      const container = { last: null, replaceChildren(node) { this.last = node; } };
+      const cleanup = viewMod.render(container, { host });
+      await flush();
+      await runNextTick(scheduled);
+      const eventCalls = calls.filter((c) => c.method === 'workboard.notifications.events');
+      const advanceCalls = calls.filter((c) => c.method === 'workboard.notifications.advance');
+      assert.ok(eventCalls.length >= 1, 'events called');
+      assert.ok(advanceCalls.length >= 1, 'advance called separately');
+      for (const call of eventCalls) assert.ok(!('advance' in call.params), 'events must not carry advance');
+      for (const call of advanceCalls) assert.strictEqual(call.params.subscriptionId, 'sub-9');
+      cleanup();
+    });
+    delete global.document;
+  });
+
+  await check('unsupported notify RPC degrades to a chip and keeps manual Refresh', async () => {
+    global.document = makeDocument();
+    await withFakeTimers(async (scheduled) => {
+      const calls = [];
+      const host = {
+        connection: { canWrite: true },
+        async request(method) {
+          calls.push(method);
+          if (method === 'workboard.notifications.subscribe') throw new Error('unknown method: workboard.notifications.subscribe');
+          if (method === 'workboard.notifications.events') throw new Error('unknown method: workboard.notifications.events');
+          if (method === 'workboard.cards.list') return { cards: [{ id: 'c1', title: 'Alpha', status: 'ready' }], boards: [], revision: { epoch: 'e', revision: 1 } };
+          throw new Error(`unexpected ${method}`);
+        },
+      };
+      const container = { last: null, replaceChildren(node) { this.last = node; } };
+      const cleanup = viewMod.render(container, { host });
+      await flush();
+      await runNextTick(scheduled);
+      const html = container.last.innerHTML;
+      assert.ok(html.includes('data-live="unavailable"'), html.slice(0, 300));
+      assert.ok(html.includes('live updates unavailable'));
+      assert.ok(html.includes('data-action="refresh"'), 'manual Refresh still present');
+      // No fast-poll fallback: nothing further scheduled after degrading.
+      assert.strictEqual(scheduled.filter((h) => !h.cleared).length, 0, 'polling stopped');
+      cleanup();
+    });
+    delete global.document;
+  });
+
+  await check('cleanup stops polling, aborts on signal, and drops the subscription', async () => {
+    global.document = makeDocument();
+    await withFakeTimers(async (scheduled) => {
+      const calls = [];
+      const host = {
+        connection: { canWrite: true },
+        async request(method) {
+          calls.push(method);
+          if (method === 'workboard.notifications.subscribe') return { subscription: { id: 'sub-7' } };
+          if (method === 'workboard.notifications.events') return { events: [] };
+          if (method === 'workboard.notifications.advance') return { subscription: { id: 'sub-7' }, events: [] };
+          if (method === 'workboard.notifications.delete') return { deleted: true };
+          if (method === 'workboard.cards.list') return { cards: [], boards: [], revision: { epoch: 'e', revision: 1 } };
+          throw new Error(`unexpected ${method}`);
+        },
+      };
+      const container = { last: null, replaceChildren(node) { this.last = node; } };
+      const cleanup = viewMod.render(container, { host });
+      await flush();
+      assert.ok(scheduled.some((h) => !h.cleared), 'live tick scheduled');
+      cleanup();
+      await flush();
+      assert.strictEqual(scheduled.filter((h) => !h.cleared).length, 0, 'no tick left after cleanup');
+      assert.ok(calls.includes('workboard.notifications.delete'), 'subscription removed');
+      const before = calls.length;
+      await new Promise((r) => setTimeoutReal(r, 20));
+      assert.strictEqual(calls.length, before, 'no requests after cleanup');
+    });
+    delete global.document;
+  });
+
+  await check('live interval is bounded at >= 5s (no gateway hammering)', () => {
+    assert.ok(viewMod.LIVE_REFRESH, 'LIVE_REFRESH exported');
+    assert.ok(viewMod.LIVE_REFRESH.intervalMs >= 5000, String(viewMod.LIVE_REFRESH.intervalMs));
+    assert.ok(viewMod.LIVE_REFRESH.minIntervalMs >= 5000, String(viewMod.LIVE_REFRESH.minIntervalMs));
+    const src = read(path.join(hashDir, 'webos-desktop-view.js'));
+    assert.ok(!/setInterval\s*\(/.test(src), 'no setInterval loop');
+    assert.ok(src.includes('workboard.notifications.events'));
+    assert.ok(src.includes('workboard.notifications.advance'));
+    assert.ok(src.includes('sinceRevision'));
   });
 
   await check('desktopTokenGate defaults off so other origins stay unchanged', () => {

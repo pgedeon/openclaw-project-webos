@@ -26,7 +26,7 @@ Target: installed OpenClaw **2026.11.3**.
 | `openclaw.plugin.json` | `controlUi.entry` + `styles` under `dist/control-ui/<hash>/` |
 | `index.js` | Gateway runtime: `registerControlUiDescriptor({ surface: "tab", id: "desktop", slug: "desktop" })` |
 | `dist/control-ui/<hash>/index.js` | `{ id, activate(host) }`; registers page id `desktop` (must match descriptor id) |
-| `dist/control-ui/<hash>/webos-desktop-view.js` | Vanilla ES view module mounted by the page (`render(container, context) -> cleanup`) |
+| `dist/control-ui/<hash>/webos-desktop-view.js` | Vanilla ES view module mounted by the page (`render(container, context) -> cleanup`); owns the live-refresh loop |
 | `dist/control-ui/<hash>/index.css` | Styles (plugin asset route serves **only** `.js`/`.css`) |
 
 No `index.html`. No bundler. No repo build step.
@@ -94,6 +94,38 @@ rm -rf ~/.openclaw/extensions/openclaw-webos
 systemctl restart openclaw-gateway.service
 ```
 
+## Live updates (Phase 2.5)
+
+The tab is not a one-shot snapshot. After the initial `workboard.cards.list`
+the view runs a bounded refresh loop through the same authenticated
+`host.request`:
+
+| Step | RPC | Why |
+|---|---|---|
+| 1 | `workboard.notifications.events` (`boardId`, `limit`) | new `completed` / `failed` / `stale` notifications |
+| 2 | `workboard.notifications.advance` (`subscriptionId`) | moves the server cursor — **separate RPC**; the gateway rejects `advance: true` on `events` (`notification cursor advancement requires workboard.notifications.advance`) |
+| 3 | `workboard.cards.list` (`boardId`, `sinceRevision`) | cheap `{ unchanged: true }` sentinel; catches status / title / `updatedAt` / heartbeat edits, which never produce a notification event |
+
+- Interval is **8s** (floor 5s), one request in flight at a time, no
+  `setInterval`. The loop is scheduled with `setTimeout` and stops on
+  `context.signal` abort or view cleanup.
+- The first `events` read is treated as **history**: it seeds the cursor and
+  does not trigger a refresh, so opening the tab never fakes a change.
+- A board-scoped subscription (`workboard.notifications.subscribe`,
+  `target: "openclaw-webos-tab"`) is created once so `advance` has a cursor to
+  move. Read-only operators skip it and keep the cursor client-side; nothing is
+  written to the gateway. Cleanup deletes the subscription.
+- The toolbar shows a small **live** chip while the loop is healthy.
+
+### Failure mode (honest, never fake)
+
+If either notify RPC reports an unsupported/unknown method, the view stops the
+loop, keeps the manual **Refresh** button, and shows a
+**`live updates unavailable`** chip (amber) with the error in its tooltip. It
+does **not** fall back to fast polling and never claims freshness it cannot
+prove. Transient errors (scope, socket) keep the loop but leave the chip
+unset — the view only renders what the gateway returned.
+
 ## Data path
 
 The tab is served from the Gateway origin, so it shares the operator's
@@ -104,4 +136,5 @@ config defaults **off** so other origins stay unchanged.
 
 ## Out of scope
 
-Write-back (Phase 3), de-dup (Phase 4), production.
+Write-back (Phase 3), de-dup (Phase 4), production. The tab still mounts only
+the Workboard view, not the full desktop shell.

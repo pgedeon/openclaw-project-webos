@@ -1,5 +1,5 @@
 /**
- * openclaw-webos — vanilla ES view module (Phase 2).
+ * openclaw-webos — vanilla ES view module (Phase 2 + Phase 2.5 live refresh).
  *
  * Rendered inside the thin Lit wrapper (index.js). Pure DOM + host.request —
  * no framework, no build step. Mirrors the dashboard's native-views contract:
@@ -7,6 +7,25 @@
  *
  * Data comes from the operator's authenticated Control UI socket (Phase 0
  * findings §2c: same-origin tab shares connection scopes; no token gate).
+ *
+ * Live refresh (Phase 2.5) uses the gateway's own workboard contracts:
+ *   1. workboard.notifications.events  (READ)  — new completed/failed/stale
+ *      notifications. Cursor is inclusive-exclusive; we advance it with a
+ *      SEPARATE workboard.notifications.advance call, never advance:true on
+ *      events (gateway rejects that: "notification cursor advancement requires
+ *      workboard.notifications.advance").
+ *      Live 2026.11.3 note: advance requires a subscriptionId, so we create a
+ *      board-scoped subscription first (workboard.notifications.subscribe) when
+ *      the operator connection can write; otherwise the cursor is tracked
+ *      client-side and nothing is written to the gateway.
+ *   2. workboard.cards.list with sinceRevision (READ) — a cheap unchanged
+ *      sentinel. Notification kinds do NOT include status/title/updatedAt or
+ *      heartbeat changes, so this is what actually proves live freshness for
+ *      ordinary card edits. It returns { unchanged: true } when nothing moved.
+ *
+ * Failure mode is honest, never fake: if the notify RPCs are unsupported the
+ * view keeps manual Refresh and shows a "live updates unavailable" chip. No
+ * fast-poll fallback, bounded interval (>= 5s), single in-flight request.
  */
 
 const WORKBOARD_STATUSES = ['triage', 'backlog', 'todo', 'scheduled', 'ready', 'running', 'review', 'blocked', 'done'];
@@ -22,6 +41,10 @@ const STATUS_META = {
   blocked: { color: '#ef4444', label: 'Blocked' },
   done: { color: '#22c55e', label: 'Done' },
 };
+
+const LIVE_INTERVAL_MS = 8000;
+const LIVE_MIN_INTERVAL_MS = 5000;
+const LIVE_EVENT_LIMIT = 50;
 
 const escapeHtml = (value) => String(value ?? '')
   .replaceAll('&', '&amp;')
@@ -59,6 +82,21 @@ const createUnavailableState = (error) => ({
   detail: error?.message || String(error || 'gateway-unavailable'),
 });
 
+/** Notify RPC gone or method unknown — degrade, never emulate freshness. */
+const isUnsupportedError = (error) => /unknown method|not found|unsupported|not implemented|does not exist|no such/i
+  .test(String(error?.message || error || ''));
+
+/** Compare notification events in the gateway's own order (createdAt, sequence, id). */
+const compareNotifications = (a, b) => {
+  const at = Number(a?.createdAt || 0);
+  const bt = Number(b?.createdAt || 0);
+  if (at !== bt) return at < bt ? -1 : 1;
+  const as = Number(a?.sequence ?? 0);
+  const bs = Number(b?.sequence ?? 0);
+  if (as !== bs) return as < bs ? -1 : 1;
+  return String(a?.id || '') < String(b?.id || '') ? -1 : String(a?.id || '') > String(b?.id || '') ? 1 : 0;
+};
+
 /**
  * render(container, context) — the vanilla ES module contract the Lit wrapper
  * mounts. Returns a cleanup function.
@@ -74,9 +112,155 @@ export function render(container, context = {}) {
   let disposed = false;
   let loadToken = 0;
 
+  // Live-refresh state. 'off' until the first successful load; then one of
+  // 'live' (notify + revision), 'poll' (revision-only, notify unsupported) or
+  // 'unavailable' (no live path — manual Refresh only).
+  let liveState = 'off';
+  let liveReason = '';
+  let liveTimer = null;
+  let liveInFlight = false;
+  let revision = null;
+  let subscriptionId = null;
+  let eventsSeeded = false;
+  let eventCursor = { lastEventAt: 0, lastEventSequence: -1, lastEventId: '' };
+
   const root = document.createElement('div');
   root.className = 'wb';
   container.replaceChildren(root);
+
+  const stopLive = () => {
+    if (liveTimer !== null) {
+      clearTimeout(liveTimer);
+      liveTimer = null;
+    }
+  };
+
+  const scheduleLive = () => {
+    if (disposed || signal?.aborted || liveState === 'off') return;
+    stopLive();
+    liveTimer = setTimeout(() => {
+      liveTimer = null;
+      liveTick();
+    }, LIVE_INTERVAL_MS);
+    // Node/browser: do not keep an idle process alive in tests.
+    if (liveTimer && typeof liveTimer === 'object' && typeof liveTimer.unref === 'function') liveTimer.unref();
+  };
+
+  const applyPending = () => {
+    const events = Array.isArray(snapshot.pendingEvents) ? snapshot.pendingEvents : [];
+    const fresh = events.filter((event) => compareNotifications(event, eventCursor) > 0);
+    if (!eventsSeeded) {
+      // First read is history, not freshness: seed the cursor, do not refresh.
+      eventsSeeded = true;
+      if (events.length) {
+        const last = [...events].sort(compareNotifications).at(-1);
+        eventCursor = {
+          lastEventAt: Number(last.createdAt || 0),
+          lastEventSequence: Number(last.sequence ?? -1),
+          lastEventId: String(last.id || ''),
+        };
+      }
+      return false;
+    }
+    if (fresh.length === 0) return false;
+    const last = [...fresh].sort(compareNotifications).at(-1);
+    eventCursor = {
+      lastEventAt: Number(last.createdAt || 0),
+      lastEventSequence: Number(last.sequence ?? -1),
+      lastEventId: String(last.id || ''),
+    };
+    return true;
+  };
+
+  const adoptLiveError = (error) => {
+    if (isUnsupportedError(error)) {
+      liveState = 'unavailable';
+      liveReason = error?.message || String(error || 'unsupported');
+      stopLive();
+    } else {
+      // Transient (scope/network): keep the loop, do not claim freshness.
+      liveReason = error?.message || String(error || 'live error');
+    }
+  };
+
+  const liveTick = async () => {
+    if (!host || disposed || signal?.aborted || liveInFlight || liveState === 'off' || liveState === 'unavailable') return;
+    liveInFlight = true;
+    let changed = false;
+    try {
+      // 1) Notifications (completed/failed/stale) — the pinned notify contract.
+      if (liveState !== 'unavailable') {
+        try {
+          const params = { boardId, limit: LIVE_EVENT_LIMIT };
+          if (subscriptionId) params.subscriptionId = subscriptionId;
+          const eventsPayload = await host.request('workboard.notifications.events', params);
+          if (disposed || signal?.aborted) return;
+          const events = Array.isArray(eventsPayload?.events)
+            ? eventsPayload.events
+            : Array.isArray(eventsPayload) ? eventsPayload : [];
+          snapshot.pendingEvents = events;
+          if (applyPending()) changed = true;
+          if (subscriptionId) {
+            // Cursor advance is a SEPARATE RPC (events rejects advance:true).
+            await host.request('workboard.notifications.advance', { subscriptionId });
+            if (disposed || signal?.aborted) return;
+          }
+          liveReason = '';
+        } catch (error) {
+          adoptLiveError(error);
+        }
+      }
+
+      // 2) Revision sentinel — catches status/title/updatedAt/heartbeat edits
+      //    that never produce a notification event.
+      try {
+        const params = { boardId };
+        if (revision) params.sinceRevision = revision;
+        const payload = await host.request('workboard.cards.list', params);
+        if (disposed || signal?.aborted) return;
+        if (payload && payload.unchanged !== true) {
+          const cards = Array.isArray(payload?.cards) ? payload.cards : [];
+          const boards = Array.isArray(payload?.boards) ? payload.boards : [];
+          if (payload?.revision) revision = payload.revision;
+          snapshot = { ...snapshot, available: true, cards, boards, columns: groupCardsByStatus(cards), statuses: WORKBOARD_STATUSES };
+          changed = true;
+        }
+        if (liveState === 'off') liveState = 'live';
+      } catch (error) {
+        adoptLiveError(error);
+      }
+
+      if (!disposed && !signal?.aborted && changed) {
+        if (liveState === 'off') liveState = 'live';
+        renderDom();
+      }
+    } finally {
+      liveInFlight = false;
+      if (!disposed && !signal?.aborted && liveState !== 'off' && liveState !== 'unavailable') scheduleLive();
+    }
+  };
+
+  const startLive = async () => {
+    if (!host || disposed || signal?.aborted || liveState === 'unavailable') return;
+    liveState = 'live';
+    // Best-effort subscription so advance can move the server cursor. A
+    // read-only operator cannot subscribe; we then keep the cursor client-side
+    // and never write to the gateway.
+    if (host.connection?.canWrite !== false) {
+      try {
+        const result = await host.request('workboard.notifications.subscribe', {
+          boardId,
+          target: 'openclaw-webos-tab',
+        });
+        subscriptionId = result?.subscription?.id ?? null;
+      } catch {
+        subscriptionId = null;
+      }
+    }
+    if (disposed || signal?.aborted) return;
+    if (liveState === 'live' && snapshot.available) renderDom();
+    scheduleLive();
+  };
 
   const load = async () => {
     if (!host || disposed) return;
@@ -86,17 +270,28 @@ export function render(container, context = {}) {
       if (disposed || token !== loadToken || signal?.aborted) return;
       const cards = Array.isArray(payload?.cards) ? payload.cards : [];
       const boards = Array.isArray(payload?.boards) ? payload.boards : [];
-      snapshot = { available: true, cards, boards, columns: groupCardsByStatus(cards), statuses: WORKBOARD_STATUSES };
+      if (payload?.revision) revision = payload.revision;
+      snapshot = { available: true, cards, boards, columns: groupCardsByStatus(cards), statuses: WORKBOARD_STATUSES, pendingEvents: snapshot.pendingEvents };
+      liveReason = '';
     } catch (error) {
       if (disposed || token !== loadToken) return;
       snapshot = createUnavailableState(error);
     }
     renderDom();
+    if (snapshot.available && liveState === 'off') startLive();
   };
 
   const selectCard = (id) => {
     selectedId = selectedId === id ? null : id;
     renderDom();
+  };
+
+  const liveChip = () => {
+    if (liveState === 'off') return '';
+    if (liveState === 'unavailable') {
+      return `<span class="wb-live" data-live="unavailable" title="${escapeHtml(liveReason || 'notify RPC unsupported')}">live updates unavailable</span>`;
+    }
+    return '<span class="wb-live" data-live="live" title="Workboard notifications + revision polling (8s)">live</span>';
   };
 
   const renderDom = () => {
@@ -118,6 +313,7 @@ export function render(container, context = {}) {
     root.innerHTML = `
       <div class="wb-tb">
         <span class="wb-tb__title">OpenClaw Workboard</span>
+        ${liveChip()}
         <select class="wb-ctl" data-action="board" aria-label="Board">
           ${snapshot.boards.map((board) => `<option value="${escapeHtml(board.id)}"${board.id === boardId ? ' selected' : ''}>${escapeHtml(board.name || board.id)}</option>`).join('')}
         </select>
@@ -172,6 +368,9 @@ export function render(container, context = {}) {
     root.querySelector('[data-action="board"]')?.addEventListener('change', (event) => {
       boardId = event.target.value;
       selectedId = null;
+      revision = null;
+      eventsSeeded = false;
+      eventCursor = { lastEventAt: 0, lastEventSequence: -1, lastEventId: '' };
       load();
     });
     for (const button of root.querySelectorAll('[data-card-id]')) {
@@ -179,14 +378,39 @@ export function render(container, context = {}) {
     }
   };
 
+  const onAbort = () => dispose();
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    loadToken += 1;
+    stopLive();
+    if (signal && typeof signal.removeEventListener === 'function') {
+      signal.removeEventListener('abort', onAbort);
+    }
+    if (subscriptionId && host) {
+      // Remove our own cursor record; never leave a live loop's state behind.
+      try {
+        Promise.resolve(host.request('workboard.notifications.delete', { id: subscriptionId })).catch(() => {});
+      } catch {
+        /* already gone */
+      }
+      subscriptionId = null;
+    }
+    root.remove();
+  };
+
+  if (signal && typeof signal.addEventListener === 'function') {
+    if (signal.aborted) return () => {};
+    signal.addEventListener('abort', onAbort);
+  }
+
   renderDom();
   load();
 
-  return () => {
-    disposed = true;
-    loadToken += 1;
-    root.remove();
-  };
+  return dispose;
 }
 
 export default render;
+
+// Keep the pinned bounds visible to the packaging tests.
+export const LIVE_REFRESH = { intervalMs: LIVE_INTERVAL_MS, minIntervalMs: LIVE_MIN_INTERVAL_MS };

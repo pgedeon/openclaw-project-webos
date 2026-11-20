@@ -48,6 +48,10 @@ Pin the remaining gateway facts by reading 2026.9.3 sources + live probing:
 - Desktop's own token gate becomes optional when served from the gateway origin (gateway auth already happened) — controlled by env, default unchanged elsewhere.
 - Acceptance: tab reachable at `home.3dput.com/openclaw/desktop`, full desktop boots, Workboard window live-updates, no second login.
 
+
+
+**Phase 2 status (2026-11-20):** tab installed and rendering at `/openclaw/desktop` (card `6add2b28`/`610799d6`). Phase 2 acceptance item **"Workboard window live-updates"** closed by card `webos:openclaw-native-integration:phase2.5:tab-live-refresh:v1` — the tab now runs a bounded (8s) loop of `workboard.notifications.events` + separate `workboard.notifications.advance` (`subscriptionId`, 2026.11.3) plus a `workboard.cards.list` `sinceRevision` sentinel, with an honest `live updates unavailable` degrade chip. Proved live in headless Chrome: real heartbeat rendered with no Refresh click. **Remaining Phase 2 gap:** the tab mounts only the Workboard view, not the full desktop shell (tracked separately).
+
 ### Phase 3 — Write-back through governed paths (coder, after Phase 2 soak)
 - Card actions from the desktop (create/move/dispatch) via `workboard.cards.dispatch` + CLI-equivalent RPC where the contract allows; every mutation keeps ONE registry (workboard) — the desktop stops maintaining a parallel agent-queue mirror.
 - MCP alignment: `get_mission_control_summary` gains workboard section; the flagship tool reflects the same board the tab shows.
