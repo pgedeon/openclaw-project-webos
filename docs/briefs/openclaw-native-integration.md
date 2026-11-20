@@ -58,6 +58,8 @@ Pin the remaining gateway facts by reading 2026.9.3 sources + live probing:
 
 **Phase 3a status (2026-11-20):** governed card move shipped in the native window (`webos:openclaw-native-integration:phase3a:governed-card-move:v1`). ONE mutation only — `workboard.cards.move` via `allowedMoveTargets(fromStatus)` (`todo`/`ready`/`blocked`/`review`) behind an inline confirm, with `done`, `running`/claim transitions, and unknown statuses refused client-side (`move-refused`) and scope/auth rejections degraded to `gateway-scope-rejected`. No dispatch, start, complete, delete, local task-store writes, or parallel queue mirror. Remaining Phase 3 scope: dispatch/start/create actions once each has its own governance card.
 
+**Phase 3b status (2026-11-20):** governed card dispatch shipped in the native window (`webos:openclaw-native-integration:phase3b:governed-dispatch:v1`). ONE mutation only — `workboard.cards.dispatch` via `allowedDispatchSources(status)` (`ready` only, card must be unclaimed) behind an inline confirm, with every non-ready source, unknown status, and claimed card refused client-side (`dispatch-refused`) and scope/auth rejections degraded to `gateway-scope-rejected`. Single registry kept: no local task-store writes, no parallel queue mirror, no `openclaw-webos/` bundle change. Remaining Phase 3 scope: start/create actions once each has its own governance card.
+
 ### Phase 4 — De-duplication review (product-planner, owner checkpoint)
 - Map desktop tasks/projects vs workboard cards vs durable tasks; propose which stores remain (owner decides). Retire mirrors that lost their reason. Update positioning docs.
 

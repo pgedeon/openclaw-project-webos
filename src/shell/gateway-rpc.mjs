@@ -95,6 +95,50 @@ export function createMoveDegrade(error) {
   };
 }
 
+/**
+ * Phase 3b governance: the ONLY source status a governed dispatch may act on.
+ * Deliberately `ready` only — that is the documented workboard promotion path
+ * (the gateway's `workboard.cards.dispatch` promotes a ready card via
+ * `prepareStart`). No invented statuses; filtered against WORKBOARD_STATUSES.
+ * A card must ALSO be unclaimed (checked in dispatchCard below).
+ */
+export const DISPATCHABLE_SOURCES = Object.freeze(
+  ['ready'].filter((status) => WORKBOARD_STATUSES.includes(status)),
+);
+
+export const DISPATCH_REFUSED = 'dispatch-refused';
+
+export function createDispatchRefusedError(reason, detail = '') {
+  return Object.assign(new Error(`dispatch refused: ${reason}`), {
+    code: DISPATCH_REFUSED,
+    reason,
+    detail: detail ? String(detail) : '',
+  });
+}
+
+/**
+ * Pure governance matrix for the card drawer. Returns the list of source
+ * statuses from which a card may be dispatched. Only `ready` qualifies;
+ * every other live status (done/review/blocked/running/todo/intake) and any
+ * unknown status yield []. The drawer shows Dispatch only when the returned
+ * list includes the card's own status.
+ */
+export function allowedDispatchSources(status) {
+  const from = String(status || '').trim();
+  if (!WORKBOARD_STATUSES.includes(from)) return [];
+  return DISPATCHABLE_SOURCES.filter((source) => source === from);
+}
+
+export function createDispatchDegrade(error) {
+  return {
+    available: false,
+    dispatched: false,
+    ok: false,
+    reason: 'gateway-scope-rejected',
+    detail: String(error?.message || error?.reason || 'gateway rejected the dispatch'),
+  };
+}
+
 const STORAGE_DEVICE_IDENTITY = 'openclaw-device-identity-v1';
 const STORAGE_DEVICE_AUTH_PREFIX = 'openclaw.device.auth.v1:';
 
@@ -469,6 +513,39 @@ export function createGatewayRpc(options = {}) {
           return { ok: true, moved: true, card: payload?.card ?? payload };
         } catch (error) {
           if (isScopeRejection(error)) return createMoveDegrade(error);
+          throw error;
+        }
+      },
+      /**
+       * Phase 3b: ONE governed mutation — dispatch a single ready card via
+       * `workboard.cards.dispatch` (`{id, boardId?}`), exactly once per
+       * invocation. Governance mirrors Phase 3a: a non-ready source, an
+       * unknown status, a claimed card, or a missing id is refused
+       * client-side with a typed `dispatch-refused` error and ZERO frames;
+       * a gateway scope/auth rejection degrades to a typed state instead of
+       * throwing or retrying; other transport failures throw so the caller
+       * can show the real reason.
+       */
+      async dispatchCard({ id, boardId, fromStatus, claimed } = {}) {
+        const cardId = String(id || '').trim();
+        if (!cardId) throw createDispatchRefusedError('missing-card-id');
+        const source = String(fromStatus || '').trim();
+        if (!WORKBOARD_STATUSES.includes(source)) {
+          throw createDispatchRefusedError('unknown-status', source);
+        }
+        if (!allowedDispatchSources(source).includes(source)) {
+          throw createDispatchRefusedError('source-not-dispatchable', source);
+        }
+        if (claimed) throw createDispatchRefusedError('claimed-card', source);
+        const params = { id: cardId };
+        const board = String(boardId || '').trim();
+        if (board) params.boardId = board;
+        try {
+          await ensureConnected();
+          const payload = await request('workboard.cards.dispatch', params);
+          return { ok: true, dispatched: true, card: payload?.card ?? payload };
+        } catch (error) {
+          if (isScopeRejection(error)) return createDispatchDegrade(error);
           throw error;
         }
       },

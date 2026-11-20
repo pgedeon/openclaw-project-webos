@@ -49,7 +49,9 @@ function makeTransport(handler) {
   const viewMod = await import(pathToFileURL(viewPath).href);
 
   const {
+    DISPATCHABLE_SOURCES,
     GOVERNED_MOVE_TARGETS,
+    allowedDispatchSources,
     allowedMoveTargets,
     buildConnectFrame,
     buildRequestFrame,
@@ -436,6 +438,142 @@ function makeTransport(handler) {
     assert.ok(error);
     assert.strictEqual(error.code, 'invalid-params');
     assert.ok(/bad position/.test(error.message));
+  });
+
+  console.log('gateway-rpc: phase 3b governed card dispatch');
+
+  await check('allowedDispatchSources matrix: ready only, everything else refused', () => {
+    assert.deepStrictEqual(allowedDispatchSources('ready'), ['ready']);
+    assert.deepStrictEqual(allowedDispatchSources('done'), []);
+    assert.deepStrictEqual(allowedDispatchSources('review'), []);
+    assert.deepStrictEqual(allowedDispatchSources('blocked'), []);
+    assert.deepStrictEqual(allowedDispatchSources('running'), []);
+    assert.deepStrictEqual(allowedDispatchSources('todo'), []);
+    assert.deepStrictEqual(allowedDispatchSources('triage'), []);
+    assert.deepStrictEqual(allowedDispatchSources('backlog'), []);
+    assert.deepStrictEqual(allowedDispatchSources('scheduled'), []);
+    assert.deepStrictEqual(allowedDispatchSources('mystery'), []);
+    assert.deepStrictEqual(allowedDispatchSources(''), []);
+    assert.deepStrictEqual(allowedDispatchSources(undefined), []);
+    for (const status of WORKBOARD_STATUSES) {
+      const sources = allowedDispatchSources(status);
+      assert.strictEqual(sources.includes(status), status === 'ready', `${status} dispatchable only if ready`);
+      for (const source of sources) {
+        assert.ok(DISPATCHABLE_SOURCES.includes(source), `${source} must be governed`);
+      }
+    }
+  });
+
+  await check('dispatchCard sends ONE workboard.cards.dispatch frame with id+boardId (no retry)', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.dispatch') {
+        return { ok: true, payload: { card: { id: 'c1', status: 'running' } } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const result = await rpc.cards.dispatchCard({ id: 'c1', boardId: 'default', fromStatus: 'ready' });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.dispatched, true);
+    assert.strictEqual(result.card.status, 'running');
+    const dispatches = transport.calls.filter((frame) => frame.method === 'workboard.cards.dispatch');
+    assert.strictEqual(dispatches.length, 1, 'exactly one dispatch frame, never a retry loop');
+    assert.deepStrictEqual(dispatches[0].params, { id: 'c1', boardId: 'default' });
+    assert.deepStrictEqual(transport.calls.map((frame) => frame.method), ['connect', 'workboard.cards.dispatch']);
+  });
+
+  await check('dispatchCard omits boardId when not supplied', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.dispatch') return { ok: true, payload: { card: { id: 'c1', status: 'running' } } };
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    await rpc.cards.dispatchCard({ id: 'c1', fromStatus: 'ready' });
+    const dispatch = transport.calls.find((frame) => frame.method === 'workboard.cards.dispatch');
+    assert.deepStrictEqual(dispatch.params, { id: 'c1' });
+  });
+
+  await check('non-ready / unknown / claimed / missing-id dispatch is refused client-side with zero frames', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      throw new Error('must not send a dispatch frame');
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const cases = [
+      [{ id: 'c1', fromStatus: 'done' }, 'source-not-dispatchable'],
+      [{ id: 'c1', fromStatus: 'review' }, 'source-not-dispatchable'],
+      [{ id: 'c1', fromStatus: 'blocked' }, 'source-not-dispatchable'],
+      [{ id: 'c1', fromStatus: 'running' }, 'source-not-dispatchable'],
+      [{ id: 'c1', fromStatus: 'todo' }, 'source-not-dispatchable'],
+      [{ id: 'c1', fromStatus: 'triage' }, 'source-not-dispatchable'],
+      [{ id: 'c1', fromStatus: 'mystery' }, 'unknown-status'],
+      [{ id: 'c1', fromStatus: '' }, 'unknown-status'],
+      [{ id: 'c1', fromStatus: 'ready', claimed: true }, 'claimed-card'],
+      [{ id: '', fromStatus: 'ready' }, 'missing-card-id'],
+    ];
+    for (const [params, reason] of cases) {
+      let error = null;
+      try {
+        await rpc.cards.dispatchCard(params);
+      } catch (caught) {
+        error = caught;
+      }
+      assert.ok(error, `expected refusal for ${JSON.stringify(params)}`);
+      assert.strictEqual(error.code, 'dispatch-refused');
+      assert.strictEqual(error.reason, reason);
+    }
+    assert.strictEqual(transport.calls.some((frame) => frame.method === 'workboard.cards.dispatch'), false);
+  });
+
+  await check('scope/auth rejection degrades to typed state with reason, no retry', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.dispatch') {
+        return { ok: false, error: { code: 'forbidden', message: 'missing scope workboard:write' } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const result = await rpc.cards.dispatchCard({ id: 'c1', fromStatus: 'ready' });
+    assert.strictEqual(result.available, false);
+    assert.strictEqual(result.dispatched, false);
+    assert.strictEqual(result.reason, 'gateway-scope-rejected');
+    assert.ok(/scope/i.test(result.detail));
+    assert.strictEqual(transport.calls.filter((frame) => frame.method === 'workboard.cards.dispatch').length, 1);
+  });
+
+  await check('non-scope gateway failure throws so the drawer can show the real reason', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.dispatch') {
+        return { ok: false, error: { code: 'invalid-params', message: 'bad id' } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    let error = null;
+    try {
+      await rpc.cards.dispatchCard({ id: 'c1', fromStatus: 'ready' });
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error);
+    assert.strictEqual(error.code, 'invalid-params');
+    assert.ok(/bad id/.test(error.message));
+  });
+
+  await check('drawer exposes Dispatch only for ready cards behind an explicit confirm (static)', () => {
+    const source = fs.readFileSync(viewPath, 'utf8');
+    assert.ok(source.includes('allowedDispatchSources(card.status)'), 'drawer must derive dispatch eligibility from the matrix');
+    assert.ok(source.includes('data-action="dispatch-request"'), 'drawer must render an explicit dispatch button');
+    assert.ok(source.includes('data-action="dispatch-confirm"'), 'second click confirm required');
+    assert.ok(source.includes('data-action="dispatch-cancel"'));
+    assert.ok(source.includes('fromStatus: card.status'), 'RPC call must pass the real source status');
+    assert.ok(source.includes('claimed: Boolean(card.metadata?.claim?.ownerId)'), 'RPC call must pass the claim state');
+    assert.strictEqual(/card\.status\s*=\s*['"]/.test(source), false, 'no optimistic status assignment');
+    assert.strictEqual(source.includes("status: 'done'"), false, 'view must not hardcode a done move');
   });
 
   await check('drawer exposes only governed targets behind an explicit confirm (static)', () => {
