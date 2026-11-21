@@ -178,19 +178,20 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       X" refuses with task_create_unavailable + Tasks deep link until task.create joins
       the registry (brief Q1). Staging-verified live at http://192.168.0.81:8120/
       (health 200 json_snapshot; grammar + palette modules served).
-- [x] **Workflow visual editor — staged**: Stage 1 shipped 2026-08-25 (7769c7a) — read-only SVG chain graph w/ earn-use telemetry (opens + 👍/👎 to audit_log). Brief found NO DAG in data: all 29 templates are linear chains, so vertical chain render is the honest form. Drag-drop GO/NO-GO decision ~2026-09-14 after the 21-day telemetry window.
+- [x] **Workflow visual editor — staged**: Stage 1 shipped 2026-08-25 (7769c7a) — read-only SVG chain graph w/ earn-use telemetry (opens + 👍/👎 to audit_log). Brief found NO DAG in data: all 29 templates are linear chains, so vertical chain render is the honest form. Drag-drop GO/NO-GO decision SETTLED 2026-11-21: **VERDICT NO-GO** — 0 distinct render-days / 0 opens / 0 asks / 0 thumbs-down over the closed 21-day window (2026-08-25→2026-09-14; evidence = `scripts/dag-telemetry-counter.js` run on staging PostgreSQL, 0 audit rows). Drag-drop Stage 2 is CLOSED by NO-GO; the read-only view is retained.
       Stage 1 SHIPPED 2026-08-25 (7769c7a): read-only SVG chain graph in the
       Workflows trigger panel (Graph toggle; latest-run status colors, node detail
       cards, 32-step cap) + earn-use telemetry POST /api/workflow-graph/events
       (one open event per view-session + 👍/👎 feedback chip → audit_log rows).
-      Box ticked for Stage 1 shipping; the GO/NO-GO decision itself remains OPEN
-      (review #3 correction — earlier text claimed the box would stay unticked,
-      but it was ticked when Stage 1 landed): GO = ≥8 distinct render-days AND
-      ≥3 explicit asks for editing; NO-GO (<4 days AND zero asks) closes
-      drag-drop and keeps the read-only view (run-mode status coloring retains
-      standalone monitoring value). Clock starts at staging deploy; decision
-      ~2026-09-14 — see docs/briefs/roadmap-review-2026-08-25.md §5 for the
-      telemetry-counter recommendation.
+      Box ticked for Stage 1 shipping. GO/NO-GO decision SETTLED 2026-11-21:
+      VERDICT NO-GO (0 distinct render-days / 0 opens / 0 asks / 0 thumbs-down
+      over the closed 21-day window; evidence = counter run on staging
+      PostgreSQL). Rule: GO = ≥8 distinct render-days AND ≥3 explicit asks for
+      editing; NO-GO (<4 days AND zero asks) closes drag-drop and keeps the
+      read-only view (run-mode status coloring retains standalone monitoring
+      value). Drag-drop Stage 2 is closed by NO-GO. See
+      docs/briefs/roadmap-review-2026-08-25.md §5 and
+      docs/briefs/workflow-visual-editor-stage1.md §6.
 - [x] **Snapshot/restore**: one-click full-state export (tasks + runs + config) and
       restore. Builds on export-routes. Shipped through slice 3 2026-08-24: pure libs
       (0efa391), five endpoints (slice 2), settings-view panel + staging verification
@@ -448,16 +449,18 @@ tightening run (ws bump → puppeteer-core@25 → audit gate to high) and the D5
 benchmark harness proceed AUTONOMOUSLY; task↔session conversation binding is
 the top remaining FEATURE but needs the owner chapter pick before a planner
 brief; NL v2 LLM parsing needs an owner cost/posture call; tailnet rollout
-needs an owner order; workflow normalization follow-ups are blocked on the
-DAG decision; budget slice 5 does not exist (all four brief slices shipped).
+needs an owner order; workflow normalization follow-ups were gated on the DAG
+decision, which is now settled NO-GO (drag-drop Stage 2 closed); budget slice 5
+does not exist (all four brief slices shipped).
 
 ### Watch-list (dated, not promised)
 
-- **DAG GO/NO-GO ~2026-09-14** — mechanical per telemetry counter
-  (`scripts/dag-telemetry-counter.js`): GO = ≥8 render-days AND ≥3 asks in
-  the 2026-08-25→2026-09-14 window; NO-GO = <4 days AND 0 asks; else middle.
-  On GO: visual-editor Stage 2 becomes buildable (normalization data blocker
-  already cleared by migration 025). Window opened today at 0 rows.
+- **DAG GO/NO-GO — SETTLED 2026-11-21: NO-GO** — mechanical per telemetry
+  counter (`scripts/dag-telemetry-counter.js`) over the closed
+  2026-08-25→2026-09-14 window on staging PostgreSQL: 0 distinct
+  render-days / 0 opens / 0 asks / 0 thumbs-down (0 audit rows). Per brief §6
+  (<4 days AND 0 asks), drag-drop Stage 2 is CLOSED and the read-only view is
+  retained. No further DAG-decision follow-up is pending.
 - **Tailnet rollout pending owner** — docs shipped (docs/remote-access.md);
   tailscale NOT installed on dev machine; install + `tailscale serve`
   exposure is an owner hardware/network call.

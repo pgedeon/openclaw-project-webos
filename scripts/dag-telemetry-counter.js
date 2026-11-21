@@ -33,7 +33,8 @@ const { Pool } = require('pg');
 
 // ── Window constants (brief §6: 21-day rule evaluated from staging deploy) ──
 const WINDOW_START_ISO = '2026-08-25T00:00:00.000Z'; // staging deploy date
-const WINDOW_DAYS = 21;                              // ends 2026-09-14 inclusive
+const WINDOW_END_ISO = '2026-09-14T00:00:00.000Z';   // review instant — closed at/after
+const WINDOW_DAYS = 21;                              // 2026-08-25 .. 2026-09-14 inclusive
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // ── Branch thresholds ───────────────────────────────────────────────────────
@@ -93,25 +94,31 @@ function utcDateKey(date) {
 }
 
 /**
- * Branch evaluation per the brief's 21-day rule. Mechanical by design:
- * early-window empties land 'no_go' numerically — the printed report always
- * carries daysRemaining so an in-flight window is never mistaken for a verdict.
+ * Branch evaluation per the brief's 21-day rule, window-aware.
+ *
+ * 0 render-days + 0 asks is 'pending' ONLY while the window is still open
+ * (daysRemaining > 0). Once the window has closed, an empty window is a real
+ * NO-GO verdict, not an in-flight state — otherwise the tool can never record
+ * the decision it exists to produce.
+ *
+ * Non-empty counts keep the mechanical rule regardless of window state:
+ * <4 render-days AND 0 asks → no_go, ≥8 days AND ≥3 asks → go, else middle.
  */
-function evaluateBranch(renderDays, asks) {
+function evaluateBranch(renderDays, asks, daysRemaining) {
   if (renderDays >= RENDER_DAYS_GO && asks >= ASKS_GO) return 'go';
-  // Brief: NO-GO requires <4 distinct render-days WITH any render. renderDays === 0
-  // means the window hasn't started producing signal — that's 'pending', not a verdict.
+  if (renderDays === 0 && asks === 0) {
+    return daysRemaining > 0 ? 'pending' : 'no_go';
+  }
   if (renderDays > 0 && renderDays < RENDER_DAYS_NO_GO && asks === 0) return 'no_go';
-  if (renderDays === 0 && asks === 0) return 'pending';
   return 'middle';
 }
 
-/** Days left in the window; clamped to [0, WINDOW_DAYS]. Invalid nowMs is
- *  treated deterministically as the window start (full 21 days remaining). */
+/** Days left until the review instant; clamped to [0, WINDOW_DAYS]. Invalid
+ *  nowMs is treated deterministically as the window start. Exactly at
+ *  WINDOW_END_ISO the window is closed (0). */
 function computeDaysRemaining(nowMs) {
   const now = Number.isFinite(nowMs) ? nowMs : Date.parse(WINDOW_START_ISO);
-  const endExclusiveMs = Date.parse(WINDOW_START_ISO) + WINDOW_DAYS * DAY_MS;
-  const remaining = Math.ceil((endExclusiveMs - now) / DAY_MS);
+  const remaining = Math.ceil((Date.parse(WINDOW_END_ISO) - now) / DAY_MS);
   return Math.max(0, Math.min(WINDOW_DAYS, remaining));
 }
 
@@ -152,14 +159,15 @@ function evaluateDagTelemetry(rows, nowMs) {
   }
 
   const renderDays = renderDaySet.size;
+  const daysRemaining = computeDaysRemaining(nowMs);
   return {
     renderDays,
     opens,
     helpfulUp,
     helpfulDown,
     templates: [...templateSet].sort(),
-    branch: evaluateBranch(renderDays, helpfulUp),
-    daysRemaining: computeDaysRemaining(nowMs),
+    branch: evaluateBranch(renderDays, helpfulUp, daysRemaining),
+    daysRemaining,
   };
 }
 
@@ -170,13 +178,12 @@ function describeBranch(result) {
   const goGap = [];
   if (renderDays < RENDER_DAYS_GO) goGap.push(`${RENDER_DAYS_GO - renderDays} more render-day(s)`);
   if (helpfulUp < ASKS_GO) goGap.push(`${ASKS_GO - helpfulUp} more ask(s)`);
-  const noGoState = renderDays < RENDER_DAYS_NO_GO && helpfulUp === 0;
-  return { goGap, noGoState };
+  return { goGap, goMet: renderDays >= RENDER_DAYS_GO && helpfulUp >= ASKS_GO, noGoHits: result.branch === 'no_go' };
 }
 
 function printReport(result, rowCount) {
   const elapsed = WINDOW_DAYS - result.daysRemaining;
-  const { goGap, noGoState } = describeBranch(result);
+  const { goGap, goMet, noGoHits } = describeBranch(result);
 
   console.log('=== DAG GO/NO-GO telemetry (workflow graph Stage 1) ===');
   console.log(`Window: ${WINDOW_START_ISO.slice(0, 10)} -> 2026-09-14 (${WINDOW_DAYS} days, UTC calendar days)`);
@@ -200,8 +207,8 @@ function printReport(result, rowCount) {
   }
   console.log('');
   console.log('Branch evaluation (brief §6)');
-  console.log(`  GO    (>=${RENDER_DAYS_GO} days AND >=${ASKS_GO} asks)   : ${result.renderDays >= RENDER_DAYS_GO && result.helpfulUp >= ASKS_GO ? 'MET' : `not yet${goGap.length ? ` — needs ${goGap.join(' and ')}` : ''}`}`);
-  console.log(`  NO-GO (<${RENDER_DAYS_NO_GO} days AND 0 asks)  : ${noGoState ? 'HITS' : 'not hit'}`);
+  console.log(`  GO    (>=${RENDER_DAYS_GO} days AND >=${ASKS_GO} asks)   : ${goMet ? 'MET' : `not met${goGap.length ? ` — needs ${goGap.join(' and ')}` : ''}`}`);
+  console.log(`  NO-GO (<${RENDER_DAYS_NO_GO} days AND 0 asks)  : ${noGoHits ? (result.daysRemaining > 0 ? 'HITS (window still open)' : 'HITS (final)') : 'not hit'}`);
   console.log(`  VERDICT: ${result.branch}` + (result.branch === 'middle' ? '  (review with numbers)' : ''));
 }
 
@@ -249,4 +256,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { evaluateDagTelemetry, evaluateBranch, computeDaysRemaining, WINDOW_START_ISO, WINDOW_DAYS };
+module.exports = { evaluateDagTelemetry, evaluateBranch, computeDaysRemaining, WINDOW_START_ISO, WINDOW_END_ISO, WINDOW_DAYS };

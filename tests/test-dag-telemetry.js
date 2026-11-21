@@ -19,6 +19,7 @@ const {
   evaluateBranch,
   computeDaysRemaining,
   WINDOW_START_ISO,
+  WINDOW_END_ISO,
   WINDOW_DAYS,
 } = require('../scripts/dag-telemetry-counter.js');
 
@@ -67,11 +68,11 @@ function opensOnDistinctDays(n) {
 
 // ── Branch rule boundaries ──────────────────────────────────────────────────
 
-check('empty rows → zeros, pending branch (window not started), full window remaining at start', () => {
+check('empty rows at window start → zeros, pending branch, 20 days remaining', () => {
   const r = evaluateDagTelemetry([], START);
   assert.deepStrictEqual(
     { renderDays: r.renderDays, opens: r.opens, helpfulUp: r.helpfulUp, helpfulDown: r.helpfulDown, templates: r.templates, branch: r.branch, daysRemaining: r.daysRemaining },
-    { renderDays: 0, opens: 0, helpfulUp: 0, helpfulDown: 0, templates: [], branch: 'pending', daysRemaining: WINDOW_DAYS }
+    { renderDays: 0, opens: 0, helpfulUp: 0, helpfulDown: 0, templates: [], branch: 'pending', daysRemaining: 20 }
   );
 });
 
@@ -219,15 +220,57 @@ check('templates collected from both open and feedback events', () => {
   assert.deepStrictEqual(r.templates, ['from-feedback', 'from-open']);
 });
 
-// ── daysRemaining ───────────────────────────────────────────────────────────
+// ── Window-aware branch resolution (closed window must be able to verdict) ──
 
-check('daysRemaining mid-window: 2026-09-01T12:00Z → 14 (ceil of 13.5)', () => {
-  const now = Date.parse('2026-09-01T12:00:00Z');
-  assert.strictEqual(evaluateDagTelemetry([], now).daysRemaining, 14);
+const END = Date.parse(WINDOW_END_ISO); // 2026-09-14T00:00:00Z
+
+check('window open + 0 render-days + 0 asks → pending', () => {
+  const r = evaluateDagTelemetry([], Date.parse('2026-09-01T00:00:00Z'));
+  assert.ok(r.daysRemaining > 0);
+  assert.strictEqual(r.branch, 'pending');
 });
 
-check('daysRemaining on final day 2026-09-14T23:00Z → 1', () => {
-  const now = Date.parse('2026-09-14T23:00:00Z');
+check('exactly at window end boundary 2026-09-14T00:00:00Z + 0/0 → no_go', () => {
+  const r = evaluateDagTelemetry([], END);
+  assert.strictEqual(r.daysRemaining, 0);
+  assert.strictEqual(r.branch, 'no_go');
+});
+
+check('window closed + 0 render-days + 0 asks → no_go (not pending)', () => {
+  const r = evaluateDagTelemetry([], Date.parse('2026-11-21T00:00:00Z'));
+  assert.strictEqual(r.daysRemaining, 0);
+  assert.strictEqual(r.branch, 'no_go');
+});
+
+check('window closed + 1 render-day + 0 asks → no_go', () => {
+  const r = evaluateDagTelemetry(opensOnDistinctDays(1), Date.parse('2026-09-20T00:00:00Z'));
+  assert.strictEqual(r.renderDays, 1);
+  assert.strictEqual(r.branch, 'no_go');
+});
+
+check('window closed + 3 render-days + 1 ask → middle', () => {
+  const rows = [...opensOnDistinctDays(3), feedbackRow(0, 't', true)];
+  const r = evaluateDagTelemetry(rows, Date.parse('2026-09-20T00:00:00Z'));
+  assert.strictEqual(r.renderDays, 3);
+  assert.strictEqual(r.helpfulUp, 1);
+  assert.strictEqual(r.branch, 'middle');
+});
+
+check('window closed + 8 render-days + 3 asks → go', () => {
+  const rows = [...opensOnDistinctDays(8), feedbackRow(0, 't', true), feedbackRow(1, 't', true), feedbackRow(2, 't', true)];
+  const r = evaluateDagTelemetry(rows, Date.parse('2026-09-20T00:00:00Z'));
+  assert.strictEqual(r.branch, 'go');
+});
+
+// ── daysRemaining ───────────────────────────────────────────────────────────
+
+check('daysRemaining mid-window: 2026-09-01T12:00Z → 13 (ceil of 12.5 to review instant)', () => {
+  const now = Date.parse('2026-09-01T12:00:00Z');
+  assert.strictEqual(evaluateDagTelemetry([], now).daysRemaining, 13);
+});
+
+check('daysRemaining on last open day 2026-09-13T23:00Z → 1', () => {
+  const now = Date.parse('2026-09-13T23:00:00Z');
   assert.strictEqual(evaluateDagTelemetry([], now).daysRemaining, 1);
 });
 
@@ -241,21 +284,33 @@ check('daysRemaining before window start clamps to 21', () => {
   assert.strictEqual(evaluateDagTelemetry([], now).daysRemaining, 21);
 });
 
-check('invalid nowMs falls back deterministically to window start (21)', () => {
-  assert.strictEqual(computeDaysRemaining(undefined), 21);
-  assert.strictEqual(computeDaysRemaining(Number.NaN), 21);
+check('invalid nowMs falls back deterministically to window start (20 left)', () => {
+  assert.strictEqual(computeDaysRemaining(undefined), 20);
+  assert.strictEqual(computeDaysRemaining(Number.NaN), 20);
 });
 
 // ── Unit-level exports ──────────────────────────────────────────────────────
 
-check('evaluateBranch unit: only the four documented branches ever returned', () => {
+check('evaluateBranch unit: open window returns only the four documented branches', () => {
   for (let d = 0; d <= 10; d++) {
     for (let a = 0; a <= 5; a++) {
-      const b = evaluateBranch(d, a);
+      const b = evaluateBranch(d, a, 1);
       assert.ok(['go', 'no_go', 'middle', 'pending'].includes(b), `branch ${b} for ${d}/${a}`);
       if (d >= 8 && a >= 3) assert.strictEqual(b, 'go');
       else if (d > 0 && d < 4 && a === 0) assert.strictEqual(b, 'no_go');
       else if (d === 0 && a === 0) assert.strictEqual(b, 'pending');
+      else assert.strictEqual(b, 'middle');
+    }
+  }
+});
+
+check('evaluateBranch unit: closed window never returns pending', () => {
+  for (let d = 0; d <= 10; d++) {
+    for (let a = 0; a <= 5; a++) {
+      const b = evaluateBranch(d, a, 0);
+      assert.ok(['go', 'no_go', 'middle'].includes(b), `branch ${b} for ${d}/${a}`);
+      if (d >= 8 && a >= 3) assert.strictEqual(b, 'go');
+      else if (d < 4 && a === 0) assert.strictEqual(b, 'no_go');
       else assert.strictEqual(b, 'middle');
     }
   }
