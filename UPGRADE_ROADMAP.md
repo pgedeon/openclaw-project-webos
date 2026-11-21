@@ -327,9 +327,14 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       2026-11-20 (card 599744ce, commits 0509233/8d6757c/9d8fe7d/af12d25) and
       passed independent QA (card 6c3ce24c: live heartbeat rendered in 8.9s,
       zero polling after unmount, installed copy byte-identical, ci-db-free
-      72/72, docs-drift 0). Phase 3a governed card move queued as cards
-      29d99298 (impl) + d6aad3b3 (QA). Phase 3 remains one card at a time
-      under a19fbc46.
+      72/72, docs-drift 0). Phase 3 governed write-back landed one mutation
+      at a time under a19fbc46: 3a card move (cards 29d99298 impl + d6aad3b3
+      QA), 3b dispatch (bfb77fd7 + 92c1b962/cf982b79), 3c start (939d76e3 +
+      b69b2766), 3d create (cecac653 + 61bc9313) — all 2026-11-20/21, each
+      with CHANGELOG + `docs/views-reference.md` updates and ci-db-free /
+      docs-drift green. Phase 3 write-back scope is COMPLETE. Phase 4 de-dup
+      review remains the owner checkpoint; no Phase 4 card is queued until
+      the owner rules (reported awaiting-owner each WebOS pass).
 
 - [x] **[candidate] Workflow data normalization migration** — repair the
       `timed_out` CHECK-constraint violation (migration 021) and lift 14/29
