@@ -49,6 +49,8 @@ function makeTransport(handler) {
   const viewMod = await import(pathToFileURL(viewPath).href);
 
   const {
+    CREATE_FIELDS,
+    CREATABLE_STATUSES,
     DISPATCHABLE_SOURCES,
     GOVERNED_MOVE_TARGETS,
     allowedDispatchSources,
@@ -65,6 +67,7 @@ function makeTransport(handler) {
     heartbeatAgeMs,
     isAtOrBeforeCursor,
     nextNotificationCursor,
+    normalizeCreateInput,
     selectGatewayConnectAuth,
     STARTABLE_SOURCES,
     allowedStartSources,
@@ -725,6 +728,146 @@ function makeTransport(handler) {
     assert.ok(source.includes('claimed: Boolean(card.metadata?.claim?.ownerId)'), 'RPC call must pass the claim state');
     assert.strictEqual(/card\.status\s*=\s*['"]/.test(source), false, 'no optimistic status assignment');
     assert.strictEqual(source.includes("status: 'done'"), false, 'view must not hardcode a done move');
+  });
+
+  console.log('gateway-rpc: phase 3d governed card create');
+
+  await check('normalizeCreateInput whitelists title/notes/priority/labels/status only', () => {
+    assert.deepStrictEqual([...CREATE_FIELDS], ['title', 'notes', 'priority', 'labels', 'status']);
+    assert.deepStrictEqual(normalizeCreateInput({ title: '  Ship it  ' }), { title: 'Ship it' });
+    assert.deepStrictEqual(
+      normalizeCreateInput({ title: 'T', notes: '  n  ', priority: 'high', labels: 'a, b ,a', status: 'ready' }),
+      { title: 'T', notes: 'n', priority: 'high', labels: ['a', 'b'], status: 'ready' },
+    );
+    assert.deepStrictEqual(normalizeCreateInput({ title: 'T', notes: '   ', labels: ' , ' }), { title: 'T' });
+    assert.deepStrictEqual(normalizeCreateInput({ title: 'T', labels: ['x', 'x', 'y'] }), { title: 'T', labels: ['x', 'y'] });
+  });
+
+  await check('CREATABLE_STATUSES excludes lifecycle/automation statuses', () => {
+    assert.deepStrictEqual([...CREATABLE_STATUSES], ['triage', 'backlog', 'todo', 'ready']);
+    for (const status of ['running', 'review', 'done', 'blocked', 'scheduled']) {
+      assert.strictEqual(CREATABLE_STATUSES.includes(status), false, `${status} must not be creatable`);
+    }
+  });
+
+  await check('createCard sends ONE workboard.cards.create frame with whitelisted params (no retry, no .owner)', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.create') {
+        return { ok: true, payload: { card: { id: 'new-1', title: 'T', status: 'todo' } } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const result = await rpc.cards.createCard({ title: 'T', notes: 'n', priority: 'high', labels: 'a,b', status: 'todo' });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.created, true);
+    assert.strictEqual(result.card.id, 'new-1');
+    const creates = transport.calls.filter((frame) => frame.method === 'workboard.cards.create');
+    assert.strictEqual(creates.length, 1, 'exactly one create frame, never a retry loop');
+    assert.deepStrictEqual(creates[0].params, { title: 'T', notes: 'n', priority: 'high', labels: ['a', 'b'], status: 'todo' });
+    assert.deepStrictEqual(transport.calls.map((frame) => frame.method), ['connect', 'workboard.cards.create']);
+    assert.strictEqual(transport.calls.some((frame) => frame.method.endsWith('.owner')), false, 'never call the CLI-owner variant');
+  });
+
+  await check('createCard omits optional fields when empty', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.create') return { ok: true, payload: { card: { id: 'new-2', title: 'T' } } };
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    await rpc.cards.createCard({ title: 'T', notes: '', labels: '', priority: 'normal' });
+    const create = transport.calls.find((frame) => frame.method === 'workboard.cards.create');
+    assert.deepStrictEqual(create.params, { title: 'T', priority: 'normal' });
+  });
+
+  await check('missing title / unknown field / bad status are refused client-side with zero frames', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      throw new Error('must not send a create frame');
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const cases = [
+      [{ title: '' }, 'missing-title'],
+      [{ title: '   ' }, 'missing-title'],
+      [{}, 'missing-title'],
+      [{ title: 'T', boardId: 'default' }, 'unknown-field'],
+      [{ title: 'T', expectedOwnerId: 'coder' }, 'unknown-field'],
+      [{ title: 'T', id: 'x' }, 'unknown-field'],
+      [{ title: 'T', status: 'running' }, 'unknown-status-if-present'],
+      [{ title: 'T', status: 'done' }, 'unknown-status-if-present'],
+      [{ title: 'T', status: 'scheduled' }, 'unknown-status-if-present'],
+      [{ title: 'T', status: 'mystery' }, 'unknown-status-if-present'],
+      [{ title: 'T', priority: 'critical' }, 'invalid-priority'],
+      [{ title: 'T', labels: 'x'.repeat(41) }, 'invalid-labels'],
+      [{ title: 'T', labels: Array.from({ length: 13 }, (_, i) => `l${i}`) }, 'invalid-labels'],
+      [{ title: 'T'.repeat(181) }, 'invalid-title'],
+      [{ title: 'T', notes: 'n'.repeat(4001) }, 'invalid-notes'],
+    ];
+    for (const [params, reason] of cases) {
+      let error = null;
+      try {
+        await rpc.cards.createCard(params);
+      } catch (caught) {
+        error = caught;
+      }
+      assert.ok(error, `expected refusal for ${JSON.stringify(params).slice(0, 60)}`);
+      assert.strictEqual(error.code, 'create-refused');
+      assert.strictEqual(error.reason, reason);
+    }
+    assert.strictEqual(transport.calls.some((frame) => frame.method === 'workboard.cards.create'), false);
+  });
+
+  await check('scope/auth rejection degrades to typed state with reason, no retry', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.create') {
+        return { ok: false, error: { code: 'forbidden', message: 'missing scope workboard:write' } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const result = await rpc.cards.createCard({ title: 'T' });
+    assert.strictEqual(result.available, false);
+    assert.strictEqual(result.created, false);
+    assert.strictEqual(result.reason, 'gateway-scope-rejected');
+    assert.ok(/scope/i.test(result.detail));
+    assert.strictEqual(transport.calls.filter((frame) => frame.method === 'workboard.cards.create').length, 1);
+  });
+
+  await check('non-scope gateway failure throws so the drawer can show the real reason', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.create') {
+        return { ok: false, error: { code: 'invalid-params', message: 'title is required.' } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    let error = null;
+    try {
+      await rpc.cards.createCard({ title: 'T' });
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error);
+    assert.strictEqual(error.code, 'invalid-params');
+    assert.ok(/title is required/.test(error.message));
+  });
+
+  await check('drawer exposes New card behind an explicit confirm and never inserts optimistically (static)', () => {
+    const source = fs.readFileSync(viewPath, 'utf8');
+    assert.ok(source.includes('data-action="new-card"'), 'drawer must render a New card control');
+    assert.ok(source.includes('data-action="create-request"'), 'first click opens the create form');
+    assert.ok(source.includes('data-action="create-confirm"'), 'second click confirm required');
+    assert.ok(source.includes('data-action="create-cancel"'));
+    assert.ok(source.includes('rpc.cards.createCard('), 'create must go through the governed RPC');
+    assert.ok(source.includes('result.created !== true'), 'a non-created result must not be treated as success');
+    assert.ok(source.includes('CREATABLE_STATUSES'), 'status options must come from the governed matrix');
+    assert.strictEqual(/card\.status\s*=\s*['"]/.test(source), false, 'no optimistic status assignment');
+    assert.strictEqual(source.includes('workboard.cards.start('), false, 'create must not auto-start');
+    assert.strictEqual(source.includes('workboard.cards.dispatch('), false, 'create must not auto-dispatch');
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

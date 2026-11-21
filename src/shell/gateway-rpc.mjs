@@ -185,6 +185,113 @@ export function createStartDegrade(error) {
   };
 }
 
+/**
+ * Phase 3d governance: governed card CREATE.
+ *
+ * Contract pinned first-hand against the installed gateway plugin runtime
+ * (/usr/local/node-v24.22.1-linux-x64/lib/node_modules/openclaw/dist/
+ * runtime-api-DMwKfCWV.mjs):
+ *  - `workboard.cards.create` is registered at :3450 inside the
+ *    `for (const method of ["create", "captureSession"])` loop with
+ *    WRITE_SCOPE = "operator.write" (:3315-3316), so it is operator-callable.
+ *  - A `.owner` variant exists only because `workboard.cards.create` is in
+ *    CLI_OWNER_METHODS (:3319-3325) and is CLI-owner-only (:3420-3430); this
+ *    client never calls `.owner` and never sends `expectedOwnerId`.
+ *  - Params pass through `prepareWorkspaceInput(request, params, "create")`
+ *    to `store.create` -> `createDirect` (:1442, :1464-1500).
+ *  - `createDirect` honors: `title` (required, <=180 chars), `notes`
+ *    (<=4000), `priority` (`low|normal|high|urgent`, default `normal`),
+ *    `labels` (<=12 entries, <=40 chars each), `status` (live vocabulary,
+ *    default `todo`) and `agentId`. It does NOT honor a top-level `boardId`:
+ *    the board comes from `metadata.automation.boardId` (:1492-1493), so
+ *    `boardId` is refused here as an unknown field and the created card
+ *    lands on the `default` board.
+ *  - Reply shape is `redactCardResult(...)` -> `{ card: {...} }`
+ *    (:3371-3373), i.e. a single `card` wrapper.
+ *  - The created card is NOT auto-started or dispatched by this client; only
+ *    `workboard.cards.create` is fired, exactly once.
+ */
+export const CREATE_FIELDS = Object.freeze(['title', 'notes', 'priority', 'labels', 'status']);
+
+/**
+ * Creation-time statuses this governed create may request. `running` and
+ * `review` imply a claim/start lifecycle, `done` requires completion proof,
+ * `blocked` is a state a card is put into later, and `scheduled` belongs to
+ * automation — all are refused (typed) rather than guessed. Any status outside
+ * the live vocabulary is also refused.
+ */
+export const CREATABLE_STATUSES = Object.freeze(
+  ['triage', 'backlog', 'todo', 'ready'].filter((status) => WORKBOARD_STATUSES.includes(status)),
+);
+
+export const CREATE_REFUSED = 'create-refused';
+
+export function createCreateRefusedError(reason, detail = '') {
+  return Object.assign(new Error(`create refused: ${reason}`), {
+    code: CREATE_REFUSED,
+    reason,
+    detail: detail ? String(detail) : '',
+  });
+}
+
+export function createCreateDegrade(error) {
+  return {
+    available: false,
+    created: false,
+    ok: false,
+    reason: 'gateway-scope-rejected',
+    detail: String(error?.message || error?.reason || 'gateway rejected the create'),
+  };
+}
+
+const CREATE_PRIORITIES = Object.freeze(['low', 'normal', 'high', 'urgent']);
+
+/**
+ * Pure governance for the create drawer: returns a whitelisted param object or
+ * throws a typed `create-refused` error. No frame is sent on refusal.
+ */
+export function normalizeCreateInput(input) {
+  if (!isRecord(input)) throw createCreateRefusedError('unknown-field', 'params must be an object');
+  const unknown = Object.keys(input).filter((key) => !CREATE_FIELDS.includes(key));
+  if (unknown.length > 0) throw createCreateRefusedError('unknown-field', unknown.join(','));
+  const title = typeof input.title === 'string' ? input.title.trim() : '';
+  if (!title) throw createCreateRefusedError('missing-title');
+  if (title.length > 180) throw createCreateRefusedError('invalid-title', `${title.length} chars`);
+  const params = { title };
+  if (input.notes !== undefined) {
+    const notes = typeof input.notes === 'string' ? input.notes.trim() : '';
+    if (notes.length > 4000) throw createCreateRefusedError('invalid-notes', `${notes.length} chars`);
+    if (notes) params.notes = notes;
+  }
+  if (input.priority !== undefined) {
+    const priority = String(input.priority).trim();
+    if (!CREATE_PRIORITIES.includes(priority)) throw createCreateRefusedError('invalid-priority', priority);
+    params.priority = priority;
+  }
+  if (input.labels !== undefined) {
+    const raw = typeof input.labels === 'string' ? input.labels.split(',') : input.labels;
+    if (!Array.isArray(raw)) throw createCreateRefusedError('invalid-labels', 'labels must be an array or comma-separated string');
+    const labels = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'string') throw createCreateRefusedError('invalid-labels', 'entries must be strings');
+      const label = entry.trim();
+      if (!label) continue;
+      if (label.length > 40) throw createCreateRefusedError('invalid-labels', 'labels must be 40 characters or fewer');
+      if (!labels.includes(label)) labels.push(label);
+    }
+    if (labels.length > 12) throw createCreateRefusedError('invalid-labels', 'at most 12 labels');
+    if (labels.length > 0) params.labels = labels;
+  }
+  if (input.status !== undefined) {
+    const status = String(input.status).trim();
+    if (!WORKBOARD_STATUSES.includes(status) || !CREATABLE_STATUSES.includes(status)) {
+      throw createCreateRefusedError('unknown-status-if-present', status);
+    }
+    params.status = status;
+  }
+  return params;
+}
+
 const STORAGE_DEVICE_IDENTITY = 'openclaw-device-identity-v1';
 const STORAGE_DEVICE_AUTH_PREFIX = 'openclaw.device.auth.v1:';
 
@@ -626,6 +733,31 @@ export function createGatewayRpc(options = {}) {
           return { ok: true, started: true, card: payload?.card ?? payload };
         } catch (error) {
           if (isScopeRejection(error)) return createStartDegrade(error);
+          throw error;
+        }
+      },
+      /**
+       * Phase 3d: ONE governed mutation — create a single card via
+       * `workboard.cards.create`, exactly once per confirmed invocation.
+       * Governance mirrors Phase 3a/3b/3c but for an intrinsic create: the
+       * pure `normalizeCreateInput` whitelists only
+       * title/notes/priority/labels/status, requires a non-empty title, and
+       * refuses an unknown field, an over-limit field, or a status outside
+       * CREATABLE_STATUSES with a typed `create-refused` error and ZERO
+       * frames. A top-level `boardId` is refused (the gateway ignores it on
+       * create; the card lands on the default board). A gateway scope/auth
+       * rejection degrades to a typed state instead of throwing or retrying;
+       * other transport failures throw so the caller can show the real
+       * reason. The created card is never auto-started or dispatched.
+       */
+      async createCard(input = {}) {
+        const params = normalizeCreateInput(input);
+        try {
+          await ensureConnected();
+          const payload = await request('workboard.cards.create', params);
+          return { ok: true, created: true, card: payload?.card ?? payload };
+        } catch (error) {
+          if (isScopeRejection(error)) return createCreateDegrade(error);
           throw error;
         }
       },

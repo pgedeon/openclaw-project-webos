@@ -8,6 +8,7 @@
 
 import { ensureNativeRoot, escapeHtml } from './helpers.mjs';
 import {
+  CREATABLE_STATUSES,
   WORKBOARD_STATUSES,
   allowedDispatchSources,
   allowedMoveTargets,
@@ -33,6 +34,10 @@ const STATUS_META = {
   blocked: { color: '#ef4444', label: 'Blocked' },
   done: { color: '#22c55e', label: 'Done' },
 };
+
+function emptyCreateDraft() {
+  return { title: '', notes: '', priority: 'normal', labels: '', status: 'todo' };
+}
 
 function injectCSS() {
   if (typeof document === 'undefined' || document.getElementById(CSS_ID)) return;
@@ -75,6 +80,14 @@ function injectCSS() {
     .wb-start{margin-top:14px;border-top:1px solid var(--win11-border);padding-top:10px}
     .wb-start__confirm{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;font-size:.76rem}
     .wb-start__error{margin:8px 0 0;font-size:.75rem;color:#ef4444;word-break:break-word}
+    .wb-create{padding:10px 14px;border-bottom:1px solid var(--win11-border);font-size:.78rem}
+    .wb-create__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+    .wb-create__grid label{display:flex;flex-direction:column;gap:4px;color:var(--win11-text-tertiary)}
+    .wb-create__wide{grid-column:1/-1}
+    .wb-create textarea{min-height:52px;resize:vertical}
+    .wb-create input,.wb-create textarea,.wb-create select{width:100%;box-sizing:border-box}
+    .wb-create__actions,.wb-create__confirm{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
+    .wb-create__error{margin:8px 0 0;font-size:.75rem;color:#ef4444;word-break:break-word}
   `;
   document.head.appendChild(style);
 }
@@ -167,6 +180,11 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
   let dispatchError = null;
   let pendingStart = null;
   let startError = null;
+  let createOpen = false;
+  let createConfirm = false;
+  let createBusy = false;
+  let createError = null;
+  let createDraft = emptyCreateDraft();
   let snapshot = { available: true, cards: [], boards: [], columns: {}, statuses: WORKBOARD_STATUSES };
   let disposed = false;
   let pollTimer = null;
@@ -290,6 +308,46 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
     `;
   };
 
+  // Phase 3d: governed create panel. The whitelist lives in the RPC layer
+  // (normalizeCreateInput); this panel only offers the fields it accepts and
+  // never inserts a card optimistically — the board re-renders from the RPC's
+  // result card. Creation is offered on the default board only because the
+  // gateway ignores a top-level boardId on create.
+  const renderCreatePanel = () => {
+    if (!createOpen) return '';
+    const statusOptions = CREATABLE_STATUSES.map((status) => (
+      `<option value="${escapeHtml(status)}" ${createDraft.status === status ? 'selected' : ''}>${escapeHtml(status)}</option>`
+    )).join('');
+    const priorityOptions = ['low', 'normal', 'high', 'urgent'].map((priority) => (
+      `<option value="${escapeHtml(priority)}" ${createDraft.priority === priority ? 'selected' : ''}>${escapeHtml(priority)}</option>`
+    )).join('');
+    return `
+      <div class="wb-create" data-role="create-panel">
+        <p class="wb-move__label">New card (default board only)</p>
+        <div class="wb-create__grid">
+          <label>Title <input class="wb-ctl" data-create-field="title" value="${escapeHtml(createDraft.title)}" placeholder="Card title" /></label>
+          <label>Priority <select class="wb-ctl" data-create-field="priority">${priorityOptions}</select></label>
+          <label>Status <select class="wb-ctl" data-create-field="status">${statusOptions}</select></label>
+          <label>Labels <input class="wb-ctl" data-create-field="labels" value="${escapeHtml(createDraft.labels)}" placeholder="comma,separated" /></label>
+          <label class="wb-create__wide">Notes <textarea class="wb-ctl" data-create-field="notes" placeholder="Optional notes">${escapeHtml(createDraft.notes)}</textarea></label>
+        </div>
+        ${createConfirm ? `
+          <div class="wb-create__confirm" data-role="create-confirm">
+            <span>Create <strong>${escapeHtml(createDraft.title.trim())}</strong>?</span>
+            <button type="button" class="wb-ctl" data-action="create-confirm" ${createBusy ? 'disabled' : ''}>Confirm create</button>
+            <button type="button" class="wb-ctl" data-action="create-cancel">Cancel</button>
+          </div>
+        ` : `
+          <div class="wb-create__actions">
+            <button type="button" class="wb-ctl" data-action="create-request">Create card…</button>
+            <button type="button" class="wb-ctl" data-action="new-card-cancel">Close</button>
+          </div>
+        `}
+        ${createError ? `<p class="wb-create__error" data-role="create-error" role="alert">${escapeHtml(createError)}</p>` : ''}
+      </div>
+    `;
+  };
+
   const renderBoard = () => {
     const boards = snapshot.boards || [];
     const statuses = snapshot.statuses || WORKBOARD_STATUSES;
@@ -306,8 +364,10 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
         <div class="wb-tb__title">Workboard</div>
         <label>Board <select class="wb-ctl" data-role="board-filter">${boardOptions || `<option value="${escapeHtml(currentBoard)}">${escapeHtml(currentBoard)}</option>`}</select></label>
         <button type="button" class="wb-ctl" data-action="refresh">↻ Refresh</button>
+        ${currentBoard === 'default' ? '<button type="button" class="wb-ctl" data-action="new-card">New card</button>' : ''}
         <a class="wb-link" href="${escapeHtml(controlUiWorkboardUrl({ boardId: currentBoard }))}" target="_blank" rel="noopener">Open in Workboard</a>
       </div>
+      ${renderCreatePanel()}
       <div class="wb-body">
         <div class="wb-cols">
           ${statuses.map((status) => {
@@ -379,6 +439,48 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
     });
     root.querySelector('[data-action="start-cancel"]')?.addEventListener('click', () => {
       pendingStart = null;
+      renderBoard();
+    });
+    root.querySelector('[data-action="new-card"]')?.addEventListener('click', () => {
+      createOpen = !createOpen;
+      createConfirm = false;
+      createError = null;
+      renderBoard();
+    });
+    root.querySelector('[data-action="new-card-cancel"]')?.addEventListener('click', () => {
+      createOpen = false;
+      createConfirm = false;
+      createError = null;
+      renderBoard();
+    });
+    root.querySelectorAll('[data-create-field]').forEach((node) => {
+      node.addEventListener('input', () => {
+        const field = node.getAttribute('data-create-field');
+        if (!field) return;
+        createDraft[field] = node.value;
+        // Editing after the confirm step invalidates the confirmed payload.
+        if (createConfirm) {
+          createConfirm = false;
+          renderBoard();
+        }
+      });
+    });
+    root.querySelector('[data-action="create-request"]')?.addEventListener('click', () => {
+      if (!String(createDraft.title || '').trim()) {
+        createError = 'Title is required.';
+        createConfirm = false;
+        renderBoard();
+        return;
+      }
+      createError = null;
+      createConfirm = true;
+      renderBoard();
+    });
+    root.querySelector('[data-action="create-confirm"]')?.addEventListener('click', () => {
+      confirmCreate();
+    });
+    root.querySelector('[data-action="create-cancel"]')?.addEventListener('click', () => {
+      createConfirm = false;
       renderBoard();
     });
     root.querySelector('[data-role="board-filter"]')?.addEventListener('change', (event) => {
@@ -570,6 +672,73 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
         message: error?.detail || error?.message || 'start failed',
       };
       pendingStart = null;
+      renderBoard();
+    }
+  };
+
+  // Phase 3d: ONE governed mutation. No optimistic insertion — the created
+  // card comes back from `workboard.cards.create` and is merged into the board
+  // from that result (or the real list when the payload lacks a card). Any
+  // refusal keeps the board state and shows the reason inline. The created
+  // card is never auto-started or dispatched.
+  const confirmCreate = async () => {
+    if (createBusy) return;
+    const title = String(createDraft.title || '').trim();
+    if (!title) {
+      createError = 'Title is required.';
+      createConfirm = false;
+      renderBoard();
+      return;
+    }
+    if (!rpc?.cards || typeof rpc.cards.createCard !== 'function') {
+      createError = 'gateway client cannot create cards';
+      createConfirm = false;
+      renderBoard();
+      return;
+    }
+    createBusy = true;
+    createError = null;
+    renderBoard();
+    try {
+      const result = await rpc.cards.createCard({
+        title,
+        notes: createDraft.notes,
+        priority: createDraft.priority,
+        labels: createDraft.labels,
+        status: createDraft.status,
+      });
+      if (!result || result.created !== true) {
+        createError = result?.detail || result?.reason || 'create rejected by gateway';
+        createConfirm = false;
+        createBusy = false;
+        renderBoard();
+        return;
+      }
+      if (result.card && result.card.id) {
+        snapshot.cards = [
+          ...(snapshot.cards || []).filter((item) => item.id !== result.card.id),
+          result.card,
+        ];
+        snapshot.columns = groupCardsByStatus(snapshot.cards, snapshot.statuses || WORKBOARD_STATUSES);
+        selectedId = result.card.id;
+      } else {
+        snapshot = await loadWorkboardSnapshot(rpc, { boardId: currentBoard });
+        if (disposed) return;
+        if (isGatewayUnavailablePayload(snapshot)) {
+          createBusy = false;
+          renderUnavailable(snapshot);
+          return;
+        }
+      }
+      createOpen = false;
+      createConfirm = false;
+      createDraft = emptyCreateDraft();
+      createBusy = false;
+      renderBoard();
+    } catch (error) {
+      createError = error?.detail || error?.message || 'create failed';
+      createConfirm = false;
+      createBusy = false;
       renderBoard();
     }
   };
