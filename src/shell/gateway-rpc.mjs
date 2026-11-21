@@ -139,6 +139,52 @@ export function createDispatchDegrade(error) {
   };
 }
 
+/**
+ * Phase 3c governance: the ONLY source statuses from which a governed start
+ * may act. Pinned first-hand against the installed gateway plugin's runtime
+ * registration of `workboard.cards.start` (WRITE_SCOPE / operator.write):
+ * `selectStartableCards` in mode `exact` accepts only `backlog`, `todo`, and
+ * `ready` and rejects every other status ("Card cannot start from …"). A card
+ * must ALSO be unclaimed (the gateway rejects an active claim). No invented
+ * statuses; filtered against WORKBOARD_STATUSES.
+ */
+export const STARTABLE_SOURCES = Object.freeze(
+  ['backlog', 'todo', 'ready'].filter((status) => WORKBOARD_STATUSES.includes(status)),
+);
+
+export const START_REFUSED = 'start-refused';
+
+export function createStartRefusedError(reason, detail = '') {
+  return Object.assign(new Error(`start refused: ${reason}`), {
+    code: START_REFUSED,
+    reason,
+    detail: detail ? String(detail) : '',
+  });
+}
+
+/**
+ * Pure governance matrix for the card drawer. Returns the list of source
+ * statuses from which a card may be started. Only backlog/todo/ready qualify;
+ * every other live status (done/review/blocked/running/triage/scheduled) and
+ * any unknown status yield []. The drawer shows Start only when the returned
+ * list includes the card's own status AND the card is unclaimed.
+ */
+export function allowedStartSources(status) {
+  const from = String(status || '').trim();
+  if (!WORKBOARD_STATUSES.includes(from)) return [];
+  return STARTABLE_SOURCES.filter((source) => source === from);
+}
+
+export function createStartDegrade(error) {
+  return {
+    available: false,
+    started: false,
+    ok: false,
+    reason: 'gateway-scope-rejected',
+    detail: String(error?.message || error?.reason || 'gateway rejected the start'),
+  };
+}
+
 const STORAGE_DEVICE_IDENTITY = 'openclaw-device-identity-v1';
 const STORAGE_DEVICE_AUTH_PREFIX = 'openclaw.device.auth.v1:';
 
@@ -546,6 +592,40 @@ export function createGatewayRpc(options = {}) {
           return { ok: true, dispatched: true, card: payload?.card ?? payload };
         } catch (error) {
           if (isScopeRejection(error)) return createDispatchDegrade(error);
+          throw error;
+        }
+      },
+      /**
+       * Phase 3c: ONE governed mutation — start a single eligible card via
+       * `workboard.cards.start` (`{id, boardId?}`), exactly once per
+       * invocation. Governance mirrors Phase 3a/3b: a missing id, an unknown
+       * status, a non-startable source (only backlog/todo/ready), or a claimed
+       * card is refused client-side with a typed `start-refused` error and
+       * ZERO frames; a gateway scope/auth rejection degrades to a typed state
+       * instead of throwing or retrying; other transport failures throw so
+       * the caller can show the real reason. No provider/model/maxStarts are
+       * sent — the gateway's direct-card start fixes maxStarts to 1.
+       */
+      async startCard({ id, boardId, fromStatus, claimed } = {}) {
+        const cardId = String(id || '').trim();
+        if (!cardId) throw createStartRefusedError('missing-card-id');
+        const source = String(fromStatus || '').trim();
+        if (!WORKBOARD_STATUSES.includes(source)) {
+          throw createStartRefusedError('unknown-status', source);
+        }
+        if (!allowedStartSources(source).includes(source)) {
+          throw createStartRefusedError('source-not-startable', source);
+        }
+        if (claimed) throw createStartRefusedError('claimed-card', source);
+        const params = { id: cardId };
+        const board = String(boardId || '').trim();
+        if (board) params.boardId = board;
+        try {
+          await ensureConnected();
+          const payload = await request('workboard.cards.start', params);
+          return { ok: true, started: true, card: payload?.card ?? payload };
+        } catch (error) {
+          if (isScopeRejection(error)) return createStartDegrade(error);
           throw error;
         }
       },

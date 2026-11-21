@@ -66,6 +66,8 @@ function makeTransport(handler) {
     isAtOrBeforeCursor,
     nextNotificationCursor,
     selectGatewayConnectAuth,
+    STARTABLE_SOURCES,
+    allowedStartSources,
     WORKBOARD_STATUSES,
   } = rpcMod;
   const { collectProofLinks, isGatewayUnavailablePayload, loadWorkboardSnapshot, refreshWorkboardLive } = viewMod;
@@ -586,6 +588,143 @@ function makeTransport(handler) {
     assert.strictEqual(/card\.status\s*=\s*['"]/.test(source), false, 'no optimistic status assignment');
     assert.strictEqual(source.includes("status: 'done'"), false, 'view must not hardcode a done move');
     assert.ok(!/'done'/.test(source.split('STATUS_META')[1]?.split('};')[0] || ''), 'done is display-only metadata');
+  });
+
+  console.log('gateway-rpc: phase 3c governed card start');
+
+  await check('allowedStartSources matrix: backlog/todo/ready only, everything else refused', () => {
+    assert.deepStrictEqual(allowedStartSources('backlog'), ['backlog']);
+    assert.deepStrictEqual(allowedStartSources('todo'), ['todo']);
+    assert.deepStrictEqual(allowedStartSources('ready'), ['ready']);
+    assert.deepStrictEqual(allowedStartSources('done'), []);
+    assert.deepStrictEqual(allowedStartSources('review'), []);
+    assert.deepStrictEqual(allowedStartSources('blocked'), []);
+    assert.deepStrictEqual(allowedStartSources('running'), []);
+    assert.deepStrictEqual(allowedStartSources('triage'), []);
+    assert.deepStrictEqual(allowedStartSources('scheduled'), []);
+    assert.deepStrictEqual(allowedStartSources('mystery'), []);
+    assert.deepStrictEqual(allowedStartSources(''), []);
+    assert.deepStrictEqual(allowedStartSources(undefined), []);
+    for (const status of WORKBOARD_STATUSES) {
+      const sources = allowedStartSources(status);
+      assert.strictEqual(sources.includes(status), status === 'backlog' || status === 'todo' || status === 'ready', `${status} startable only if backlog/todo/ready`);
+      for (const source of sources) {
+        assert.ok(STARTABLE_SOURCES.includes(source), `${source} must be governed`);
+      }
+    }
+  });
+
+  await check('startCard sends ONE workboard.cards.start frame with id+boardId (no retry)', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.start') {
+        return { ok: true, payload: { card: { id: 'c1', status: 'running' } } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const result = await rpc.cards.startCard({ id: 'c1', boardId: 'default', fromStatus: 'ready' });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.started, true);
+    assert.strictEqual(result.card.status, 'running');
+    const starts = transport.calls.filter((frame) => frame.method === 'workboard.cards.start');
+    assert.strictEqual(starts.length, 1, 'exactly one start frame, never a retry loop');
+    assert.deepStrictEqual(starts[0].params, { id: 'c1', boardId: 'default' });
+    assert.deepStrictEqual(transport.calls.map((frame) => frame.method), ['connect', 'workboard.cards.start']);
+  });
+
+  await check('startCard omits boardId when not supplied', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.start') return { ok: true, payload: { card: { id: 'c1', status: 'running' } } };
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    await rpc.cards.startCard({ id: 'c1', fromStatus: 'todo' });
+    const start = transport.calls.find((frame) => frame.method === 'workboard.cards.start');
+    assert.deepStrictEqual(start.params, { id: 'c1' });
+  });
+
+  await check('non-startable / unknown / claimed / missing-id start is refused client-side with zero frames', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      throw new Error('must not send a start frame');
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const cases = [
+      [{ id: 'c1', fromStatus: 'done' }, 'source-not-startable'],
+      [{ id: 'c1', fromStatus: 'review' }, 'source-not-startable'],
+      [{ id: 'c1', fromStatus: 'blocked' }, 'source-not-startable'],
+      [{ id: 'c1', fromStatus: 'running' }, 'source-not-startable'],
+      [{ id: 'c1', fromStatus: 'triage' }, 'source-not-startable'],
+      [{ id: 'c1', fromStatus: 'scheduled' }, 'source-not-startable'],
+      [{ id: 'c1', fromStatus: 'mystery' }, 'unknown-status'],
+      [{ id: 'c1', fromStatus: '' }, 'unknown-status'],
+      [{ id: 'c1', fromStatus: 'ready', claimed: true }, 'claimed-card'],
+      [{ id: 'c1', fromStatus: 'todo', claimed: true }, 'claimed-card'],
+      [{ id: '', fromStatus: 'ready' }, 'missing-card-id'],
+    ];
+    for (const [params, reason] of cases) {
+      let error = null;
+      try {
+        await rpc.cards.startCard(params);
+      } catch (caught) {
+        error = caught;
+      }
+      assert.ok(error, `expected refusal for ${JSON.stringify(params)}`);
+      assert.strictEqual(error.code, 'start-refused');
+      assert.strictEqual(error.reason, reason);
+    }
+    assert.strictEqual(transport.calls.some((frame) => frame.method === 'workboard.cards.start'), false);
+  });
+
+  await check('scope/auth rejection degrades to typed state with reason, no retry', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.start') {
+        return { ok: false, error: { code: 'forbidden', message: 'missing scope workboard:write' } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    const result = await rpc.cards.startCard({ id: 'c1', fromStatus: 'ready' });
+    assert.strictEqual(result.available, false);
+    assert.strictEqual(result.started, false);
+    assert.strictEqual(result.reason, 'gateway-scope-rejected');
+    assert.ok(/scope/i.test(result.detail));
+    assert.strictEqual(transport.calls.filter((frame) => frame.method === 'workboard.cards.start').length, 1);
+  });
+
+  await check('non-scope gateway failure throws so the drawer can show the real reason', async () => {
+    const transport = makeTransport(async (frame) => {
+      if (frame.method === 'connect') return { ok: true, payload: {} };
+      if (frame.method === 'workboard.cards.start') {
+        return { ok: false, error: { code: 'invalid-params', message: 'bad id' } };
+      }
+      throw new Error(frame.method);
+    });
+    const rpc = createGatewayRpc({ transport, auth: { token: 't' } });
+    let error = null;
+    try {
+      await rpc.cards.startCard({ id: 'c1', fromStatus: 'ready' });
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error);
+    assert.strictEqual(error.code, 'invalid-params');
+    assert.ok(/bad id/.test(error.message));
+  });
+
+  await check('drawer exposes Start only for startable unclaimed cards behind an explicit confirm (static)', () => {
+    const source = fs.readFileSync(viewPath, 'utf8');
+    assert.ok(source.includes('allowedStartSources(card.status)'), 'drawer must derive start eligibility from the matrix');
+    assert.ok(source.includes('data-action="start-request"'), 'drawer must render an explicit start button');
+    assert.ok(source.includes('data-action="start-confirm"'), 'second click confirm required');
+    assert.ok(source.includes('data-action="start-cancel"'));
+    assert.ok(source.includes('fromStatus: card.status'), 'RPC call must pass the real source status');
+    assert.ok(source.includes('claimed: Boolean(card.metadata?.claim?.ownerId)'), 'RPC call must pass the claim state');
+    assert.strictEqual(/card\.status\s*=\s*['"]/.test(source), false, 'no optimistic status assignment');
+    assert.strictEqual(source.includes("status: 'done'"), false, 'view must not hardcode a done move');
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

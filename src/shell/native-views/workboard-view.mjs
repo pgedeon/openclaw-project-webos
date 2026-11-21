@@ -11,6 +11,7 @@ import {
   WORKBOARD_STATUSES,
   allowedDispatchSources,
   allowedMoveTargets,
+  allowedStartSources,
   createGatewayRpc,
   createGatewayUnavailableState,
   formatHeartbeatAge,
@@ -71,6 +72,9 @@ function injectCSS() {
     .wb-dispatch{margin-top:14px;border-top:1px solid var(--win11-border);padding-top:10px}
     .wb-dispatch__confirm{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;font-size:.76rem}
     .wb-dispatch__error{margin:8px 0 0;font-size:.75rem;color:#ef4444;word-break:break-word}
+    .wb-start{margin-top:14px;border-top:1px solid var(--win11-border);padding-top:10px}
+    .wb-start__confirm{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;font-size:.76rem}
+    .wb-start__error{margin:8px 0 0;font-size:.75rem;color:#ef4444;word-break:break-word}
   `;
   document.head.appendChild(style);
 }
@@ -161,6 +165,8 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
   let moveError = null;
   let pendingDispatch = null;
   let dispatchError = null;
+  let pendingStart = null;
+  let startError = null;
   let snapshot = { available: true, cards: [], boards: [], columns: {}, statuses: WORKBOARD_STATUSES };
   let disposed = false;
   let pollTimer = null;
@@ -237,6 +243,32 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
         </div>
       `
       : '';
+
+    // Phase 3c: Start is offered only for a startable (backlog/todo/ready),
+    // unclaimed card. The source matrix is the single source of truth; the RPC
+    // guard re-checks both conditions so a stale drawer can never produce a
+    // start frame for an ineligible card.
+    const startAllowed = allowedStartSources(card.status).includes(card.status)
+      && !Boolean(card.metadata?.claim?.ownerId);
+    const startConfirming = pendingStart && pendingStart.cardId === card.id;
+    const startErr = startError && startError.cardId === card.id ? startError.message : '';
+    const startSection = startAllowed
+      ? `
+        <div class="wb-start" data-role="start">
+          <p class="wb-move__label">Start</p>
+          ${startConfirming ? `
+            <div class="wb-start__confirm" data-role="start-confirm">
+              <span>Start this card? This launches its agent.</span>
+              <button type="button" class="wb-ctl" data-action="start-confirm">Confirm start</button>
+              <button type="button" class="wb-ctl" data-action="start-cancel">Cancel</button>
+            </div>
+          ` : `
+            <button type="button" class="wb-ctl" data-action="start-request">Start…</button>
+          `}
+          ${startErr ? `<p class="wb-start__error" data-role="start-error" role="alert">${escapeHtml(startErr)}</p>` : ''}
+        </div>
+      `
+      : '';
     return `
       <aside class="wb-drawer" data-card-id="${escapeHtml(card.id)}">
         <h3>${escapeHtml(card.title || '(untitled)')}</h3>
@@ -252,6 +284,7 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
         </div>
         ${moveSection}
         ${dispatchSection}
+        ${startSection}
         <p style="margin-top:14px"><a class="wb-link" href="${escapeHtml(openUrl)}" target="_blank" rel="noopener">Open in Workboard</a></p>
       </aside>
     `;
@@ -333,6 +366,19 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
     });
     root.querySelector('[data-action="dispatch-cancel"]')?.addEventListener('click', () => {
       pendingDispatch = null;
+      renderBoard();
+    });
+    root.querySelector('[data-action="start-request"]')?.addEventListener('click', () => {
+      if (!selectedId) return;
+      pendingStart = { cardId: selectedId };
+      startError = null;
+      renderBoard();
+    });
+    root.querySelector('[data-action="start-confirm"]')?.addEventListener('click', () => {
+      confirmStart();
+    });
+    root.querySelector('[data-action="start-cancel"]')?.addEventListener('click', () => {
+      pendingStart = null;
       renderBoard();
     });
     root.querySelector('[data-role="board-filter"]')?.addEventListener('change', (event) => {
@@ -464,6 +510,66 @@ export async function renderWorkboardView({ mountNode, gatewayRpc, boardId = 'de
         message: error?.detail || error?.message || 'dispatch failed',
       };
       pendingDispatch = null;
+      renderBoard();
+    }
+  };
+
+  // Phase 3c: ONE governed mutation. No optimistic status change — the card
+  // is re-rendered from the RPC result (or the real list on a missing
+  // payload), and any refusal keeps the gateway's status and shows the reason
+  // inline. The RPC guard re-checks startable + unclaimed before any frame.
+  const confirmStart = async () => {
+    const cardId = pendingStart?.cardId;
+    const card = (snapshot.cards || []).find((item) => item.id === cardId);
+    if (!cardId || !card) {
+      pendingStart = null;
+      renderBoard();
+      return;
+    }
+    if (!rpc?.cards || typeof rpc.cards.startCard !== 'function') {
+      startError = { cardId, message: 'gateway client cannot start cards' };
+      pendingStart = null;
+      renderBoard();
+      return;
+    }
+    startError = null;
+    try {
+      const result = await rpc.cards.startCard({
+        id: card.id,
+        boardId: currentBoard,
+        fromStatus: card.status,
+        claimed: Boolean(card.metadata?.claim?.ownerId),
+      });
+      if (!result || result.started !== true) {
+        startError = {
+          cardId,
+          message: result?.detail || result?.reason || 'start rejected by gateway',
+        };
+        pendingStart = null;
+        renderBoard();
+        return;
+      }
+      if (result.card && result.card.id) {
+        snapshot.cards = (snapshot.cards || []).map((item) => (
+          item.id === result.card.id ? { ...item, ...result.card } : item
+        ));
+        snapshot.columns = groupCardsByStatus(snapshot.cards, snapshot.statuses || WORKBOARD_STATUSES);
+      } else {
+        snapshot = await loadWorkboardSnapshot(rpc, { boardId: currentBoard });
+        if (disposed) return;
+        if (isGatewayUnavailablePayload(snapshot)) {
+          renderUnavailable(snapshot);
+          return;
+        }
+      }
+      pendingStart = null;
+      renderBoard();
+    } catch (error) {
+      startError = {
+        cardId,
+        message: error?.detail || error?.message || 'start failed',
+      };
+      pendingStart = null;
       renderBoard();
     }
   };
