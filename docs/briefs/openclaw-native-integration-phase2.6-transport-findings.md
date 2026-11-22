@@ -192,6 +192,76 @@ task-server change, no production writes.
   until T1–T3 are approved; the tab's `desktop-unavailable`/deep-link path is
   already honest.
 
+## Recommendation (minimal)
+
+**Recommended minimal boot path:** T1 = same-origin plugin HTTP proxy under the
+gateway (`/openclaw/__webos__/*` → `127.0.0.1:8120`) + T2 = server-side
+`DASHBOARD_AUTH_TOKEN` injection by that proxy + T3 = base-aware/relative shell
+entry so the shell document, its `/src/*` modules, and `/api/*` calls all
+resolve under the proxy prefix. This is the only candidate that boots the full
+shell with **no second login**, **no mixed content**, and **no CORS**, because
+every request is same-origin under `https://home.3dput.com/openclaw/`.
+
+Ranking: **(1) proxy path above — recommended, minimal; (2) TLS + CORS +
+token exchange on `:8120` — larger; (3) T4 fallback — zero change, but it
+does not boot the shell, so it is the honest stop state, not the deliverable.**
+T4 is what ships today and remains the fallback until the owner approves (1).
+
+### (a) Every touched surface
+
+| # | Surface | Change | Owner-gated? |
+|---|---------|--------|--------------|
+| S1 | `openclaw-webos` plugin code (already-installed extension, updated in place under the 2026-09-19 Phase 2 approval) | register one `api.registerHttpRoute` handler that streams request/response between the gateway origin and `127.0.0.1:8120`, rewriting `/openclaw/__webos__/src/*` and `/openclaw/__webos__/api/*` to `/src/*` and `/api/*`; serves `index.html` from the plugin | No new config key, but the handler needs the secret in S2 |
+| S2 | Plugin config secret (gateway config) | store `DASHBOARD_AUTH_TOKEN` in the `openclaw-webos` plugin config and add `Authorization: Bearer …` on proxied upstream requests only | **Yes** — new credential in gateway/plugin config |
+| S3 | Repo shell entry (`index.html`, `src/shell/shell-main.mjs`, `src/shell/api-client.mjs`) | make the entry and API base relative/base-aware (no build step) so `/src/*` and `/api/*` are addressable from a subpath; unchanged when served at `/` on `:8120` | No |
+
+Nothing else moves: no task-server TLS listener, no CORS allowlist, no new auth
+mode, no DB migration, no Workboard/tab RPC change.
+
+### (b) Blast radius and rollback per surface
+
+- **S1 plugin route:** blast radius is the gateway HTTP surface — a buggy proxy
+  could stall requests on the new prefix or pin memory on long streams. The
+  route lives under a distinct `/openclaw/__webos__/` prefix, so it cannot
+  shadow existing Control UI routes. Rollback: remove the route registration
+  (or revert the plugin bundle) and restart the gateway; the Workboard tab is
+  unaffected because it uses `host.request` RPC, not HTTP.
+- **S2 secret:** blast radius is credential exposure inside the gateway
+  process/config, which already holds other secrets; the token is never sent to
+  the browser when injection is server-side. Rollback: delete the plugin config
+  key, restart; `:8120` still works with its existing token.
+- **S3 shell base path:** blast radius is the shell's asset/API addressing on
+  both origins. Relative URLs must keep working at `/` on `:8120` (the current
+  direct path). Rollback: revert the shell-entry commit (`git revert`), no
+  build artifacts to clean up because there is no build step.
+
+### (c) Residual risk
+
+- The proxy becomes a new authenticated path into the task-server; it must not
+  forward arbitrary upstream paths. Mitigation: fixed prefix mapping only, no
+  client-supplied target, no passthrough of the browser's `Authorization`
+  header.
+- A leaked gateway operator session could now reach `:8120` through the proxy
+  with the injected token. Same trust boundary as the gateway itself, but it is
+  a widening of reach — acceptable only because the tab is already
+  operator-scoped and the token never reaches client JS.
+- Base-aware shell URLs can regress deep links if a path is missed; covered by
+  the acceptance check that boots from `/openclaw/desktop` with zero token
+  prompts and makes one authenticated `/api/*` call.
+
+### (d) Why TLS + CORS + token exchange on `:8120` is larger
+
+That option changes the security model of the production task-server rather
+than adding a scoped route in front of it: it needs a TLS listener and
+certificate lifecycle on `:8120`, an exact-origin CORS allowlist (replacing the
+current hardcoded `http://localhost:8120` in `task-server.js`), `Vary: Origin`,
+and a credential story across two origins — either a new gateway-identity auth
+mode on the task-server (`/api/auth/*` minter, session support, RBAC
+implications) or a browser-side token exchange that re-introduces the second
+login the brief forbids. It touches more owned surfaces (task-server auth,
+TLS/cert, CORS, possibly the DB/session schema) and is harder to roll back
+than removing one plugin route.
+
 ## Acceptance checks for the follow-up (Branch A)
 
 1. `curl -i` preflight from `https://home.3dput.com` returns
