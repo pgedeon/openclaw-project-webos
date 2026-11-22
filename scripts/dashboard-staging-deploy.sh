@@ -19,6 +19,21 @@
 #   scripts/dashboard-staging-deploy.sh              # full deploy + verify
 #   scripts/dashboard-staging-deploy.sh --skip-deps  # skip npm install on dev
 #
+# Windows repo-owner flow (rsync is NOT installed on Windows today):
+#   This script needs a local rsync binary on the caller side, so running it
+#   directly from the Windows checkout fails. The proven path is dev-side:
+#     1) ssh dev
+#     2) shallow clone origin main into a temp dir (git clone --depth 1 \
+#          --branch main <origin-url> /tmp/webos-deploy-$$)
+#     3) rsync -a --delete with THIS SAME exclusion list from the clone into
+#          ~/www/staging/openclaw-dashboard/ (the --exclude /dist rule below
+#          plus node_modules, .git, screenshots, test-results,
+#          playwright-report, data, .codex, .github, .env)
+#     4) restart + health gate exactly as steps 5/6 below (argv-selected
+#          restart via scripts/lib/staging-pids.sh, then /api/health)
+#   A Windows-local invocation would need an rsync binary installed on Windows;
+#   that is absent today and is NOT required for the dev-side flow above.
+#
 # Env overrides:
 #   DEV_HOST (default "dev"), DEV_ADDR (default "192.168.0.81"),
 #   STAGING_PORT (default 8120)
@@ -49,7 +64,7 @@ rsync -az --delete -e ssh \
   --exclude data \
   --exclude .codex \
   --exclude .github \
-  --exclude dist \
+  --exclude /dist \
   --exclude .env \
   "$REPO_DIR/" "$DEV_HOST:$WEBROOT/"
 
