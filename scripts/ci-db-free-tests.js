@@ -117,12 +117,24 @@ for (const name of INCLUDED) {
   });
 
   const timedOut = res.signal === 'SIGTERM';
+  const output = `${res.stdout || ''}${res.stderr || ''}`.trim();
   if (res.status === 0 && !timedOut) {
     console.log(`PASS ${name}`);
+    // A green run must not hide that the host-coupled live section did not
+    // execute: surface its explicit SKIP/executed line (2026-11-22).
+    if (name === 'test-settings.js') {
+      const liveLines = output
+        .split('\n')
+        .filter(line => /SKIP live API section|Live API section executed/.test(line));
+      if (liveLines.length) {
+        for (const line of liveLines) console.log(`  ${line.trim()}`);
+      } else {
+        console.log('  ⚠️  test-settings.js reported no live API section status line');
+      }
+    }
   } else {
     failed++;
     console.error(`FAIL ${name}${timedOut ? ` — timed out after ${TEST_TIMEOUT_MS}ms` : ` — exit code ${res.status}`}`);
-    const output = `${res.stdout || ''}${res.stderr || ''}`.trim();
     if (output) {
       const tail = output.split('\n').slice(-40).join('\n');
       console.error(tail.replace(/^/gm, '  | '));
