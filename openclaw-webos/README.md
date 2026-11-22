@@ -19,6 +19,28 @@ Target: installed OpenClaw **2026.11.3**.
 `/openclaw/` and `/openclaw/desktop` serving the same Control UI shell is
 **expected** — the slug is a Control UI address, not a separate HTTP route.
 
+## Full desktop shell in the tab — blocked (Phase 2.6, 2026-11-22)
+
+This extension intentionally mounts the **Workboard view**, not the full
+desktop shell. First-hand Step 0 evidence (card `cef78f32`) shows the shell
+cannot boot in the gateway tab without a transport/security change:
+
+- `:8120` replies `Access-Control-Allow-Origin: http://localhost:8120` for
+  every `Origin` (no `Vary`), so the Control UI origin is blocked by CORS.
+- The desktop token is env-only; `index.html` gates boot on a manual token
+  prompt and stores it in `localStorage`. No gateway token exchange exists,
+  and the gateway process does not carry `DASHBOARD_AUTH_TOKEN`.
+- The gateway is HTTPS-only while `:8120` is plain HTTP (mixed content), and
+  this plugin's asset route serves only `.js`/`.css` — no HTML or `/api`
+  proxy.
+- `api.registerHttpRoute` is available at runtime but would still need the
+  task-server token server-side and rewriting for `/src/*` and `/api/*`.
+
+See `docs/briefs/openclaw-native-integration-phase2.6-transport-findings.md`.
+Do not add shell modules or an HTML route here until an owner-approved card
+decides transport, token, and base-path strategy. The honest fallback is the
+current Workboard tab plus the `:8120` deep link.
+
 ## Packaging (mirrors the in-tree workboard plugin)
 
 | File | Role |

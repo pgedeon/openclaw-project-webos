@@ -333,7 +333,15 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       QA), 3b dispatch (bfb77fd7 + 92c1b962/cf982b79), 3c start (939d76e3 +
       b69b2766), 3d create (cecac653 + 61bc9313) — all 2026-11-20/21, each
       with CHANGELOG + `docs/views-reference.md` updates and ci-db-free /
-      docs-drift green. Phase 3 write-back scope is COMPLETE. Phase 4 de-dup
+      docs-drift green. Phase 3 write-back scope is COMPLETE. Phase 2.6
+      full-shell tab (card cef78f32, 2026-11-22) investigated first-hand and
+      STOPPED at Branch B: :8120 CORS is hardcoded to localhost, the desktop
+      token has no gateway exchange (manual prompt), gateway HTTPS vs :8120
+      plain HTTP is mixed content, and the plugin asset route serves only
+      .js/.css. Findings in
+      docs/briefs/openclaw-native-integration-phase2.6-transport-findings.md;
+      Branch A needs an owner-approved transport/token card. The tab stays
+      Workboard-only with the honest :8120 link. Phase 4 de-dup
       review remains the owner checkpoint; no Phase 4 card is queued until
       the owner rules (reported awaiting-owner each WebOS pass).
 
