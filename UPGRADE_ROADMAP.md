@@ -343,7 +343,10 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       plain HTTP is mixed content, and the plugin asset route serves only
       .js/.css. Findings in
       docs/briefs/openclaw-native-integration-phase2.6-transport-findings.md;
-      Branch A needs an owner-approved transport/token card. The tab stays
+      Branch A needs an owner-approved transport/token card — queued
+      2026-11-22 as owner decision `02caef9d-8642-4599-9e09-bfcb6d0cc7a3`
+      (todo, options: proxy+token injection [recommended] / TLS+CORS /
+      keep fallback). The tab stays
       Workboard-only with the honest :8120 link. Phase 4 de-dup review
       remains the owner checkpoint; no Phase 4 card is queued until the
       owner rules (reported awaiting-owner each WebOS pass).
