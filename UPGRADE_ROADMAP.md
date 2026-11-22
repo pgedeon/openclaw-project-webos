@@ -333,9 +333,14 @@ delegate to agents (no SPOF script), halt must disable the trigger, escalate lou
       QA), 3b dispatch (bfb77fd7 + 92c1b962/cf982b79), 3c start (939d76e3 +
       b69b2766), 3d create (cecac653 + 61bc9313) — all 2026-11-20/21, each
       with CHANGELOG + `docs/views-reference.md` updates and ci-db-free /
-      docs-drift green. Phase 3 write-back scope is COMPLETE. Phase 4 de-dup
-      review remains the owner checkpoint; no Phase 4 card is queued until
-      the owner rules (reported awaiting-owner each WebOS pass).
+      docs-drift green. Phase 3 write-back scope is COMPLETE. Phase 2's
+      remaining acceptance item (full desktop shell, not Workboard-only, in
+      the tab) is queued 2026-11-22 as
+      `webos:openclaw-native-integration:phase2.6:full-desktop-shell-tab:v1`
+      with scope in the brief §2.6; it may legitimately end in a transport
+      findings doc if boot needs new gateway config (owner-gated). Phase 4
+      de-dup review remains the owner checkpoint; no Phase 4 card is queued
+      until the owner rules (reported awaiting-owner each WebOS pass).
 
 - [x] **[candidate] Workflow data normalization migration** — repair the
       `timed_out` CHECK-constraint violation (migration 021) and lift 14/29
