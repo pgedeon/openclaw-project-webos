@@ -450,7 +450,10 @@ The hourly cron's sprint job is done (127 commits in ~2.5 days; 23/23 items;
 3. Community PR review — same-day turnaround for external PRs (anupamme
    cadence).
 4. Dependency watch — ONE designated run per week: `npm outdated` + prod-deps
-   audit review (first queued outcome: ws ≥8.20.2 non-breaking bump).
+   audit review (first queued outcome: ws ≥8.20.2 non-breaking bump). Watch ran
+   2026-11-24: all five outdated direct deps bumped (pg 8.23.1, ws 8.23.0,
+   @playwright/test 1.65.1, puppeteer[-core] 25.18.1), 4 HIGH dev zod findings
+   cleared, audit 0/0, `npm outdated` empty; no package held.
 5. Scoped work items — only what a review brief or the owner queued.
    **An empty queue is a valid outcome; inventing work is not.**
 

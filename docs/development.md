@@ -242,10 +242,10 @@ response body, artifact byte, and MCP frame.
 
 GitHub Actions workflow `.github/workflows/ci.yml` runs on every push/PR to `main`:
 
-- **verify** job: syntax check (`node --check` over root/routes/storage/scripts/src), docs drift check, DB-free test suite (`scripts/ci-db-free-tests.js`), and an `npm audit --omit=dev --audit-level=critical` gate — critical-or-higher vulnerabilities in production dependencies fail the build; dev-dependency findings and moderate-and-below never block.
+- **verify** job: syntax check (`node --check` over root/routes/storage/scripts/src), docs drift check, DB-free test suite (`scripts/ci-db-free-tests.js`), and an `npm audit --omit=dev --audit-level=high` gate — high-or-critical vulnerabilities in production dependencies fail the build; dev-dependency findings and moderate-and-below never block.
 - **e2e** job: DB-free Playwright smoke suite against a json_snapshot server (separate job so e2e failures do not block the verify gates).
 
-The audit level starts at `critical` because the current prod tree carries 5 known-open HIGH advisories (ws 8.20.0 direct dep; extract-zip 2.0.1 via puppeteer-core 24.x). Once ws >= 8.20.2 and puppeteer[-core] >= 25 land, tighten to `--audit-level=high` (path documented in the workflow comment).
+The audit level was tightened from `critical` to `high` on 2026-08-26 after the ws and puppeteer[-core] hardening landed. As of the 2026-11-24 dependency watch the tree carries `pg@8.23.1`, `ws@8.23.0`, `@playwright/test@1.65.1` and `puppeteer[-core]@25.18.1`; both `npm audit --omit=dev --audit-level=high` and `npm audit` report 0 vulnerabilities.
 
 ## Performance Notes
 
