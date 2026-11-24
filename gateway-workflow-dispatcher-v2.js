@@ -490,6 +490,16 @@ class GatewayWorkflowDispatcherV2 {
       const injected = this.options.budgetAlertGatewayClient;
       this.budgetAlertGetClient = typeof injected === 'function' ? injected : () => injected;
     }
+    // Wake hook seam (DB-free tests). With no option passed, this.wakeAgent is
+    // the prototype method below and production behavior is byte-for-byte
+    // unchanged. Tests inject a recording fake so dispatch never shells out to
+    // the real `openclaw system event` CLI (live events + ~1.8 s/run latency).
+    if (this.options.wakeAgent !== undefined) {
+      const injectedWake = this.options.wakeAgent;
+      this.wakeAgent = typeof injectedWake === 'function'
+        ? injectedWake.bind(this)
+        : injectedWake;
+    }
   }
 
   /**

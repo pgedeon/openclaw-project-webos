@@ -36,6 +36,32 @@ const { GatewayWorkflowDispatcherV2 } = require('../gateway-workflow-dispatcher-
 const { createBudgetEnforcement, scopePredicate } = require('../lib/budget-enforcement');
 const { periodKey } = require('../lib/budget-eval');
 
+// ─── DB-free wake seam ─────────────────────────────────────────────
+// Dispatch must never shell out to the real `openclaw system event` CLI in a
+// DB-free test: that posts live events into the main agent and adds ~1.8 s per
+// run. Every dispatcher below is built through makeDispatcher(), which injects
+// this recording fake via the constructor's wakeAgent option.
+const wakeCalls = [];
+function fakeWake(run) { wakeCalls.push(run); return true; }
+function resetWake() { wakeCalls.length = 0; }
+function isLog(v) { return !!(v && typeof v.log === 'function' && typeof v.error === 'function'); }
+function makeDispatcher(poolOrOptions, optionsOrLog, maybeLog) {
+  const hasPool = !!(poolOrOptions && typeof poolOrOptions.query === 'function');
+  if (hasPool) {
+    if (optionsOrLog && typeof optionsOrLog === 'object' && !isLog(optionsOrLog)) {
+      return new GatewayWorkflowDispatcherV2(poolOrOptions, { ...optionsOrLog, wakeAgent: fakeWake }, maybeLog);
+    }
+    if (optionsOrLog === undefined) {
+      return new GatewayWorkflowDispatcherV2(poolOrOptions, { wakeAgent: fakeWake }, maybeLog);
+    }
+    return new GatewayWorkflowDispatcherV2(poolOrOptions, { wakeAgent: fakeWake }, optionsOrLog);
+  }
+  if (isLog(poolOrOptions)) {
+    return new GatewayWorkflowDispatcherV2(poolOrOptions, { wakeAgent: fakeWake }, optionsOrLog);
+  }
+  return new GatewayWorkflowDispatcherV2({ ...(poolOrOptions || {}), wakeAgent: fakeWake }, optionsOrLog, maybeLog);
+}
+
 // ─── Fake pool ─────────────────────────────────────────────────────
 
 function makePool(opts = {}) {
@@ -459,7 +485,8 @@ async function testDispatcherPauseHoldsCandidate() {
     candidateBatches: [[candidateRow()], [candidateRow()]], // one candidate per tick
     markDispatchedRow: dispatchedRunRow(),
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  resetWake();
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
 
   const dispatched1 = await d.dispatchQueuedRuns();
   assert.strictEqual(dispatched1.length, 0, 'breached pause_new_runs dispatches nothing');
@@ -481,6 +508,7 @@ async function testDispatcherPauseHoldsCandidate() {
   assert.strictEqual(eventInsertRowsLanded(pool), 1, '…but the UNIQUE latch let exactly one through');
   assert.strictEqual(inserts[0].params[2], 'paused');
   assert.match(inserts[0].sql, /ON CONFLICT \(budget_id, period_key, event_kind\) DO NOTHING/);
+  assert.strictEqual(wakeCalls.length, 0, 'paused run never wakes the agent');
 }
 
 function eventInsertRowsLanded(pool) {
@@ -498,7 +526,8 @@ async function testDispatcherHardStopCancelsQueuedCandidate() {
     cancelledIds: ['run-inflight-1'],
     candidates: [candidateRow()],
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  resetWake();
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
 
   const dispatched = await d.dispatchQueuedRuns();
   assert.strictEqual(dispatched.length, 0);
@@ -523,6 +552,7 @@ async function testDispatcherHardStopCancelsQueuedCandidate() {
     0,
     'cancelled candidate is never dispatched'
   );
+  assert.strictEqual(wakeCalls.length, 0, 'cancelled run never wakes the agent');
 }
 
 // ─── Dispatcher: warn dispatches normally (AC6) ────────────────────
@@ -535,7 +565,8 @@ async function testDispatcherWarnDispatches() {
     candidates: [candidateRow()],
     markDispatchedRow: dispatchedRunRow(),
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  resetWake();
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
 
   const dispatched = await d.dispatchQueuedRuns();
   assert.strictEqual(dispatched.length, 1, 'warn dispatches normally');
@@ -544,6 +575,8 @@ async function testDispatcherWarnDispatches() {
   const inserts = pool.calls.filter((c) => /INSERT INTO budget_events/.test(c.sql));
   assert.strictEqual(inserts.length, 1);
   assert.strictEqual(inserts[0].params[2], 'warned');
+  assert.strictEqual(wakeCalls.length, 1, 'one wake per dispatched run');
+  assert.strictEqual(wakeCalls[0], dispatched[0], 'wake receives the dispatched run');
 }
 
 // ─── Dispatcher: cache spans ticks (AC8) + inert zero budgets (AC9)─
@@ -556,7 +589,7 @@ async function testDispatcherCacheSpansTicks() {
     candidateBatches: [[candidateRow()], [candidateRow()]],
     markDispatchedRow: dispatchedRunRow(),
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
   await d.dispatchQueuedRuns();
   await d.dispatchQueuedRuns(); // inside one poll interval
 
@@ -578,7 +611,8 @@ async function testDispatcherZeroBudgetsByteIdentical() {
     candidates: [candidateRow(), candidateRow({ id: 'run-2' })],
     markDispatchedRow: dispatchedRunRow(),
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  resetWake();
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
 
   const dispatched = await d.dispatchQueuedRuns();
   assert.strictEqual(dispatched.length, 2, 'both candidates dispatched');
@@ -591,6 +625,8 @@ async function testDispatcherZeroBudgetsByteIdentical() {
   assert.strictEqual(pool.calls.filter((c) => /SUM\(cost_estimate\)/.test(c.sql)).length, 0);
   assert.strictEqual(pool.calls.filter((c) => /budget_events/.test(c.sql)).length, 0);
   assert.strictEqual(pool.calls.filter((c) => /agent_profiles/.test(c.sql)).length, 0);
+  assert.strictEqual(wakeCalls.length, 2, 'one wake per dispatched run');
+  dispatched.forEach((run, i) => assert.strictEqual(wakeCalls[i], run, 'wake receives the dispatched run'));
 }
 
 // ─── Dispatcher: fail-open without PostgreSQL ──────────────────────
@@ -601,7 +637,7 @@ async function testDispatcherFailOpenWithoutDatabase() {
     candidates: [candidateRow()],
     markDispatchedRow: dispatchedRunRow(),
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
 
   const dispatched = await d.dispatchQueuedRuns();
   assert.strictEqual(dispatched.length, 1, 'enforcement OFF → dispatch unchanged');
@@ -637,7 +673,7 @@ async function testRetryPathBlockedByPause() {
     eventInsertRows: [{ id: 1 }],
     staleDispatched: [staleRunRow()],
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
   const result = await d.retryStaleDispatchedRuns();
 
   assert.strictEqual(result.retried.length, 0, 'retry held by breached budget');
@@ -663,7 +699,7 @@ async function testRetryPathTimeoutStillFiresWhenBreached() {
     })],
     timedOutRow: { id: 'run-stale', status: 'timed_out' },
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
   const result = await d.retryStaleDispatchedRuns();
 
   assert.strictEqual(result.retried.length, 0);
@@ -678,7 +714,7 @@ async function testRetryPathHardStopCancelsInFlight() {
     cancelledIds: ['run-stale'],
     staleDispatched: [staleRunRow()],
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
   const result = await d.retryStaleDispatchedRuns();
 
   assert.strictEqual(result.retried.length, 0);
@@ -698,7 +734,7 @@ async function testRetryPathDispatchesWhenUnderCap() {
     staleDispatched: [staleRunRow()],
     refreshedRow: { id: 'run-stale', status: 'dispatched', dispatched_at: new Date().toISOString() },
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
   const result = await d.retryStaleDispatchedRuns();
   assert.strictEqual(result.retried.length, 1, 'under-cap retry proceeds normally');
 }
@@ -712,7 +748,7 @@ async function testTickSummaryCarriesBudgetCounts() {
     eventInsertRows: [{ id: 1 }],
     candidates: [candidateRow()],
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
   const summary = await d.tick();
   assert.deepStrictEqual(summary.budgetEnforcement, { held: 1, stopped: 0, warned: 0 });
 }
@@ -752,7 +788,7 @@ async function testDispatcherEmitsOnePauseFramePerLatch() {
     markDispatchedRow: dispatchedRunRow(),
   });
   const frames = [];
-  const d = new GatewayWorkflowDispatcherV2(pool, {
+  const d = makeDispatcher(pool, {
     pollIntervalMs: 30000,
     budgetSseBroadcast: (event, data) => frames.push({ event, data }),
   });
@@ -795,7 +831,7 @@ async function testDispatcherEmitsHardStopFrameFromPrimaryInsert() {
     candidates: [candidateRow()],
   });
   const frames = [];
-  const d = new GatewayWorkflowDispatcherV2(pool, {
+  const d = makeDispatcher(pool, {
     pollIntervalMs: 30000,
     budgetSseBroadcast: (event, data) => frames.push({ event, data }),
   });
@@ -817,7 +853,7 @@ async function testDispatcherWarnEmitsNoBreachFrame() {
     markDispatchedRow: dispatchedRunRow(),
   });
   const frames = [];
-  const d = new GatewayWorkflowDispatcherV2(pool, {
+  const d = makeDispatcher(pool, {
     pollIntervalMs: 30000,
     budgetSseBroadcast: (event, data) => frames.push({ event, data }),
   });
@@ -837,7 +873,7 @@ async function testBroadcasterThrowDoesNotBreakDispatch() {
     eventInsertRows: [{ id: 1 }],
     candidates: [candidateRow()],
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, {
+  const d = makeDispatcher(pool, {
     pollIntervalMs: 30000,
     budgetSseBroadcast: () => { throw new Error('sse sink down'); },
   });
@@ -856,7 +892,7 @@ async function testDefaultBroadcasterResolvesWithoutInjection() {
     eventInsertRows: [{ id: 1 }],
     candidates: [candidateRow()],
   });
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 30000 });
+  const d = makeDispatcher(pool, { pollIntervalMs: 30000 });
   const dispatched = await d.dispatchQueuedRuns();
   assert.strictEqual(dispatched.length, 0);
   assert.strictEqual(typeof d.getBudgetBroadcaster(), 'function', 'default dual-channel broadcaster resolves');

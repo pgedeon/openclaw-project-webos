@@ -33,6 +33,7 @@ A database-first dispatcher that runs as a background process alongside `task-se
 | `staleClaimMs` | 600,000 (10 min) | Time before a claimed run is considered stale |
 | `maxDispatchRetries` | 3 | Max dispatch attempts before marking failed |
 | `batchSize` | 10 | Max runs processed per poll cycle |
+| `wakeAgent` | built-in `openclaw system event` CLI | Optional `(run) => boolean` hook called once per dispatched run; injected by DB-free tests to avoid spawning a child process. Production default is unchanged. |
 
 ### Workflow Agent Routing Table
 

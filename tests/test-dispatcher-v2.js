@@ -7,6 +7,32 @@
 const assert = require('assert');
 const { GatewayWorkflowDispatcherV2, normalizeRunRow, normalizeStatsRow, DEFAULT_OPTIONS } = require('../gateway-workflow-dispatcher-v2.js');
 
+// ─── DB-free wake seam ─────────────────────────────────────────────
+// Dispatch must never shell out to the real `openclaw system event` CLI in a
+// DB-free test: that posts live events into the main agent and adds ~1.8 s per
+// run. Every dispatcher below is built through makeDispatcher(), which injects
+// this recording fake via the constructor's wakeAgent option.
+const wakeCalls = [];
+function fakeWake(run) { wakeCalls.push(run); return true; }
+function resetWake() { wakeCalls.length = 0; }
+function isLog(v) { return !!(v && typeof v.log === 'function' && typeof v.error === 'function'); }
+function makeDispatcher(poolOrOptions, optionsOrLog, maybeLog) {
+  const hasPool = !!(poolOrOptions && typeof poolOrOptions.query === 'function');
+  if (hasPool) {
+    if (optionsOrLog && typeof optionsOrLog === 'object' && !isLog(optionsOrLog)) {
+      return new GatewayWorkflowDispatcherV2(poolOrOptions, { ...optionsOrLog, wakeAgent: fakeWake }, maybeLog);
+    }
+    if (optionsOrLog === undefined) {
+      return new GatewayWorkflowDispatcherV2(poolOrOptions, { wakeAgent: fakeWake }, maybeLog);
+    }
+    return new GatewayWorkflowDispatcherV2(poolOrOptions, { wakeAgent: fakeWake }, optionsOrLog);
+  }
+  if (isLog(poolOrOptions)) {
+    return new GatewayWorkflowDispatcherV2(poolOrOptions, { wakeAgent: fakeWake }, optionsOrLog);
+  }
+  return new GatewayWorkflowDispatcherV2({ ...(poolOrOptions || {}), wakeAgent: fakeWake }, optionsOrLog, maybeLog);
+}
+
 let passed = 0;
 let failed = 0;
 
@@ -135,20 +161,20 @@ console.log('\n=== Constructor ===');
 
 test('accepts injected pool', () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool, {});
+  const d = makeDispatcher(pool, {});
   assert.strictEqual(d.pool, pool);
   assert.strictEqual(d.ownsPool, false);
 });
 
 test('creates default pool when no pool injected', () => {
-  const d = new GatewayWorkflowDispatcherV2({}, console);
+  const d = makeDispatcher({}, console);
   assert.strictEqual(d.ownsPool, true);
   d.close(); // cleanup
 });
 
 test('applies default options', () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   assert.strictEqual(d.options.pollIntervalMs, DEFAULT_OPTIONS.pollIntervalMs);
   assert.strictEqual(d.options.maxDispatchRetries, 3);
   assert.strictEqual(d.options.staleDispatchMs, 5 * 60 * 1000);
@@ -156,7 +182,7 @@ test('applies default options', () => {
 
 test('merges custom options with defaults', () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool, { maxDispatchRetries: 5, batchSize: 20 });
+  const d = makeDispatcher(pool, { maxDispatchRetries: 5, batchSize: 20 });
   assert.strictEqual(d.options.maxDispatchRetries, 5);
   assert.strictEqual(d.options.batchSize, 20);
   assert.strictEqual(d.options.pollIntervalMs, DEFAULT_OPTIONS.pollIntervalMs);
@@ -164,7 +190,7 @@ test('merges custom options with defaults', () => {
 
 test('not running by default', () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   assert.strictEqual(d.running, false);
 });
 
@@ -174,7 +200,7 @@ console.log('\n=== start/stop ===');
 
 test('start sets running to true', () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   d.start();
   assert.strictEqual(d.running, true);
   d.stop();
@@ -182,7 +208,7 @@ test('start sets running to true', () => {
 
 test('stop clears interval and running state', () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   d.start();
   d.stop();
   assert.strictEqual(d.running, false);
@@ -191,7 +217,7 @@ test('stop clears interval and running state', () => {
 
 test('start is idempotent', () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   d.start();
   d.start();
   assert.strictEqual(d.running, true);
@@ -211,7 +237,7 @@ test('tick dispatches queued runs', async () => {
     "COALESCE(wr.claimed_at, wr.started_at, wr.created_at) <= NOW()": () => ({ rows: [] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 999999 });
+  const d = makeDispatcher(pool, { pollIntervalMs: 999999 });
   const summary = await d.tick();
 
   assert.strictEqual(summary.dispatchedCount, 1);
@@ -228,7 +254,7 @@ test('tick returns empty summary for idle system', async () => {
     "COALESCE(wr.claimed_at, wr.started_at, wr.created_at) <= NOW()": () => ({ rows: [] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool, { pollIntervalMs: 999999 });
+  const d = makeDispatcher(pool, { pollIntervalMs: 999999 });
   const summary = await d.tick();
 
   assert.strictEqual(summary.dispatchedCount, 0);
@@ -245,7 +271,7 @@ test('tick sets lastTickAt and clears lastTickError on success', async () => {
     "COALESCE(wr.claimed_at, wr.started_at, wr.created_at) <= NOW()": () => ({ rows: [] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   await d.tick();
 
   assert.ok(d.lastTickAt);
@@ -258,7 +284,7 @@ console.log('\n=== claimRun ===');
 
 test('requires sessionId', async () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   await assert.rejects(() => d.claimRun('run-1', {}), /sessionId is required/);
 });
 
@@ -269,7 +295,7 @@ test('returns run on successful claim', async () => {
     })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const run = await d.claimRun('run-001', { sessionId: 'sess-1' });
   assert.ok(run);
   assert.strictEqual(run.status, 'claimed');
@@ -281,7 +307,7 @@ test('returns null when run is not available (already claimed)', async () => {
     "wr.status = 'dispatched'": () => ({ rows: [] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const run = await d.claimRun('run-001', { sessionId: 'sess-1' });
   assert.strictEqual(run, null);
 });
@@ -292,7 +318,7 @@ console.log('\n=== heartbeatRun ===');
 
 test('requires sessionId', async () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   await assert.rejects(() => d.heartbeatRun('run-1', {}), /sessionId is required/);
 });
 
@@ -303,7 +329,7 @@ test('updates heartbeat on claimed/running run', async () => {
     })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const run = await d.heartbeatRun('run-001', { sessionId: 'sess-1' });
   assert.ok(run);
 });
@@ -313,7 +339,7 @@ test('returns null when session mismatch', async () => {
     "status IN ('claimed', 'running')": () => ({ rows: [] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const run = await d.heartbeatRun('run-001', { sessionId: 'sess-wrong' });
   assert.strictEqual(run, null);
 });
@@ -329,7 +355,7 @@ test('completes a running run', async () => {
     })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const run = await d.completeRun('run-001', { sessionId: 'sess-1', outputSummary: { result: 'ok' } });
   assert.ok(run);
   assert.strictEqual(run.status, 'completed');
@@ -340,7 +366,7 @@ test('returns null when run not found for completion', async () => {
     "status IN ('claimed', 'running')": () => ({ rows: [] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const run = await d.completeRun('run-001');
   assert.strictEqual(run, null);
 });
@@ -354,7 +380,7 @@ test('returns empty array when no pending runs', async () => {
     "wr.status = 'dispatched'": () => ({ rows: [] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const runs = await d.getPendingRuns();
   assert.deepStrictEqual(runs, []);
 });
@@ -366,7 +392,7 @@ test('returns normalized pending runs', async () => {
     })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const runs = await d.getPendingRuns();
   assert.strictEqual(runs.length, 1);
   assert.strictEqual(runs[0].status, 'dispatched');
@@ -382,7 +408,7 @@ test('returns zeroed stats for empty database', async () => {
     'SELECT COUNT(*)': () => ({ rows: [{ route_count: 0 }] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const stats = await d.getStats();
 
   assert.strictEqual(stats.queuedCount, 0);
@@ -396,7 +422,7 @@ test('computes failure rate from stats', async () => {
     'SELECT COUNT(*)': () => ({ rows: [{ route_count: 3 }] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const stats = await d.getStats();
 
   assert.strictEqual(stats.dispatchCount, 10);
@@ -418,7 +444,7 @@ test('returns normalized run by id', async () => {
     })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const run = await d.getRun('run-001');
   assert.ok(run);
   assert.strictEqual(run.workflowType, 'test-workflow');
@@ -429,7 +455,7 @@ test('returns null for non-existent run', async () => {
     "wr.id = $1": () => ({ rows: [] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const run = await d.getRun('nonexistent');
   assert.strictEqual(run, null);
 });
@@ -458,7 +484,7 @@ test('GET /api/workflow-runs/pending returns runs', async () => {
     "wr.status = 'dispatched'": () => ({ rows: [{ ...fakeRun({ status: 'dispatched' }), routed_agent_id: 'agent-1' }] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const req = fakeReq('GET', '/api/workflow-runs/pending');
   const res = fakeRes();
 
@@ -476,7 +502,7 @@ test('POST /api/workflow-runs/:id/claim claims a run', async () => {
     })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const req = fakeReq('POST', '/api/workflow-runs/run-001/claim');
   const res = fakeRes();
 
@@ -493,7 +519,7 @@ test('POST /api/workflow-runs/:id/claim returns 409 when already claimed', async
     "wr.id = $1\n      LIMIT 1": () => ({ rows: [{ ...fakeRun({ status: 'claimed', claim_session_id: 'sess-other' }) }] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const req = fakeReq('POST', '/api/workflow-runs/run-001/claim');
   const res = fakeRes();
 
@@ -504,7 +530,7 @@ test('POST /api/workflow-runs/:id/claim returns 409 when already claimed', async
 
 test('POST /api/workflow-runs/:id/claim returns 400 when no sessionId', async () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const req = fakeReq('POST', '/api/workflow-runs/run-001/claim');
   const res = fakeRes();
 
@@ -521,7 +547,7 @@ test('POST /api/workflow-runs/:id/heartbeat updates heartbeat', async () => {
     })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const req = fakeReq('POST', '/api/workflow-runs/run-001/heartbeat');
   const res = fakeRes();
 
@@ -537,7 +563,7 @@ test('POST /api/workflow-runs/:id/complete completes a run', async () => {
     })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const req = fakeReq('POST', '/api/workflow-runs/run-001/complete');
   const res = fakeRes();
 
@@ -552,7 +578,7 @@ test('GET /api/workflow-runs/dispatcher/stats returns stats', async () => {
     'SELECT COUNT(*)': () => ({ rows: [{ route_count: 0 }] })
   });
 
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const req = fakeReq('GET', '/api/workflow-runs/dispatcher/stats');
   const res = fakeRes();
 
@@ -565,7 +591,7 @@ test('GET /api/workflow-runs/dispatcher/stats returns stats', async () => {
 
 test('OPTIONS returns CORS headers', async () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const req = fakeReq('OPTIONS', '/api/workflow-runs/pending');
   const res = fakeRes();
 
@@ -577,7 +603,7 @@ test('OPTIONS returns CORS headers', async () => {
 
 test('returns false for unrecognized paths', async () => {
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const req = fakeReq('GET', '/api/unknown');
   const res = fakeRes();
 
@@ -592,7 +618,7 @@ console.log('\n=== createGatewayWorkflowDispatcherV2Handler ===');
 test('creates handler with injected dispatcher', () => {
   const { createGatewayWorkflowDispatcherV2Handler } = require('../gateway-workflow-dispatcher-v2.js');
   const pool = createFakePool();
-  const d = new GatewayWorkflowDispatcherV2(pool);
+  const d = makeDispatcher(pool);
   const handler = createGatewayWorkflowDispatcherV2Handler(d);
   assert.strictEqual(handler.dispatcher, d);
   assert.strictEqual(typeof handler, 'function');
@@ -630,7 +656,7 @@ function breachItem(overrides = {}) {
 (async () => {
   test('emitBudgetBreachFrames fans out to channel notifier after SSE emit', async () => {
     const sent = [];
-    const d = new GatewayWorkflowDispatcherV2(createFakePool(), {
+    const d = makeDispatcher(createFakePool(), {
       budgetSseBroadcast: () => {},
       budgetAlertGatewayClient: {
         sendDelivery({ channel, to, message }) {
@@ -659,7 +685,7 @@ function breachItem(overrides = {}) {
 
   test('notifier disabled by default (BUDGET_ALERT_CHANNEL unset) ⇒ zero sends', async () => {
     const sent = [];
-    const d = new GatewayWorkflowDispatcherV2(createFakePool(), {
+    const d = makeDispatcher(createFakePool(), {
       budgetSseBroadcast: () => {},
       budgetAlertGatewayClient: {
         sendDelivery() { sent.push(1); return Promise.resolve({ ok: true }); },

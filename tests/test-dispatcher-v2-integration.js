@@ -6,6 +6,32 @@
 
 const assert = require('assert');
 const { GatewayWorkflowDispatcherV2 } = require('../gateway-workflow-dispatcher-v2.js');
+
+// ─── DB-free wake seam ─────────────────────────────────────────────
+// Dispatch must never shell out to the real `openclaw system event` CLI in a
+// DB-free test: that posts live events into the main agent and adds ~1.8 s per
+// run. Every dispatcher below is built through makeDispatcher(), which injects
+// this recording fake via the constructor's wakeAgent option.
+const wakeCalls = [];
+function fakeWake(run) { wakeCalls.push(run); return true; }
+function resetWake() { wakeCalls.length = 0; }
+function isLog(v) { return !!(v && typeof v.log === 'function' && typeof v.error === 'function'); }
+function makeDispatcher(poolOrOptions, optionsOrLog, maybeLog) {
+  const hasPool = !!(poolOrOptions && typeof poolOrOptions.query === 'function');
+  if (hasPool) {
+    if (optionsOrLog && typeof optionsOrLog === 'object' && !isLog(optionsOrLog)) {
+      return new GatewayWorkflowDispatcherV2(poolOrOptions, { ...optionsOrLog, wakeAgent: fakeWake }, maybeLog);
+    }
+    if (optionsOrLog === undefined) {
+      return new GatewayWorkflowDispatcherV2(poolOrOptions, { wakeAgent: fakeWake }, maybeLog);
+    }
+    return new GatewayWorkflowDispatcherV2(poolOrOptions, { wakeAgent: fakeWake }, optionsOrLog);
+  }
+  if (isLog(poolOrOptions)) {
+    return new GatewayWorkflowDispatcherV2(poolOrOptions, { wakeAgent: fakeWake }, optionsOrLog);
+  }
+  return new GatewayWorkflowDispatcherV2({ ...(poolOrOptions || {}), wakeAgent: fakeWake }, optionsOrLog, maybeLog);
+}
 const pg = require('pg');
 
 const DB_CONFIG = {
@@ -101,7 +127,8 @@ async function runAllTests() {
 
   await setup();
 
-  const dispatcher = new GatewayWorkflowDispatcherV2(pool, {
+  resetWake();
+  const dispatcher = makeDispatcher(pool, {
     pollIntervalMs: 999999,
     staleClaimMs: 60 * 1000,
     staleDispatchMs: 30 * 1000,
@@ -117,6 +144,7 @@ async function runAllTests() {
     await test('tick dispatches queued runs', async () => {
       const summary = await dispatcher.tick();
       assert.strictEqual(summary.dispatchedCount, 2);
+      assert.strictEqual(wakeCalls.length, 2, 'one wake per dispatched run');
 
       const r1 = await getRunStatus(runId1);
       assert.strictEqual(r1.status, 'dispatched');
